@@ -16,7 +16,7 @@ jobs:
 
       - name: Fetch README from Monorepo
         run: |
-          curl -o README.tmp https://raw.githubusercontent.com/opral/monorepo/md-app/packages/md-app/README.md
+          curl -o README.tmp https://raw.githubusercontent.com/opral/monorepo/packages/flashtype/README.md
           echo -e "> [!NOTE]\n> This repository serves as an issue tracker. The readme is mirrored from, and the source code is at [monorepo/packages/md-app](https://github.com/opral/monorepo/tree/md-app/packages/md-app). Make pull requests to the monorepo.\n\n$(cat README.tmp)" > README.md
           rm README.tmp
 
