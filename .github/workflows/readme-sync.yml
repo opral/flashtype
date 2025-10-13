@@ -17,7 +17,7 @@ jobs:
       - name: Fetch README from Monorepo
         run: |
           curl -o README.tmp https://raw.githubusercontent.com/opral/monorepo/refs/heads/main/packages/flashtype/README.md
-          echo -e "> [!NOTE]\n> This repository serves as an issue tracker. The readme is mirrored from, and the source code is at [monorepo/packages/flashtype](https://github.com/opral/monorepo/tree/main/packages/flashtype). Make pull requests to the monorepo.\n\n$(cat README.tmp)" > README.md
+          echo -e "> [!NOTE]\n> The source code is at [monorepo/packages/flashtype](https://github.com/opral/monorepo/tree/main/packages/flashtype). This repo serves as an issue tracker.\n\n$(cat README.tmp)" > README.md
           rm README.tmp
 
       - name: Check for Changes
