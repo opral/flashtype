@@ -1,5 +1,5 @@
 > [!NOTE]
-> This repository serves as an issue tracker. The readme is mirrored from, and the source code is at [monorepo/packages/flashtype](https://github.com/opral/monorepo/tree/main/packages/flashtype). Make pull requests to the monorepo.
+> The source code is at [monorepo/packages/flashtype](https://github.com/opral/monorepo/tree/main/packages/flashtype). This repo serves as an issue tracker.
 
 # ⚡ Flashtype
 
