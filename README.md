@@ -1,5 +1,5 @@
 > [!NOTE]
-> The repo is mirrored from [opral/monorepo/tree/main/packages/flashtype](https://github.com/opral/monorepo/tree/main/packages/flashtype). This repo serves as an issue tracker.
+> This repo is mirrored from [opral/monorepo](https://github.com/opral/monorepo/tree/main/packages/flashtype). Use this mirrored repo as the issue tracker.
 
 # ⚡ Flashtype
 
