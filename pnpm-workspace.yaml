@@ -1,0 +1,4 @@
+packages:
+  - "."
+  - "lix/packages/**"
+  - "!lix/packages/**/dist"

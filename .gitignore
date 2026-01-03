@@ -8,3 +8,5 @@ src/routeTree.gen.ts
 .DS_Store
 
 .wrangler
+
+node_modules
