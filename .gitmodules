@@ -1,0 +1,3 @@
+[submodule "lix"]
+	path = lix
+	url = https://github.com/opral/lix.git
