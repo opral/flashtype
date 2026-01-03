@@ -9,14 +9,16 @@
 		"predev": "pnpm run build:lix",
 		"build": "vite build",
 		"prebuild": "pnpm run build:lix",
-		"build:lix": "pnpm --filter @opral/flashtype... --filter !@opral/flashtype build",
+		"postinstall": "pnpm -C lix install",
+		"build:lix": "pnpm -C lix exec nx run-many --nx-bail --target=build --projects=@lix-js/agent-sdk,@lix-js/inspector,@lix-js/plugin-md,@lix-js/react-utils,@lix-js/sdk",
 		"preview": "vite preview --strictPort --port 5173",
 		"typecheck": "tsc -p . --pretty false",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"lint": "oxlint --tsconfig ./tsconfig.json --ignore-path .gitignore --format stylish .",
 		"lint:fix": "oxlint --tsconfig ./tsconfig.json --ignore-path .gitignore --fix .",
-		"test": "vitest run"
+		"test": "vitest run",
+		"ci": "pnpm run build && pnpm test"
 	},
 	"dependencies": {
 		"@base-ui-components/react": "1.0.0-beta.4",

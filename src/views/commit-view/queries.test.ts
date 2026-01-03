@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { openLix, createCheckpoint } from "@lix-js/sdk";
-import { plugin as mdPlugin } from "../../../../lix/plugin-md/dist";
+import { plugin as mdPlugin } from "@lix-js/plugin-md";
 import { selectCheckpoints } from "@/queries";
 import { selectCheckpointFiles } from "./queries";
 

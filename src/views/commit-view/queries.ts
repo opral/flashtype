@@ -1,4 +1,4 @@
-import { plugin as mdPlugin } from "../../../../lix/plugin-md/dist";
+import { plugin as mdPlugin } from "@lix-js/plugin-md";
 import type { Lix } from "@lix-js/sdk";
 import { sql } from "@lix-js/sdk";
 import { AstSchemas } from "@opral/markdown-wc";
