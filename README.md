@@ -1,56 +1,37 @@
 # ⚡ Flashtype
 
-A **Claude Code-style WYSIWYG markdown editor in the browser**.
+**A demonstration and development target for the [Lix](https://lix.dev) version control system.**
 
-Flashtype delivers a Claude Code-like experience for markdown editing with true WYSIWYG rendering, AI-powered assistance, and markdown as source of truth. Built on Lix for change control, it runs entirely in your browser with zero installation required.
+Flashtype is a WYSIWYG markdown editor built on the Lix SDK. It serves as both a showcase for Lix's capabilities and a real-world application that drives the SDK's development—proving that embeddable version control enables powerful features like AI-assisted editing, change proposals, and full document history, all running entirely in the browser.
 
-## 🚀 Why Flashtype?
+## 🎯 What This Demonstrates
 
-Claude Code experience. WYSIWYG markdown. Markdown as source of truth.
+Flashtype demonstrates key Lix capabilities:
 
-- 👁️ **WYSIWYG Markdown** — no annoying previews, see formatted text as you type
-- 🌐 **Runs in Browser** — zero installation, works everywhere, no server needed
-- 🤖 **Claude Code AI** — diffs, accept/reject changes, contextual assistance
-- 📋 **Markdown Source of Truth** — no import/export, markdown is your actual document format
+| Lix Feature             | How Flashtype Uses It                                                         |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| **History**             | Every edit is tracked. See exactly what changed, when, and by whom.           |
+| **Versions (Branches)** | AI generates content in isolated versions, letting you review before merging. |
+| **Diffs**               | Claude Code-style accept/reject UI shows granular changes inline.             |
+| **Change Proposals**    | AI proposes edits, humans stay in control of what ships.                      |
+| **Single SQLite File**  | Your documents persist in browser storage as a portable `.lix` file.          |
 
-### Problems Flashtype solves
+## 🚀 Try It
 
-| Problem                                            | Flashtype Solution                                  |
-| -------------------------------------------------- | --------------------------------------------------- |
-| Annoying preview tabs and mode switching           | True WYSIWYG markdown rendering                     |
-| Installing heavy desktop apps for markdown editing | Runs entirely in browser, zero install              |
-| Poor AI integration in existing editors            | Claude Code-style AI with diffs & accept/reject     |
-| Markdown compatibility issues between tools        | Uses markdown as source of truth - works everywhere |
+Visit [flashtype.ai](https://flashtype.ai) to try it in your browser—no installation required.
 
-## 🧠 What Makes Flashtype Different
+## 🔗 Learn More About Lix
 
-### 👁️ WYSIWYG Markdown in Browser
+Lix is an embeddable version control system that enables Git-like features for any file format:
 
-No more annoying preview tabs. Type `# Heading` and see it rendered as a heading instantly. Format text with `**bold**` and see it bold immediately. Pure WYSIWYG markdown editing - what you see is what you get.
+- **[Lix Documentation](https://lix.dev/docs)** — Full SDK reference and guides
+- **[Getting Started](https://lix.dev/docs/getting-started)** — Build your first app with Lix
+- **[GitHub](https://github.com/opral/lix-sdk)** — Report issues and contribute
+- **[Discord](https://discord.gg/gdMPPWy57R)** — Get help and join the community
 
-### 🌐 Zero Install, Runs Anywhere
+## 📋 Features
 
-Open in any browser - Chrome, Safari, Firefox. No downloads, no installations, no desktop apps. Your documents live in browser storage, work offline, and sync optionally.
-
-Flashtype is also installable as a Progressive Web App (PWA). In any supported browser, open the app, choose **Install** from the address bar menu, and you’ll get a standalone window with offline support and taskbar/dock integration.
-
-### 🤖 Claude Code AI Experience
-
-AI that understands your markdown. Generate content, get suggestions, review diffs, and accept/reject changes just like Claude Code. Copy your markdown and paste it directly into ChatGPT or any other tool.
-
-### 📋 Markdown as Source of Truth
-
-No lossy import/export cycles. Your document IS markdown, not converted to/from markdown. Copy from Flashtype → paste into GitHub → paste back into Flashtype with zero data loss. No vendor lock-in, no proprietary formats.
-
-💡 **Why This Matters:**
-
-- Most editors convert markdown to their own format, creating lossy copy/paste
-- Flashtype treats markdown as the native format - no conversion needed
-- True lossless workflows between ChatGPT, GitHub, Discord, and more
-
-## 🎯 Perfect For
-
-- **Technical writers** who copy/paste between tools and need AI assistance
-- **Content creators** tired of preview tabs and want seamless markdown editing
-- **Developers** who want GitHub-compatible markdown without desktop apps
-- **Anyone** who works with ChatGPT and wants lossless markdown workflows
+- **WYSIWYG Markdown** — No preview tabs. Type `# Heading` and see it rendered instantly.
+- **Claude Code-style AI** — Generate content, review diffs, accept/reject changes.
+- **Browser-native** — Zero install, works offline, syncs optionally.
+- **Markdown as Source of Truth** — Lossless copy/paste between tools like GitHub, ChatGPT, and Discord.
