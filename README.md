@@ -1,6 +1,8 @@
 # ⚡ Flashtype
 
-**A demonstration and development target for the [Lix](https://lix.dev) version control system.**
+**A claude code style markdown editor demo for the [Lix](https://lix.dev) version control system.**
+
+![claude code markdown editor](./assets/product-demo.png)
 
 Flashtype is a WYSIWYG markdown editor built on the Lix SDK. It serves as both a showcase for Lix's capabilities and a real-world application that drives the SDK's development—proving that embeddable version control enables powerful features like AI-assisted editing, change proposals, and full document history, all running entirely in the browser.
 
