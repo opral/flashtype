@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { Lix } from "@lix-js/sdk";
-import type { SelectQueryBuilder } from "@lix-js/sdk/dependency/kysely";
+import type { SelectQueryBuilder } from "kysely";
 
 /**
  * Union of registry keys for views available in the layout.

@@ -6,8 +6,8 @@ import type {
 	AgentThinkingStep,
 	AgentToolStep,
 } from "@lix-js/agent-sdk";
-import { toPlainText } from "@lix-js/sdk/dependency/zettel-ast";
-import type { ZettelDoc } from "@lix-js/sdk/dependency/zettel-ast";
+import { toPlainText } from "@opral/zettel-ast";
+import type { ZettelDoc } from "@opral/zettel-ast";
 import { ChevronRight } from "lucide-react";
 import { MessageBody } from "./markdown/message-body";
 

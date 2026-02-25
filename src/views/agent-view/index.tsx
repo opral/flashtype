@@ -25,7 +25,7 @@ import {
 	type ChangeProposalSummary,
 	sendMessage,
 } from "@lix-js/agent-sdk";
-import { fromPlainText, toPlainText } from "@lix-js/sdk/dependency/zettel-ast";
+import { fromPlainText, toPlainText } from "@opral/zettel-ast";
 import type {
 	ViewContext,
 	ViewInstance,

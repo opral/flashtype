@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { openLix } from "@lix-js/sdk";
 import { clearConversation } from "./clear";
 import { createConversation, createConversationMessage } from "@lix-js/sdk";
-import { fromPlainText } from "@lix-js/sdk/dependency/zettel-ast";
+import { fromPlainText } from "@opral/zettel-ast";
 
 describe("clearConversation", () => {
 	test("clears messages", async () => {
