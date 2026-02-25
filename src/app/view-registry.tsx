@@ -1,5 +1,4 @@
 import type { ViewDefinition, ViewKind } from "./types";
-import { view as agentViewDefinition } from "../views/agent-view";
 import { view as filesViewDefinition } from "../views/files-view";
 import { view as searchViewDefinition } from "../views/search-view";
 import { view as tasksViewDefinition } from "../views/tasks-view";
@@ -10,7 +9,6 @@ import { view as commitViewDefinition } from "../views/commit-view";
 import { view as diffViewDefinition } from "../views/diff-view";
 
 const VISIBLE_VIEWS: ViewDefinition[] = [
-	agentViewDefinition,
 	filesViewDefinition,
 	searchViewDefinition,
 	tasksViewDefinition,

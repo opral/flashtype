@@ -44,7 +44,6 @@ import type {
 import { createViewInstanceId, VIEW_MAP } from "./view-registry";
 import { PanelTabPreview } from "./panel-v2";
 import {
-	AGENT_VIEW_KIND,
 	buildFileViewProps,
 	createWorkingVsCheckpointDiffConfig,
 	decodeURIComponentSafe,
@@ -896,7 +895,7 @@ function LayoutShellContent() {
 
 			const viewToMove = instance
 				? allViews.find((v) => v.instance === instance)
-				: allViews.find((v) => v.kind === AGENT_VIEW_KIND);
+				: null;
 
 			if (!viewToMove) return;
 

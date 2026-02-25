@@ -2,9 +2,9 @@ import { describe, expect, test } from "vitest";
 import { cloneViewInstance, reorderPanelViewsByIndex } from "./panel-utils";
 import type { PanelState, ViewInstance } from "./types";
 import {
-	AGENT_VIEW_KIND,
 	FILES_VIEW_KIND,
 	SEARCH_VIEW_KIND,
+	TASKS_VIEW_KIND,
 } from "./view-instance-helpers";
 
 describe("cloneViewInstanceByKey", () => {
@@ -73,7 +73,7 @@ describe("panel view reordering", () => {
 		views: [
 			{ instance: "files-1", kind: FILES_VIEW_KIND },
 			{ instance: "search-1", kind: SEARCH_VIEW_KIND },
-			{ instance: "agent-1", kind: AGENT_VIEW_KIND },
+			{ instance: "tasks-1", kind: TASKS_VIEW_KIND },
 		],
 		activeInstance: "files-1",
 	};
@@ -82,7 +82,7 @@ describe("panel view reordering", () => {
 		const result = reorderPanelViewsByIndex(samplePanel, 0, 2);
 		expect(result.views.map((entry) => entry.instance)).toEqual([
 			"search-1",
-			"agent-1",
+			"tasks-1",
 			"files-1",
 		]);
 	});

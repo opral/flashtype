@@ -13,45 +13,11 @@ export type KeyDef<V> = {
 
 // Flashtype keys + per-key defaults
 export const KEY_VALUE_DEFINITIONS = {
-	flashtype_agent_conversation_id: {
-		defaultVersionId: "global",
-		untracked: true,
-	} as KeyDef<string | null>,
-
 	// Cross-version UI state, not change-controlled
 	flashtype_active_file_id: {
 		defaultVersionId: "global",
 		untracked: true,
 	} as KeyDef<string | null>,
-
-	/**
-	 * Persist whether the agent chat is open.
-	 * Untracked, global UI preference (not change-controlled).
-	 */
-	flashtype_agent_chat_open: {
-		defaultVersionId: "global",
-		untracked: true,
-		defaultValue: false,
-	} as KeyDef<boolean>,
-
-	/**
-	 * Persist the preferred agent model across sessions.
-	 */
-	flashtype_agent_model: {
-		defaultVersionId: "global",
-		untracked: true,
-		defaultValue: "z-ai/glm-4.6",
-	} as KeyDef<string>,
-
-	/**
-	 * When true, the agent auto-accepts all change proposals during this session.
-	 * Untracked global UI toggle controlled via the prompt bar (1–2–3 menu).
-	 */
-	flashtype_auto_accept_session: {
-		defaultVersionId: "global",
-		untracked: true,
-		defaultValue: false,
-	} as KeyDef<boolean>,
 
 	/**
 	 * Serialized layout snapshot for the v2 prototype (panels, tabs, focus).

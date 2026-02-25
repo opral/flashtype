@@ -140,12 +140,10 @@ function getDefaults(
  * - Honors per-key defaults from `KeyValueProvider` or built-in schema.
  *
  * @example
- * function AutoAcceptToggle() {
- *   const [autoAccept, setAutoAccept] = useKeyValue('flashtype_auto_accept_session')
+ * function ActiveFileBadge() {
+ *   const [activeFileId] = useKeyValue('flashtype_active_file_id')
  *   return (
- *     <button onClick={() => setAutoAccept(!autoAccept)}>
- *       {autoAccept ? 'Enabled' : 'Disabled'}
- *     </button>
+ *     <span>{activeFileId ?? 'No active file'}</span>
  *   )
  * }
  */

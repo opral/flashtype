@@ -20,9 +20,6 @@ importers:
       '@dnd-kit/utilities':
         specifier: ^3.2.2
         version: 3.2.2(react@19.2.0)
-      '@lix-js/agent-sdk':
-        specifier: workspace:*
-        version: link:lix/packages/agent-sdk
       '@lix-js/inspector':
         specifier: workspace:*
         version: link:lix/packages/inspector
@@ -192,8 +189,6 @@ importers:
       vitest:
         specifier: ^3.1.1
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.19.3)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.30.2)(sass-embedded@1.97.1)(sass@1.97.1)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)
-
-  lix/packages/agent-sdk: {}
 
   lix/packages/inspector:
     dependencies:

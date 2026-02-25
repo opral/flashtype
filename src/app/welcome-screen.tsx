@@ -1,7 +1,7 @@
-import { useCallback, useMemo, type JSX } from "react";
+import { useCallback, type JSX } from "react";
 import { ArrowRight, Zap } from "lucide-react";
-import type { ViewContext, PanelState, PanelSide } from "./types";
-import { AGENT_VIEW_KIND } from "./view-instance-helpers";
+import type { ViewContext, PanelState } from "./types";
+import { FILES_VIEW_KIND } from "./view-instance-helpers";
 
 type WelcomeScreenProps = {
 	readonly viewContext: ViewContext;
@@ -20,46 +20,17 @@ type WelcomeScreenProps = {
 export function WelcomeScreen({
 	viewContext,
 	onCreateNewFile: _onCreateNewFile,
-	leftPanel,
-	rightPanel,
-	centralPanel,
+	leftPanel: _leftPanel,
+	rightPanel: _rightPanel,
+	centralPanel: _centralPanel,
 }: WelcomeScreenProps): JSX.Element {
-	// Find agent view across all panels
-	const agentView = useMemo(() => {
-		const allViews = [
-			...(leftPanel?.views ?? []),
-			...(centralPanel.views ?? []),
-			...(rightPanel?.views ?? []),
-		];
-		return allViews.find((view) => view.kind === AGENT_VIEW_KIND);
-	}, [leftPanel, rightPanel, centralPanel]);
-
-	const handleOpenAgentChat = useCallback(() => {
-		if (agentView) {
-			// Agent view is already open, find which panel it's in and focus/activate it
-			const panel: PanelSide = leftPanel?.views.some(
-				(v) => v.instance === agentView.instance,
-			)
-				? "left"
-				: rightPanel?.views.some((v) => v.instance === agentView.instance)
-					? "right"
-					: "central";
-			// Use openView to focus the existing view - it will activate it if it exists
-			viewContext.openView?.({
-				panel,
-				kind: AGENT_VIEW_KIND,
-				instance: agentView.instance,
-				focus: true,
-			});
-		} else {
-			// Agent view is not open, open it in the right panel and focus it
-			viewContext.openView?.({
-				panel: "right",
-				kind: AGENT_VIEW_KIND,
-				focus: true,
-			});
-		}
-	}, [agentView, viewContext, leftPanel, rightPanel]);
+	const handleOpenFiles = useCallback(() => {
+		viewContext.openView?.({
+			panel: "central",
+			kind: FILES_VIEW_KIND,
+			focus: true,
+		});
+	}, [viewContext]);
 
 	return (
 		<div
@@ -113,17 +84,17 @@ export function WelcomeScreen({
 
 				{/* CTAs */}
 				<div className="flex items-center gap-3">
-					<button
-						type="button"
-						onClick={handleOpenAgentChat}
-						className="cursor-pointer rounded-lg border border-neutral-200 bg-neutral-0 px-3.5 py-2 shadow-sm transition hover:border-brand-600 hover:shadow focus-visible:!bg-brand-200 focus-visible:!outline-none"
-					>
-						<div className="flex items-center gap-2">
-							<span className="text-sm font-medium leading-none text-neutral-900">
-								Open agent chat
-							</span>
-						</div>
-					</button>
+						<button
+							type="button"
+							onClick={handleOpenFiles}
+							className="cursor-pointer rounded-lg border border-neutral-200 bg-neutral-0 px-3.5 py-2 shadow-sm transition hover:border-brand-600 hover:shadow focus-visible:!bg-brand-200 focus-visible:!outline-none"
+						>
+							<div className="flex items-center gap-2">
+								<span className="text-sm font-medium leading-none text-neutral-900">
+									Open files
+								</span>
+							</div>
+						</button>
 
 					<a
 						href="https://lix.dev"

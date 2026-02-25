@@ -2,7 +2,6 @@ import { selectWorkingDiff } from "@lix-js/sdk";
 import { plugin as mdPlugin } from "@lix-js/plugin-md";
 import type { DiffViewConfig, RenderableDiff, ViewKind } from "./types";
 
-export const AGENT_VIEW_KIND = "flashtype_agent" as ViewKind;
 export const FILES_VIEW_KIND = "flashtype_files" as ViewKind;
 export const SEARCH_VIEW_KIND = "flashtype_search" as ViewKind;
 export const TASKS_VIEW_KIND = "flashtype_tasks" as ViewKind;
