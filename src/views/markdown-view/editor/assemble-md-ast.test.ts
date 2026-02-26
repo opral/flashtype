@@ -4,6 +4,7 @@ import { assembleMdAst } from "./assemble-md-ast";
 import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
 import markdownPluginV2Manifest from "../../../../lix/packages/plugin-md-v2/manifest.json";
 import markdownPluginV2WasmRaw from "../../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
+import { qb } from "@lix-js/kysely";
 
 const markdownPluginV2WasmBytes = Uint8Array.from(
 	markdownPluginV2WasmRaw,
@@ -31,7 +32,7 @@ test("assembleMdAst returns ordered children from state (seeded by plugin)", asy
 
 	const fileId = "util_file_1";
 	const markdown = "Hello";
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,

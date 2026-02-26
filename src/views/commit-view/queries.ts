@@ -1,6 +1,6 @@
 import { plugin as mdPlugin } from "@lix-js/plugin-md";
 import type { Lix } from "@lix-js/sdk";
-import { sql } from "@lix-js/sdk";
+import { qb, sql } from "@lix-js/kysely";
 import { AstSchemas } from "@opral/markdown-wc";
 
 export type CheckpointFileChangeRow = {
@@ -37,7 +37,7 @@ export function selectCheckpointFiles({
 		change_set_element.file_id
 	)`;
 
-	return lix.db
+	return qb(lix)
 		.selectFrom("change_set_element")
 		.innerJoin("change", "change.id", "change_set_element.change_id")
 		.leftJoin("file", "file.id", "change_set_element.file_id")

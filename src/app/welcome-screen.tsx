@@ -84,17 +84,17 @@ export function WelcomeScreen({
 
 				{/* CTAs */}
 				<div className="flex items-center gap-3">
-						<button
-							type="button"
-							onClick={handleOpenFiles}
-							className="cursor-pointer rounded-lg border border-neutral-200 bg-neutral-0 px-3.5 py-2 shadow-sm transition hover:border-brand-600 hover:shadow focus-visible:!bg-brand-200 focus-visible:!outline-none"
-						>
-							<div className="flex items-center gap-2">
-								<span className="text-sm font-medium leading-none text-neutral-900">
-									Open files
-								</span>
-							</div>
-						</button>
+					<button
+						type="button"
+						onClick={handleOpenFiles}
+						className="cursor-pointer rounded-lg border border-neutral-200 bg-neutral-0 px-3.5 py-2 shadow-sm transition hover:border-brand-600 hover:shadow focus-visible:!bg-brand-200 focus-visible:!outline-none"
+					>
+						<div className="flex items-center gap-2">
+							<span className="text-sm font-medium leading-none text-neutral-900">
+								Open files
+							</span>
+						</div>
+					</button>
 
 					<a
 						href="https://lix.dev"

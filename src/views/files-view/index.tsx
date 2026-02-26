@@ -7,12 +7,14 @@ import { buildFilesystemTree } from "@/views/files-view/build-filesystem-tree";
 import type { ViewContext } from "../../app/types";
 import { FileTree } from "./file-tree";
 import { createReactViewDefinition } from "../../app/react-view";
+import { qb } from "@lix-js/kysely";
 import {
 	FILE_VIEW_KIND,
 	FILES_VIEW_KIND,
 	buildFileViewProps,
 	fileViewInstance,
 } from "../../app/view-instance-helpers";
+import type { FilesystemEntryRow } from "@/queries";
 
 type FilesViewProps = {
 	readonly context?: ViewContext;
@@ -35,7 +37,9 @@ type DraftState = {
  */
 export function FilesView({ context }: FilesViewProps) {
 	const lix = useLix();
-	const entries = useQuery(({ lix }) => selectFilesystemEntries(lix));
+	const entries = useQuery<FilesystemEntryRow>(({ lix }) =>
+		selectFilesystemEntries(lix),
+	);
 	const nodes = useMemo(() => buildFilesystemTree(entries ?? []), [entries]);
 	const creatingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
@@ -141,7 +145,7 @@ export function FilesView({ context }: FilesViewProps) {
 			creatingRef.current = true;
 			try {
 				const id = await nanoId({ lix });
-				await lix.db
+				await qb(lix)
 					.insertInto("file")
 					.values({
 						id,
@@ -182,7 +186,7 @@ export function FilesView({ context }: FilesViewProps) {
 			}
 			creatingRef.current = true;
 			try {
-				await lix.db
+				await qb(lix)
 					.insertInto("directory")
 					.values({ path } as any)
 					.execute();
@@ -234,18 +238,18 @@ export function FilesView({ context }: FilesViewProps) {
 				: normalizeDirectoryPath(selectedPath);
 		try {
 			if (selectedKind === "file") {
-				const record = await lix.db
+				const record = await qb(lix)
 					.selectFrom("file")
 					.select(["id"])
 					.where("path", "=", normalizedPath)
 					.executeTakeFirst();
 				if (record?.id) {
-					await lix.db
+					await qb(lix)
 						.deleteFrom("state")
 						.where("file_id", "=", record.id as any)
 						.execute();
 				}
-				await lix.db
+				await qb(lix)
 					.deleteFrom("file")
 					.where("path", "=", normalizedPath)
 					.execute();
@@ -253,7 +257,7 @@ export function FilesView({ context }: FilesViewProps) {
 					prev.filter((path) => path !== normalizedPath),
 				);
 			} else {
-				await lix.db
+				await qb(lix)
 					.deleteFrom("directory")
 					.where("path", "=", normalizedPath)
 					.execute();
@@ -267,7 +271,7 @@ export function FilesView({ context }: FilesViewProps) {
 			setSelectedPath(null);
 			setSelectedKind(null);
 		}
-	}, [lix.db, selectedKind, selectedPath]);
+	}, [lix, selectedKind, selectedPath]);
 
 	useEffect(() => {
 		const listener = (event: KeyboardEvent) => {
@@ -416,7 +420,7 @@ export function FilesView({ context }: FilesViewProps) {
 					setPendingPaths((prev) => [...prev, filePath]);
 
 					// Create the file in lix
-					await lix.db
+					await qb(lix)
 						.insertInto("file")
 						.values({
 							path: filePath,
@@ -426,7 +430,7 @@ export function FilesView({ context }: FilesViewProps) {
 
 					// Open the first dropped file
 					if (file === markdownFiles[0]) {
-						const newFile = await lix.db
+						const newFile = await qb(lix)
 							.selectFrom("file")
 							.select("id")
 							.where("path", "=", filePath)

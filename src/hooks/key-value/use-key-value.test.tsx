@@ -1,5 +1,6 @@
 import React from "react";
 import { test, expect, vi } from "vitest";
+import { qb } from "@lix-js/kysely";
 import {
 	render,
 	renderHook,
@@ -25,7 +26,7 @@ test("reads a global, untracked key (test fixture)", async () => {
 	);
 
 	// Pre-insert expected value
-	await lix.db
+	await qb(lix)
 		.insertInto("key_value_by_version")
 		.values({
 			key: UNTRACKED_TEST_KEY,
@@ -77,7 +78,7 @@ test("writes and reads a global, untracked key (test fixture)", async () => {
 	await waitFor(() => expect((resultRef.current as any)?.[0]).toBe("beta"));
 
 	// Verify DB row persisted to key_value_by_version with lixcol_version_id = 'global'
-	const rows = (await lix.db
+	const rows = (await qb(lix)
 		.selectFrom("key_value_by_version")
 		.where("key", "=", UNTRACKED_TEST_KEY)
 		.where("lixcol_version_id", "=", "global")
@@ -118,7 +119,7 @@ test("writes and reads a tracked key on active version", async () => {
 	});
 
 	// Verify DB row persisted to tracked table
-	const rows = (await lix.db
+	const rows = (await qb(lix)
 		.selectFrom("key_value")
 		.where("key", "=", TEST_KEY)
 		.select(["value"])
@@ -129,7 +130,7 @@ test("writes and reads a tracked key on active version", async () => {
 test("shows Suspense fallback first, then renders value on initial read", async () => {
 	const lix = await openLix({});
 	// Ensure the key exists so the initial load resolves deterministically
-	await lix.db
+	await qb(lix)
 		.insertInto("key_value_by_version")
 		.values({
 			key: UNTRACKED_TEST_KEY,
@@ -188,7 +189,7 @@ test("re-renders when key value changes externally", async () => {
 
 	// mutate externally (simulate another part of app)
 	await act(async () => {
-		await lix.db
+		await qb(lix)
 			.updateTable("key_value")
 			.set({ value: "external" })
 			.where("key", "=", TEST_KEY)
@@ -212,7 +213,7 @@ function createDeferred<T>() {
 test("shares optimistic updates across hook instances", async () => {
 	const lix = await openLix({});
 	const SHARED_KEY = "flashtype_test_tracked_shared_optimistic" as const;
-	await lix.db
+	await qb(lix)
 		.insertInto("key_value")
 		.values({ key: SHARED_KEY, value: "initial" })
 		.execute();
@@ -278,9 +279,9 @@ test("shares optimistic updates across hook instances", async () => {
 	);
 
 	const gate = createDeferred<void>();
-	const originalTransaction = lix.db.transaction.bind(lix.db);
+	const originalTransaction = qb(lix).transaction.bind(qb(lix));
 	const transactionSpy = vi
-		.spyOn(lix.db, "transaction")
+		.spyOn(qb(lix), "transaction")
 		.mockImplementation(() => {
 			const tx = originalTransaction();
 			const originalExecute = tx.execute.bind(tx);
@@ -353,7 +354,7 @@ test("returns optimistic value immediately when setter is called", async () => {
 
 test("memoized children should not re-render when parent state changes", async () => {
 	const lix = await openLix({});
-	await lix.db
+	await qb(lix)
 		.insertInto("key_value_by_version")
 		.values({
 			key: UNTRACKED_TEST_KEY,

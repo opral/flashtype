@@ -90,7 +90,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 		() =>
 			Boolean(
 				editor &&
-					typeof (editor.commands as any)?.toggleTaskList === "function",
+				typeof (editor.commands as any)?.toggleTaskList === "function",
 			),
 		[editor],
 	);

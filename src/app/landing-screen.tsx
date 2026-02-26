@@ -62,7 +62,9 @@ function LandingScreenContent({
 
 			<main className="flex h-full w-full max-w-3xl flex-col items-center justify-center gap-8 py-20 sm:py-24 text-center">
 				<div className="flex flex-col items-center gap-2">
-					<h1 className="text-4xl font-semibold text-neutral-900">Start writing</h1>
+					<h1 className="text-4xl font-semibold text-neutral-900">
+						Start writing
+					</h1>
 					<p className="text-base text-neutral-600">
 						Open files and edit markdown directly in Flashtype.
 					</p>

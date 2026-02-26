@@ -1,5 +1,6 @@
 import React, { Suspense } from "react";
 import { describe, expect, test, vi } from "vitest";
+import { qb } from "@lix-js/kysely";
 import {
 	render,
 	fireEvent,
@@ -27,7 +28,7 @@ const markdownPluginV2WasmBytes = Uint8Array.from(
 );
 
 async function countCommits(lix: Awaited<ReturnType<typeof openLix>>) {
-	const rows = await lix.db.selectFrom("commit").select("id").execute();
+	const rows = await qb(lix).selectFrom("commit").select("id").execute();
 	return rows.length;
 }
 
@@ -41,7 +42,7 @@ describe("CheckpointView", () => {
 
 		const fileId = "checkpoint_view_test_file";
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileId,
@@ -52,7 +53,7 @@ describe("CheckpointView", () => {
 
 		await lix.createCheckpoint();
 
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("Updated content") })
 			.where("id", "=", fileId)
@@ -93,7 +94,7 @@ describe("CheckpointView", () => {
 			manifestJson: markdownPluginV2Manifest,
 			wasmBytes: markdownPluginV2WasmBytes,
 		});
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: "badge-file",
@@ -102,7 +103,7 @@ describe("CheckpointView", () => {
 			})
 			.execute();
 		await lix.createCheckpoint();
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("Changed") })
 			.where("id", "=", "badge-file")
@@ -184,7 +185,7 @@ describe("CheckpointView", () => {
 		});
 		const fileId = "diff-preview-file";
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileId,
@@ -195,7 +196,7 @@ describe("CheckpointView", () => {
 
 		await lix.createCheckpoint();
 
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("# After") })
 			.where("id", "=", fileId)

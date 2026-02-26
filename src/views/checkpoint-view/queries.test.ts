@@ -3,6 +3,7 @@ import { openLix } from "@lix-js/sdk";
 import markdownPluginV2Manifest from "../../../lix/packages/plugin-md-v2/manifest.json";
 import markdownPluginV2WasmRaw from "../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
 import { selectWorkingDiffFiles } from "./queries";
+import { qb } from "@lix-js/kysely";
 
 const markdownPluginV2WasmBytes = Uint8Array.from(
 	markdownPluginV2WasmRaw,
@@ -20,7 +21,7 @@ describe("selectWorkingDiffFiles", () => {
 		const fileA = "checkpoint_view_a";
 		const fileB = "checkpoint_view_b";
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileA,
@@ -29,7 +30,7 @@ describe("selectWorkingDiffFiles", () => {
 			})
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileB,
@@ -41,13 +42,13 @@ describe("selectWorkingDiffFiles", () => {
 		// Establish baseline so subsequent edits appear in the working diff
 		await lix.createCheckpoint();
 
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("Alpha updated") })
 			.where("id", "=", fileA)
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("Beta updated") })
 			.where("id", "=", fileB)
@@ -60,7 +61,7 @@ describe("selectWorkingDiffFiles", () => {
 		]);
 
 		// Another edit to the same file should not duplicate entries
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("Alpha updated again") })
 			.where("id", "=", fileA)
@@ -74,7 +75,7 @@ describe("selectWorkingDiffFiles", () => {
 
 		// New file appears as added
 		const fileC = "checkpoint_view_c";
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileC,

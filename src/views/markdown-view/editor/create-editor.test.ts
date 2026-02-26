@@ -9,6 +9,7 @@ import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
 import { Editor } from "@tiptap/core";
 import markdownPluginV2Manifest from "../../../../lix/packages/plugin-md-v2/manifest.json";
 import markdownPluginV2WasmRaw from "../../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
+import { qb } from "@lix-js/kysely";
 
 const markdownPluginV2WasmBytes = Uint8Array.from(
 	markdownPluginV2WasmRaw,
@@ -25,7 +26,7 @@ async function createEditorFromFile(args: {
 }) {
 	await insertMarkdownSchemas({ lix: args.lix });
 
-	const row = await args.lix.db
+	const row = await qb(args.lix)
 		.selectFrom("file")
 		.where("id", "=", args.fileId)
 		.select(["data"])
@@ -62,7 +63,7 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 	const fileId = "paste_start_before";
 
 	// Seed initial file content
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -92,7 +93,7 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 	});
 	await new Promise((resolve) => setTimeout(resolve, 0));
 
-	const rootOrderAfter = await lix.db
+	const rootOrderAfter = await qb(lix)
 		.selectFrom("state")
 		.where("file_id", "=", fileId)
 		.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
@@ -103,7 +104,7 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 	expect(rootOrderAfter[0]?.snapshot_content.order.length).toBe(2);
 	const orderIds = rootOrderAfter[0]?.snapshot_content.order as string[];
 
-	const paragraphsAfter = await lix.db
+	const paragraphsAfter = await qb(lix)
 		.selectFrom("state")
 		.where("file_id", "=", fileId)
 		.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
@@ -127,7 +128,7 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 	});
 	expect(orderedTexts).toEqual(["New", "Start"]);
 
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -148,7 +149,7 @@ test("paste at end inserts after existing content (TipTap + Lix)", async () => {
 	});
 	const fileId = "paste_end_after";
 
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -175,7 +176,7 @@ test("paste at end inserts after existing content (TipTap + Lix)", async () => {
 	});
 	await new Promise((r) => setTimeout(r, 0));
 
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -193,7 +194,7 @@ test("replace word selection with paste (TipTap + Lix)", async () => {
 	});
 	const fileId = "paste_replace_word";
 	const initial = "Replace THIS TEXT here.";
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -220,7 +221,7 @@ test("replace word selection with paste (TipTap + Lix)", async () => {
 	});
 	await new Promise((r) => setTimeout(r, 0));
 
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -238,7 +239,7 @@ test("replace entire document with paste (TipTap + Lix)", async () => {
 	});
 	const fileId = "paste_replace_all";
 	const initial = "Old content\n\nTo be replaced";
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -265,7 +266,7 @@ test("replace entire document with paste (TipTap + Lix)", async () => {
 	});
 	await new Promise((r) => setTimeout(r, 0));
 
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -284,7 +285,7 @@ test("paste multi-paragraph plain text into empty doc (TipTap + Lix)", async () 
 		wasmBytes: markdownPluginV2WasmBytes,
 	});
 	const fileId = "paste_plain_multi";
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -312,7 +313,7 @@ test("paste multi-paragraph plain text into empty doc (TipTap + Lix)", async () 
 
 	await new Promise((r) => setTimeout(r, 0));
 
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -331,7 +332,7 @@ test("Enter splits paragraph → assigns unique ids and root order has no duplic
 	});
 	const fileId = "enter_split_ids_unique";
 
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -364,11 +365,11 @@ test("Enter splits paragraph → assigns unique ids and root order has no duplic
 	// Give onUpdate/persist a tick (persistDebounceMs=0 still runs async)
 	await new Promise((r) => setTimeout(r, 0));
 
-	const root = await lix.db
+	const root = await qb(lix)
 		.selectFrom("state")
 		.where("file_id", "=", fileId)
 		.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-		.select(["snapshot_content"]) // small row
+		.select(["snapshot_content"])
 		.executeTakeFirst();
 
 	const order =
@@ -376,11 +377,11 @@ test("Enter splits paragraph → assigns unique ids and root order has no duplic
 	expect(order.length).toBe(2);
 	expect(new Set(order).size).toBe(order.length); // no duplicates
 
-	const paras = await lix.db
+	const paras = await qb(lix)
 		.selectFrom("state")
 		.where("file_id", "=", fileId)
 		.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-		.select(["entity_id", "snapshot_content"]) // small rows
+		.select(["entity_id", "snapshot_content"])
 		.execute();
 	expect(paras.length).toBe(2);
 
@@ -396,7 +397,7 @@ test("two Enters create three paragraphs with unique ids and correct order", asy
 	const fileId = "enter_split_three";
 
 	// Seed with a single paragraph
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -426,20 +427,20 @@ test("two Enters create three paragraphs with unique ids and correct order", asy
 	let order: string[] = [];
 	let paras: { entity_id: string; snapshot_content: unknown }[] = [];
 	for (let i = 0; i < 40; i++) {
-		const root = await lix.db
+		const root = await qb(lix)
 			.selectFrom("state")
 			.where("file_id", "=", fileId)
 			.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-			.select(["snapshot_content"]) // small row
+			.select(["snapshot_content"])
 			.executeTakeFirst();
 		order = ((root?.snapshot_content as { order?: string[] } | undefined)
 			?.order ?? []) as string[];
 
-		paras = (await lix.db
+		paras = (await qb(lix)
 			.selectFrom("state")
 			.where("file_id", "=", fileId)
 			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id", "snapshot_content"]) // small rows
+			.select(["entity_id", "snapshot_content"])
 			.execute()) as { entity_id: string; snapshot_content: unknown }[];
 
 		if (order.length === 3 && paras.length === 3) break;
@@ -483,7 +484,7 @@ test("normalize CRLF line endings on paste (TipTap + Lix)", async () => {
 		wasmBytes: markdownPluginV2WasmBytes,
 	});
 	const fileId = "paste_crlf";
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -507,7 +508,7 @@ test("normalize CRLF line endings on paste (TipTap + Lix)", async () => {
 		},
 	});
 	await new Promise((r) => setTimeout(r, 0));
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -524,7 +525,7 @@ test("paste complex markdown with lists and code blocks (TipTap + Lix)", async (
 		wasmBytes: markdownPluginV2WasmBytes,
 	});
 	const fileId = "paste_complex";
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -548,7 +549,7 @@ test("paste complex markdown with lists and code blocks (TipTap + Lix)", async (
 		},
 	});
 	await new Promise((r) => setTimeout(r, 0));
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -569,7 +570,7 @@ test("paste inline formatting markdown (TipTap + Lix)", async () => {
 		wasmBytes: markdownPluginV2WasmBytes,
 	});
 	const fileId = "paste_inline_format";
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -593,7 +594,7 @@ test("paste inline formatting markdown (TipTap + Lix)", async () => {
 		},
 	});
 	await new Promise((r) => setTimeout(r, 0));
-	const fileAfter = await lix.db
+	const fileAfter = await qb(lix)
 		.selectFrom("file")
 		.where("id", "=", fileId)
 		.selectAll()
@@ -621,7 +622,7 @@ test("rapid Enter/type coalescing persists 3 paragraphs with unique ids", async 
 	const fileId = "rapid_enter_coalesce";
 
 	// Seed with a single paragraph
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -666,20 +667,20 @@ test("rapid Enter/type coalescing persists 3 paragraphs with unique ids", async 
 	let order: string[] = [];
 	let paras: { entity_id: string; snapshot_content: unknown }[] = [];
 	for (let i = 0; i < 40; i++) {
-		const root = await lix.db
+		const root = await qb(lix)
 			.selectFrom("state")
 			.where("file_id", "=", fileId)
 			.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-			.select(["snapshot_content"]) // small row
+			.select(["snapshot_content"])
 			.executeTakeFirst();
 		order = ((root?.snapshot_content as { order?: string[] } | undefined)
 			?.order ?? []) as string[];
 
-		paras = (await lix.db
+		paras = (await qb(lix)
 			.selectFrom("state")
 			.where("file_id", "=", fileId)
 			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id", "snapshot_content"]) // small rows
+			.select(["entity_id", "snapshot_content"])
 			.execute()) as { entity_id: string; snapshot_content: unknown }[];
 
 		if (order.length === 3 && paras.length === 3) break;
@@ -717,7 +718,7 @@ test("state cleanup on delete removes row and prunes root order", async () => {
 	const fileId = "delete_middle_cleanup";
 
 	// Seed with three paragraphs
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({
 			id: fileId,
@@ -740,11 +741,11 @@ test("state cleanup on delete removes row and prunes root order", async () => {
 	// Poll until state reflects 3 paragraphs and capture the id for "Second"
 	let secondId: string | null = null;
 	for (let i = 0; i < 40; i++) {
-		const paras = await lix.db
+		const paras = await qb(lix)
 			.selectFrom("state")
 			.where("file_id", "=", fileId)
 			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id", "snapshot_content"]) // small rows
+			.select(["entity_id", "snapshot_content"])
 			.execute();
 		if (paras.length === 3) {
 			const texts = paras.map((p) => {
@@ -775,20 +776,20 @@ test("state cleanup on delete removes row and prunes root order", async () => {
 	// Poll until state reflects 2 paragraphs and root order pruned
 	let order: string[] = [];
 	for (let i = 0; i < 40; i++) {
-		const root = await lix.db
+		const root = await qb(lix)
 			.selectFrom("state")
 			.where("file_id", "=", fileId)
 			.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-			.select(["snapshot_content"]) // small row
+			.select(["snapshot_content"])
 			.executeTakeFirst();
 		order = ((root?.snapshot_content as { order?: string[] } | undefined)
 			?.order ?? []) as string[];
 
-		const paras = await lix.db
+		const paras = await qb(lix)
 			.selectFrom("state")
 			.where("file_id", "=", fileId)
 			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id"]) // small rows
+			.select(["entity_id"])
 			.execute();
 		if (paras.length === 2 && order.length === 2) {
 			// Ensure "Second" id is gone

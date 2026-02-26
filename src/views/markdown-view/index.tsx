@@ -2,6 +2,7 @@ import { Suspense, useEffect } from "react";
 import type { ReactNode } from "react";
 import { FileText, Loader2 } from "lucide-react";
 import { LixProvider, useQueryTakeFirst } from "@lix-js/react-utils";
+import { qb } from "@lix-js/kysely";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import { EditorProvider } from "@/views/markdown-view/editor/editor-context";
 import { TipTapEditor } from "@/views/markdown-view/editor/tip-tap-editor";
@@ -54,7 +55,7 @@ function MarkdownViewContent({
 
 	const fileRow = useQueryTakeFirst(
 		({ lix }) =>
-			lix.db
+			qb(lix)
 				.selectFrom("file")
 				.select(["id", "path"])
 				.where(fileId ? "id" : "path", "=", fileId ?? filePath ?? "")

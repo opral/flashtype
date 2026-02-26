@@ -1,5 +1,6 @@
 import type { Lix } from "@lix-js/sdk";
 import { AstSchemas } from "@opral/markdown-wc";
+import { qb } from "@lix-js/kysely";
 
 export async function assembleMdAst(args: {
 	lix: Lix;
@@ -9,11 +10,11 @@ export async function assembleMdAst(args: {
 	if (!fileId) return { type: "root", children: [] };
 
 	const rootKey = AstSchemas.DocumentSchema["x-lix-key"] as string;
-	const root = await lix.db
+	const root = await qb(lix)
 		.selectFrom("state")
 		.where("file_id", "=", fileId)
 		.where("schema_key", "=", rootKey)
-		.select(["snapshot_content"]) // { order }
+		.select(["snapshot_content"])
 		.executeTakeFirst();
 
 	const order: string[] = Array.isArray(root?.snapshot_content?.order)
@@ -21,10 +22,10 @@ export async function assembleMdAst(args: {
 		: [];
 	if (!order.length) return { type: "root", children: [] };
 
-	const nodes = await lix.db
+	const nodes = await qb(lix)
 		.selectFrom("state")
 		.where("file_id", "=", fileId)
-		.select(["entity_id", "schema_key", "snapshot_content"]) // top-level blocks
+		.select(["entity_id", "schema_key", "snapshot_content"])
 		.execute();
 
 	const byId = new Map<string, any>();

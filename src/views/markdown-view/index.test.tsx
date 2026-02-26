@@ -8,6 +8,7 @@ import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
 import markdownPluginV2Manifest from "../../../lix/packages/plugin-md-v2/manifest.json";
 import markdownPluginV2WasmRaw from "../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
+import { qb } from "@lix-js/kysely";
 
 const markdownPluginV2WasmBytes = Uint8Array.from(
 	markdownPluginV2WasmRaw,
@@ -50,7 +51,7 @@ describe("MarkdownView", () => {
 			manifestJson: markdownPluginV2Manifest,
 			wasmBytes: markdownPluginV2WasmBytes,
 		});
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: "file_1",
@@ -59,7 +60,7 @@ describe("MarkdownView", () => {
 			})
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.insertInto("key_value_by_version")
 			.values({
 				key: "flashtype_active_file_id",
@@ -85,7 +86,7 @@ describe("MarkdownView", () => {
 		expect(await screen.findByTestId("tiptap-editor")).toBeInTheDocument();
 
 		await waitFor(async () => {
-			const rows = await lix.db
+			const rows = await qb(lix)
 				.selectFrom("key_value_by_version")
 				.where("key", "=", "flashtype_active_file_id")
 				.select(["value"])
@@ -104,7 +105,7 @@ describe("MarkdownView", () => {
 			manifestJson: markdownPluginV2Manifest,
 			wasmBytes: markdownPluginV2WasmBytes,
 		});
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: "file_alpha",
@@ -113,7 +114,7 @@ describe("MarkdownView", () => {
 			})
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: "file_beta",
@@ -123,7 +124,7 @@ describe("MarkdownView", () => {
 			.execute();
 
 		// Persist a stale active file id pointing to alpha
-		await lix.db
+		await qb(lix)
 			.insertInto("key_value_by_version")
 			.values({
 				key: "flashtype_active_file_id",
@@ -154,7 +155,7 @@ describe("MarkdownView", () => {
 		expect(editor).toHaveTextContent("Beta");
 
 		await waitFor(async () => {
-			const record = await lix.db
+			const record = await qb(lix)
 				.selectFrom("key_value_by_version")
 				.select(["value"])
 				.where("key", "=", "flashtype_active_file_id")

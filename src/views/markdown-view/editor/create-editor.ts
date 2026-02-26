@@ -1,6 +1,7 @@
 import { Editor } from "@tiptap/core";
 import History from "@tiptap/extension-history";
 import Placeholder from "@tiptap/extension-placeholder";
+import { qb } from "@lix-js/kysely";
 import { nanoId, type Lix, withWriterKey } from "@lix-js/sdk";
 import {
 	MarkdownWc,
@@ -237,7 +238,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 				const order = await ensureTopLevelIds(children);
 				try {
 					await withWriterKey(
-						lix.db,
+						qb(lix),
 						writerKey ?? `flashtype_tiptap_editor`,
 						async (trx) => {
 							await upsertNodes(trx, fileId, children);

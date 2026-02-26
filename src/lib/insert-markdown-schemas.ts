@@ -1,5 +1,6 @@
 import type { Lix } from "@lix-js/sdk";
 import { AstSchemas } from "@opral/markdown-wc";
+import { qb } from "@lix-js/kysely";
 
 type MarkdownSchemaDefinition = (typeof AstSchemas.allSchemas)[number];
 
@@ -20,7 +21,7 @@ type MarkdownSchemaDefinition = (typeof AstSchemas.allSchemas)[number];
 export async function insertMarkdownSchemas(args: { lix: Lix }): Promise<void> {
 	const { lix } = args;
 
-	const rows = (await lix.db
+	const rows = (await qb(lix)
 		.selectFrom("stored_schema_by_version")
 		.select(["value"])
 		.where("lixcol_version_id", "=", "global")
@@ -62,5 +63,8 @@ export async function insertMarkdownSchemas(args: { lix: Lix }): Promise<void> {
 
 	if (inserts.length === 0) return;
 
-	await lix.db.insertInto("stored_schema_by_version").values(inserts).execute();
+	await qb(lix)
+		.insertInto("stored_schema_by_version")
+		.values(inserts)
+		.execute();
 }

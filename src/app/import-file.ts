@@ -1,4 +1,5 @@
 import type { ViewContext } from "./types";
+import { qb } from "@lix-js/kysely";
 import {
 	FILE_VIEW_KIND,
 	fileViewInstance,
@@ -22,7 +23,7 @@ async function generateUniqueFilePath(
 	let counter = 1;
 
 	while (true) {
-		const existing = await context.lix.db
+		const existing = await qb(context.lix)
 			.selectFrom("file")
 			.where("path", "=", filePath)
 			.select(["id"])
@@ -61,7 +62,7 @@ export async function importFile({
 	const filePath = await generateUniqueFilePath(context, sanitizedFilename);
 
 	// Create file
-	await context.lix.db
+	await qb(context.lix)
 		.insertInto("file")
 		.values({
 			path: filePath,
@@ -70,7 +71,7 @@ export async function importFile({
 		.execute();
 
 	// Get auto-generated file ID
-	const newFile = await context.lix.db
+	const newFile = await qb(context.lix)
 		.selectFrom("file")
 		.select("id")
 		.where("path", "=", filePath)

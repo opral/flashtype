@@ -1,5 +1,6 @@
 import React, { Suspense } from "react";
 import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
+import { qb } from "@lix-js/kysely";
 import {
 	act,
 	fireEvent,
@@ -31,13 +32,13 @@ describe("VersionSwitcher", () => {
 		lix = await openLix({});
 		cleanupFns.push(() => lix.close());
 
-		const activeVersion = await lix.db
+		const activeVersion = await qb(lix)
 			.selectFrom("active_version")
 			.innerJoin("version", "version.id", "active_version.version_id")
 			.select(["version.id"])
 			.executeTakeFirstOrThrow();
 
-		await lix.db
+		await qb(lix)
 			.updateTable("version")
 			.set({ name: "main" })
 			.where("id", "=", activeVersion.id)
@@ -85,7 +86,7 @@ describe("VersionSwitcher", () => {
 			await screen.findByRole("button", { name: "Select version" }),
 		).toHaveTextContent("draft");
 
-		const active = await lix.db
+		const active = await qb(lix)
 			.selectFrom("active_version")
 			.select("version_id")
 			.executeTakeFirstOrThrow();
@@ -125,7 +126,7 @@ describe("VersionSwitcher", () => {
 			expect(screen.getByText("docs-renamed")).toBeInTheDocument();
 		});
 
-		const row = await lix.db
+		const row = await qb(lix)
 			.selectFrom("version")
 			.select(["id", "name"])
 			.where("id", "=", target.id)
@@ -177,14 +178,14 @@ describe("VersionSwitcher", () => {
 			).not.toBeInTheDocument();
 		});
 
-		const row = await lix.db
+		const row = await qb(lix)
 			.selectFrom("version")
 			.select(["id", "hidden"])
 			.where("id", "=", target.id)
 			.executeTakeFirstOrThrow();
 		expect(row.hidden).toBeTruthy();
 
-		const active = await lix.db
+		const active = await qb(lix)
 			.selectFrom("active_version")
 			.select("version_id")
 			.executeTakeFirstOrThrow();

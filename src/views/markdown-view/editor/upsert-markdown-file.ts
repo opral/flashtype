@@ -1,4 +1,5 @@
 import type { Lix } from "@lix-js/sdk";
+import { qb } from "@lix-js/kysely";
 
 export async function upsertMarkdownFile(args: {
 	lix: Lix;
@@ -11,21 +12,21 @@ export async function upsertMarkdownFile(args: {
 	const { lix, fileId, markdown, path, metadata, hidden } = args;
 	const data = new TextEncoder().encode(markdown);
 
-	const existing = await lix.db
+	const existing = await qb(lix)
 		.selectFrom("file")
-		.select(["id"]) // small row
+		.select(["id"])
 		.where("id", "=", fileId)
 		.executeTakeFirst();
 
 	if (existing) {
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data })
 			.where("id", "=", fileId)
 			.execute();
 	} else {
 		// Insert requires a path; use provided or fallback to /<fileId>.md
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileId,

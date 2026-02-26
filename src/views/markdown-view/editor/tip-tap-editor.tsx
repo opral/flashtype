@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EditorContent } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
+import { qb } from "@lix-js/kysely";
 import { useEditorCtx } from "./editor-context";
 import { useLix, useQuery, useQueryTakeFirst } from "@lix-js/react-utils";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
@@ -45,7 +46,7 @@ export function TipTapEditor({
 	const activeFileId = fileId ?? activeFileIdKV;
 	const initialFile = useQueryTakeFirst(
 		({ lix }) =>
-			lix.db
+			qb(lix)
 				.selectFrom("file")
 				.select("data")
 				.where("id", "=", activeFileId ?? ""),
@@ -141,7 +142,7 @@ export function TipTapEditor({
 
 	// Watch active version to refresh on version switches
 	const activeVersionRow = useQuery(() =>
-		lix.db.selectFrom("active_version").select(["version_id"]).limit(1),
+		qb(lix).selectFrom("active_version").select(["version_id"]).limit(1),
 	);
 	const activeVersionId =
 		Array.isArray(activeVersionRow) && activeVersionRow.length > 0

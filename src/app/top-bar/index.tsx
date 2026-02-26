@@ -1,6 +1,7 @@
 import { useId, useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useQueryTakeFirst } from "@lix-js/react-utils";
+import { qb } from "@lix-js/kysely";
 import { Button } from "@/components/ui/button";
 import {
 	Popover,
@@ -40,8 +41,8 @@ export function TopBar({
 	isRightSidebarVisible = true,
 }: TopBarProps) {
 	const alphaDescriptionId = useId();
-	const fileCount = useQueryTakeFirst(({ lix }) =>
-		lix.db
+	const fileCount = useQueryTakeFirst<{ count: number }>(({ lix }) =>
+		qb(lix)
 			.selectFrom("file")
 			.select(({ fn }) => [fn.count<number>("id").as("count")])
 			.where("path", "is not", "/AGENTS.md"),

@@ -1,5 +1,6 @@
 import type { Lix } from "@lix-js/sdk";
-import { selectWorkingDiff, sql } from "@lix-js/sdk";
+import { selectWorkingDiff } from "@lix-js/sdk";
+import { sql } from "@lix-js/kysely";
 
 export type WorkingFileSummary = {
 	id: string;

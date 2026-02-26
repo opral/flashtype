@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { qb } from "@lix-js/kysely";
 import {
 	useLix,
 	useQuery,
@@ -38,9 +39,17 @@ import clsx from "clsx";
  */
 export function VersionSwitcher() {
 	const lix = useLix();
+	type VersionRow = {
+		id: string;
+		name: string;
+		hidden: boolean | null;
+		inherits_from_version_id: string | null;
+		commit_id: string | null;
+		working_commit_id: string | null;
+	};
 
-	const versions = useQuery(({ lix }) =>
-		lix.db
+	const versions = useQuery<VersionRow>(({ lix }) =>
+		qb(lix)
 			.selectFrom("version")
 			.select([
 				"id",
@@ -54,11 +63,12 @@ export function VersionSwitcher() {
 			.orderBy("name", "asc"),
 	);
 
-	const activeVersion = useQueryTakeFirstOrThrow(() =>
-		lix.db
-			.selectFrom("active_version")
-			.innerJoin("version", "version.id", "active_version.version_id")
-			.select(["version.id", "version.name"]),
+	const activeVersion = useQueryTakeFirstOrThrow<{ id: string; name: string }>(
+		() =>
+			qb(lix)
+				.selectFrom("active_version")
+				.innerJoin("version", "version.id", "active_version.version_id")
+				.select(["version.id", "version.name"]),
 	);
 
 	const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -106,7 +116,7 @@ export function VersionSwitcher() {
 			if (trimmed === "" || trimmed === currentName) return;
 			setPendingAction(versionId);
 			try {
-				await lix.db
+				await qb(lix)
 					.updateTable("version")
 					.set({ name: trimmed })
 					.where("id", "=", versionId)
@@ -133,7 +143,7 @@ export function VersionSwitcher() {
 			setPendingAction(versionId);
 			const currentActiveId = activeVersion.id;
 			try {
-				await lix.db
+				await qb(lix)
 					.updateTable("version")
 					.set({ hidden: true })
 					.where("id", "=", versionId)

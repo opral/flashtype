@@ -11,6 +11,7 @@ import changelog from "./changelog.md?raw";
 import welcome from "./welcome.md?raw";
 // eslint-disable-next-line import/no-unresolved
 import agentsSeed from "./AGENTS.md?raw";
+import { qb } from "@lix-js/kysely";
 
 const encoder = new TextEncoder();
 
@@ -25,21 +26,21 @@ const SEED_DOCS: SeedDoc[] = [
 
 export async function seedMarkdownFiles(lix: Lix): Promise<void> {
 	for (const doc of SEED_DOCS) {
-		const exists = await lix.db
+		const exists = await qb(lix)
 			.selectFrom("file")
 			.where("path", "=", doc.path)
-			.select(["path"]) // small row
+			.select(["path"])
 			.executeTakeFirst();
 
 		const data = encoder.encode(doc.content);
 		if (exists) {
-			await lix.db
+			await qb(lix)
 				.updateTable("file")
 				.set({ data })
 				.where("path", "=", doc.path)
 				.execute();
 		} else {
-			await lix.db
+			await qb(lix)
 				.insertInto("file")
 				.values({ path: doc.path, data })
 				.execute();
@@ -48,7 +49,7 @@ export async function seedMarkdownFiles(lix: Lix): Promise<void> {
 }
 
 export async function ensureAgentsFile(lix: Lix): Promise<void> {
-	const exists = await lix.db
+	const exists = await qb(lix)
 		.selectFrom("file")
 		.where("path", "=", "/AGENTS.md")
 		.select(["path"])
@@ -57,7 +58,7 @@ export async function ensureAgentsFile(lix: Lix): Promise<void> {
 	if (exists) return;
 
 	const data = encoder.encode(agentsSeed);
-	await lix.db
+	await qb(lix)
 		.insertInto("file")
 		.values({ path: "/AGENTS.md", data })
 		.execute();

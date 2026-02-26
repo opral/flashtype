@@ -1,5 +1,6 @@
 import type { Lix } from "@lix-js/sdk";
 import { useLix, useQuery } from "@lix-js/react-utils";
+import { qb } from "@lix-js/kysely";
 import {
 	type KeyDef,
 	type ValueOf,
@@ -163,7 +164,7 @@ export function useKeyValue<K extends string>(
 	const untracked = opts?.untracked ?? d.untracked;
 
 	// Subscribe to live updates and suspend on first load via useQuery
-	const rows = useQuery(({ lix }) =>
+	const rows = useQuery<{ value: unknown }>(({ lix }) =>
 		selectValue(lix, key as string, {
 			defaultVersionId: String(defaultVersionId),
 			untracked,
@@ -238,16 +239,16 @@ function selectValue(
 	if (opts.untracked) {
 		const versionExpr =
 			opts.defaultVersionId === "active"
-				? lix.db.selectFrom("active_version").select("version_id")
+				? qb(lix).selectFrom("active_version").select("version_id")
 				: opts.defaultVersionId;
-		return lix.db
+		return qb(lix)
 			.selectFrom("key_value_by_version")
 			.where("lixcol_version_id", "=", versionExpr)
 			.where("key", "=", key)
 			.select(["value"]);
 	}
 	// tracked (change-controlled) — supported on active version
-	return lix.db
+	return qb(lix)
 		.selectFrom("key_value")
 		.where("key", "=", key)
 		.select(["value"]);
@@ -259,64 +260,66 @@ async function upsertValue<T>(
 	value: T,
 	opts: { defaultVersionId: string; untracked: boolean },
 ) {
-	await lix.db.transaction().execute(async (trx) => {
-		if (opts.untracked) {
-			let versionId: string;
-			if (opts.defaultVersionId === "active") {
-				const row = await trx
-					.selectFrom("active_version")
-					.select("version_id")
-					.executeTakeFirstOrThrow();
-				versionId = row.version_id as unknown as string;
-			} else {
-				versionId = opts.defaultVersionId;
+	await qb(lix)
+		.transaction()
+		.execute(async (trx) => {
+			if (opts.untracked) {
+				let versionId: string;
+				if (opts.defaultVersionId === "active") {
+					const row = await trx
+						.selectFrom("active_version")
+						.select("version_id")
+						.executeTakeFirstOrThrow();
+					versionId = row.version_id as unknown as string;
+				} else {
+					versionId = opts.defaultVersionId;
+				}
+
+				const exists = await trx
+					.selectFrom("key_value_by_version")
+					.where("key", "=", key)
+					.where("lixcol_version_id", "=", versionId)
+					.select("key")
+					.executeTakeFirst();
+
+				if (exists) {
+					await trx
+						.updateTable("key_value_by_version")
+						.set({ value, lixcol_untracked: true })
+						.where("key", "=", key)
+						.where("lixcol_version_id", "=", versionId)
+						.execute();
+				} else {
+					await trx
+						.insertInto("key_value_by_version")
+						.values({
+							key,
+							value,
+							lixcol_version_id: versionId,
+							lixcol_untracked: true,
+						})
+						.execute();
+				}
+				return;
 			}
 
-			const exists = await trx
-				.selectFrom("key_value_by_version")
+			const trackedExists = await trx
+				.selectFrom("key_value")
 				.where("key", "=", key)
-				.where("lixcol_version_id", "=", versionId)
 				.select("key")
 				.executeTakeFirst();
 
-			if (exists) {
+			if (trackedExists) {
 				await trx
-					.updateTable("key_value_by_version")
-					.set({ value, lixcol_untracked: true })
+					.updateTable("key_value")
+					.set({ value })
 					.where("key", "=", key)
-					.where("lixcol_version_id", "=", versionId)
 					.execute();
-			} else {
-				await trx
-					.insertInto("key_value_by_version")
-					.values({
-						key,
-						value,
-						lixcol_version_id: versionId,
-						lixcol_untracked: true,
-					})
-					.execute();
+				return;
 			}
-			return;
-		}
 
-		const trackedExists = await trx
-			.selectFrom("key_value")
-			.where("key", "=", key)
-			.select("key")
-			.executeTakeFirst();
-
-		if (trackedExists) {
-			await trx
-				.updateTable("key_value")
-				.set({ value })
-				.where("key", "=", key)
-				.execute();
-			return;
-		}
-
-		await trx.insertInto("key_value").values({ key, value }).execute();
-	});
+			await trx.insertInto("key_value").values({ key, value }).execute();
+		});
 }
 
 function valuesEqual(a: unknown, b: unknown): boolean {

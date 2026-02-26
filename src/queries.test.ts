@@ -1,5 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { openLix } from "@lix-js/sdk";
+import { qb } from "@lix-js/kysely";
 import {
 	selectFiles,
 	selectFilesystemEntries,
@@ -21,7 +22,7 @@ describe("selectFiles", () => {
 			wasmBytes: markdownPluginV2WasmBytes,
 		});
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values([
 				{ id: "f2", path: "/b.md", data: new Uint8Array() },
@@ -48,17 +49,17 @@ describe("selectFilesystemEntries", () => {
 		});
 
 		// Seed directories (nested) via the view so triggers normalize inputs.
-		await lix.db
+		await qb(lix)
 			.insertInto("directory")
 			.values({ path: "/docs/" } as any)
 			.returning(["id"])
 			.execute();
-		await lix.db
+		await qb(lix)
 			.insertInto("directory")
 			.values({ path: "/docs/guides/" } as any)
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values([
 				{ id: "f_root", path: "/README.md", data: new Uint8Array() },
@@ -105,12 +106,12 @@ describe("selectFilesystemEntries", () => {
 			wasmBytes: markdownPluginV2WasmBytes,
 		});
 
-		await lix.db
+		await qb(lix)
 			.insertInto("directory")
 			.values({ path: "/docs/" } as any)
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values([
 				{ id: "root_file", path: "/root.md", data: new Uint8Array() },
@@ -134,12 +135,12 @@ describe("selectFilesystemEntries", () => {
 			wasmBytes: markdownPluginV2WasmBytes,
 		});
 
-		await lix.db
+		await qb(lix)
 			.insertInto("directory")
 			.values({ path: "/private/", hidden: true } as any)
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: "hidden_file",
@@ -169,17 +170,17 @@ describe("selectWorkingDiffCount", () => {
 		const fileB = "file_B";
 
 		// Seed two files
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({ id: fileA, path: "/a.md", data: new TextEncoder().encode("A") })
 			.execute();
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({ id: fileB, path: "/b.md", data: new TextEncoder().encode("B") })
 			.execute();
 
 		// Set active file to A and checkpoint initial inserts
-		await lix.db
+		await qb(lix)
 			.insertInto("key_value_by_version")
 			.values({
 				key: "flashtype_active_file_id",
@@ -191,7 +192,7 @@ describe("selectWorkingDiffCount", () => {
 		await lix.createCheckpoint();
 
 		// Make a change in A
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("A change") })
 			.where("id", "=", fileA)
@@ -202,7 +203,7 @@ describe("selectWorkingDiffCount", () => {
 		expect(diffA1?.total ?? 0).toBeGreaterThan(0);
 
 		// Make an additional change in B but keep active file = A
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode("B change") })
 			.where("id", "=", fileB)
@@ -213,7 +214,7 @@ describe("selectWorkingDiffCount", () => {
 		expect(diffA2?.total ?? 0).toBe(diffA1?.total ?? 0);
 
 		// Switch active file to B
-		await lix.db
+		await qb(lix)
 			.updateTable("key_value_by_version")
 			.set({ value: fileB })
 			.where("key", "=", "flashtype_active_file_id")
@@ -239,7 +240,7 @@ describe("selectWorkingDiffCount", () => {
 		const fileId = "file_order_only";
 		const before = `# Title\n\nParagraph 1.\n\nParagraph 2.`;
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileId,
@@ -248,7 +249,7 @@ describe("selectWorkingDiffCount", () => {
 			})
 			.execute();
 
-		await lix.db
+		await qb(lix)
 			.insertInto("key_value_by_version")
 			.values({
 				key: "flashtype_active_file_id",
@@ -262,7 +263,7 @@ describe("selectWorkingDiffCount", () => {
 
 		// Reorder paragraphs without editing content
 		const after = `# Title\n\nParagraph 2.\n\nParagraph 1.`;
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({ data: new TextEncoder().encode(after) })
 			.where("id", "=", fileId)

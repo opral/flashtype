@@ -28,6 +28,7 @@ import { SidePanel } from "./side-panel";
 import { CentralPanel } from "./central-panel";
 import { TopBar } from "./top-bar";
 import { StatusBar } from "./status-bar";
+import { qb } from "@lix-js/kysely";
 import {
 	ViewHostRegistryProvider,
 	useViewHostRegistry,
@@ -725,13 +726,13 @@ function LayoutShellContent() {
 
 	const handleCreateNewFile = useCallback(async () => {
 		if (!lix) return;
-		const rows = await lix.db.selectFrom("file").select("path").execute();
+		const rows = await qb(lix).selectFrom("file").select("path").execute();
 		const existingPaths = new Set(
 			rows.map((row) => normalizeFilePath(row.path)),
 		);
 		const path = deriveUntitledMarkdownPath(existingPaths);
 		const id = await nanoId({ lix });
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id,

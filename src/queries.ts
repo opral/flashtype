@@ -1,11 +1,11 @@
 import { plugin as mdPlugin } from "@lix-js/plugin-md";
 import type { Lix } from "@lix-js/sdk";
-import { sql, ebEntity } from "@lix-js/sdk";
+import { ebEntity, qb, sql } from "@lix-js/kysely";
 import { AstSchemas } from "@opral/markdown-wc";
 
 // Files
 export function selectFiles(lix: Lix) {
-	return lix.db
+	return qb(lix)
 		.selectFrom("file")
 		.select(["id", "path"]) // minimal row for explorer
 		.orderBy("path", "asc");
@@ -28,7 +28,7 @@ export type FilesystemEntryRow = {
  * the client.
  */
 export function selectFilesystemEntries(lix: Lix) {
-	return lix.db
+	return qb(lix)
 		.selectFrom("directory")
 		.select((eb) => [
 			eb.ref("directory.id").as("id"),
@@ -39,18 +39,20 @@ export function selectFilesystemEntries(lix: Lix) {
 			eb.ref("directory.hidden").as("hidden"),
 		])
 		.unionAll(
-			lix.db.selectFrom("file").select((eb) => [
-				eb.ref("file.id").as("id"),
-				eb.ref("file.directory_id").as("parent_id"),
-				eb.ref("file.path").as("path"),
-				sql<string>`CASE
+			qb(lix)
+				.selectFrom("file")
+				.select((eb) => [
+					eb.ref("file.id").as("id"),
+					eb.ref("file.directory_id").as("parent_id"),
+					eb.ref("file.path").as("path"),
+					sql<string>`CASE
 						WHEN file.extension IS NULL OR file.extension = ''
 							THEN file.name
 						ELSE file.name || '.' || file.extension
 					END`.as("display_name"),
-				sql<string>`'file'`.as("kind"),
-				eb.ref("file.hidden").as("hidden"),
-			]),
+					sql<string>`'file'`.as("kind"),
+					eb.ref("file.hidden").as("hidden"),
+				]),
 		)
 		.orderBy("path", "asc")
 		.$castTo<FilesystemEntryRow>();
@@ -68,7 +70,7 @@ export function selectFilesystemEntries(lix: Lix) {
  * console.log(counts?.total ?? 0);
  */
 export function selectWorkingDiffCount(lix: Lix) {
-	const activeFileIdQ = lix.db
+	const activeFileIdQ = qb(lix)
 		.selectFrom("key_value_by_version")
 		.where("key", "=", "flashtype_active_file_id")
 		.where("lixcol_version_id", "=", "global")
@@ -105,7 +107,7 @@ export function selectWorkingDiffCount(lix: Lix) {
  */
 export function selectCheckpoints({ lix }: { lix: Lix }) {
 	return (
-		lix.db
+		qb(lix)
 			.selectFrom("change_set")
 			// Only labelled checkpoints
 			.innerJoin("commit", "commit.change_set_id", "change_set.id")
@@ -182,7 +184,7 @@ export function selectDiffCount({
 	lix: Lix;
 	changeSetId: string | any;
 }) {
-	return lix.db
+	return qb(lix)
 		.selectFrom("change_set_element")
 		.leftJoin("change", "change.id", "change_set_element.change_id")
 		.where("change_set_element.change_set_id", "=", changeSetId)
@@ -220,7 +222,7 @@ export function selectCheckpointDiffCounts({
 }) {
 	const fileIdQ = fileId
 		? sql.lit(fileId)
-		: lix.db
+		: qb(lix)
 				.selectFrom("key_value_by_version")
 				.where("key", "=", "flashtype_active_file_id")
 				.where("lixcol_version_id", "=", "global")

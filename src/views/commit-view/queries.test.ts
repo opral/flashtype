@@ -4,6 +4,7 @@ import { selectCheckpoints } from "@/queries";
 import { selectCheckpointFiles } from "./queries";
 import markdownPluginV2Manifest from "../../../lix/packages/plugin-md-v2/manifest.json";
 import markdownPluginV2WasmRaw from "../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
+import { qb } from "@lix-js/kysely";
 
 const markdownPluginV2WasmBytes = Uint8Array.from(
 	markdownPluginV2WasmRaw,
@@ -21,7 +22,7 @@ describe("selectCheckpointFiles", () => {
 		const fileId = "commit_view_file";
 		const filePath = "/docs/commit-view.md";
 
-		await lix.db
+		await qb(lix)
 			.insertInto("file")
 			.values({
 				id: fileId,
@@ -34,7 +35,7 @@ describe("selectCheckpointFiles", () => {
 		await lix.createCheckpoint();
 
 		// Modify the file to generate Markdown entity changes
-		await lix.db
+		await qb(lix)
 			.updateTable("file")
 			.set({
 				data: encoder.encode("# Title\n\nInitial content.\n\nNew paragraph."),
