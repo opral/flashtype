@@ -5,7 +5,7 @@ import {
 	useQuery,
 	useQueryTakeFirstOrThrow,
 } from "@lix-js/react-utils";
-import { createVersion, switchVersion } from "@lix-js/sdk";
+import type { Lix as JsSdkLix } from "@lix-js/sdk";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -31,14 +31,14 @@ import clsx from "clsx";
  * Dropdown trigger that lists available versions and switches the active one.
  *
  * Versions are queried reactively from the underlying Lix store. Selecting
- * another version updates the `active_version` row via `switchVersion`, which
+ * another version updates the `active_version` row via `lix.switchVersion`, which
  * in turn refreshes any subscribers (e.g. editors watching the active version).
  *
  * @example
  * <VersionSwitcher />
  */
 export function VersionSwitcher() {
-	const lix = useLix();
+	const lix = useLix() as unknown as JsSdkLix;
 	type VersionRow = {
 		id: string;
 		name: string;
@@ -78,7 +78,7 @@ export function VersionSwitcher() {
 			if (!lix || versionId === activeVersion.id) return;
 			setPendingAction(versionId);
 			try {
-				await switchVersion({ lix, to: { id: versionId } });
+				await lix.switchVersion(versionId);
 			} catch (error) {
 				console.error("Failed to switch version", error);
 			} finally {
@@ -96,11 +96,10 @@ export function VersionSwitcher() {
 		const trimmed = entered.trim();
 		setPendingAction("create");
 		try {
-			const created = await createVersion({
-				lix,
+			const created = await lix.createVersion({
 				name: trimmed.length > 0 ? trimmed : undefined,
 			});
-			await switchVersion({ lix, to: { id: created.id } });
+			await lix.switchVersion(created.id);
 		} catch (error) {
 			console.error("Failed to create version", error);
 		} finally {
@@ -149,7 +148,7 @@ export function VersionSwitcher() {
 					.where("id", "=", versionId)
 					.execute();
 				if (currentActiveId) {
-					await switchVersion({ lix, to: { id: currentActiveId } });
+					await lix.switchVersion(currentActiveId);
 				}
 			} catch (error) {
 				console.error("Failed to delete version", error);

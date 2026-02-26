@@ -9,7 +9,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { LixProvider } from "@lix-js/react-utils";
-import { createVersion, openLix, type Lix } from "@lix-js/sdk";
+import { openLix, type Lix } from "@lix-js/sdk";
 import { VersionSwitcher } from "./version-switcher";
 
 describe("VersionSwitcher", () => {
@@ -63,7 +63,7 @@ describe("VersionSwitcher", () => {
 	});
 
 	test("switches to another version when selected", async () => {
-		const newVersion = await createVersion({ lix, name: "draft" });
+		const newVersion = await lix.createVersion({ name: "draft" });
 
 		await renderWithProviders();
 
@@ -94,7 +94,7 @@ describe("VersionSwitcher", () => {
 	});
 
 	test("renames a version via actions menu", async () => {
-		const target = await createVersion({ lix, name: "docs" });
+		const target = await lix.createVersion({ name: "docs" });
 		const promptSpy = vi.fn().mockReturnValue("docs-renamed");
 		vi.stubGlobal("prompt", promptSpy);
 
@@ -135,7 +135,7 @@ describe("VersionSwitcher", () => {
 	});
 
 	test("deletes a version via actions menu", async () => {
-		const target = await createVersion({ lix, name: "temp" });
+		const target = await lix.createVersion({ name: "temp" });
 		const confirmSpy = vi.fn().mockReturnValue(true);
 		vi.stubGlobal("confirm", confirmSpy);
 
