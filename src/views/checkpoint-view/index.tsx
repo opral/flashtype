@@ -161,18 +161,31 @@ export const view = createReactViewDefinition({
 		</LixProvider>
 	),
 	activate: ({ context }) => {
-		const query = selectWorkingDiffFiles(context.lix);
-		const subscription = context.lix.observe(query).subscribe({
-			next: (rows) => {
-				const count = rows.length;
-				context.setTabBadgeCount(count > 0 ? count : null);
-			},
-			error: () => {
-				context.setTabBadgeCount(null);
-			},
+		const query = selectWorkingDiffFiles(context.lix).compile();
+		const events = context.lix.observe({
+			sql: query.sql,
+			params: query.parameters,
 		});
+		let closed = false;
+		void (async () => {
+			try {
+				while (!closed) {
+					const event = await events.next();
+					if (!event || closed) {
+						break;
+					}
+					const count = event.rows.rows.length;
+					context.setTabBadgeCount(count > 0 ? count : null);
+				}
+			} catch {
+				if (!closed) {
+					context.setTabBadgeCount(null);
+				}
+			}
+		})();
 		return () => {
-			subscription.unsubscribe();
+			closed = true;
+			events.close();
 			context.setTabBadgeCount(null);
 		};
 	},
