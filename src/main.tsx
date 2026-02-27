@@ -7,7 +7,6 @@ import { KeyValueProvider } from "./hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "./hooks/key-value/schema";
 import { ErrorFallback } from "./main.error";
 import { V2LayoutShell } from "./app/layout-shell";
-import { ensureAgentsFile, seedMarkdownFiles } from "./seed";
 import { openDesktopLix } from "./lib/lix-client";
 import markdownPluginV2ArchiveUrl from "../lix/packages/plugin-md-v2/plugin-md-v2.lixplugin?url";
 
@@ -46,8 +45,6 @@ export const AppRoot = () => {
 				await instance.installPlugin({
 					archiveBytes: markdownPluginV2ArchiveBytes,
 				});
-				await ensureAgentsFile(instance);
-				await seedMarkdownFiles(instance);
 				if (cancelled) {
 					await instance.close();
 					return;

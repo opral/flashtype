@@ -25,33 +25,34 @@ const SEED_DOCS: SeedDoc[] = [
 ];
 
 export async function seedMarkdownFiles(lix: Lix): Promise<void> {
-	for (const doc of SEED_DOCS) {
-		const exists = await qb(lix)
-			.selectFrom("lix_file")
-			.where("path", "=", doc.path)
-			.select(["path"])
-			.executeTakeFirst();
+	await qb(lix)
+		.transaction()
+		.execute(async (trx) => {
+			for (const doc of SEED_DOCS) {
+				const exists = await trx
+					.selectFrom("lix_file")
+					.where("path", "=", doc.path)
+					.select(["path"])
+					.executeTakeFirst();
 
-		const data = encoder.encode(doc.content);
-		if (exists) {
-			await qb(lix)
-				.updateTable("lix_file")
-				.set({ data })
-				.where("path", "=", doc.path)
-				.execute();
-		} else {
-			await qb(lix)
-				.insertInto("lix_file")
-				.values({ path: doc.path, data })
-				.execute();
-		}
-	}
+				const data = encoder.encode(doc.content);
+				if (exists) {
+					await trx
+						.updateTable("lix_file")
+						.set({ data })
+						.where("path", "=", doc.path)
+						.execute();
+				} else {
+					await trx.insertInto("lix_file").values({ path: doc.path, data }).execute();
+				}
+			}
+		});
 }
 
 export async function ensureAgentsFile(lix: Lix): Promise<void> {
 	await qb(lix)
 		.transaction()
-		.execute(async (trx: any) => {
+		.execute(async (trx) => {
 			const exists = await trx
 				.selectFrom("lix_file")
 				.where("path", "=", "/AGENTS.md")
@@ -65,5 +66,37 @@ export async function ensureAgentsFile(lix: Lix): Promise<void> {
 				.insertInto("lix_file")
 				.values({ path: "/AGENTS.md", data })
 				.execute();
+		});
+}
+
+export async function seedStarterContent(lix: Lix): Promise<void> {
+	const allSeedDocs = [{ path: "/AGENTS.md", content: agentsSeed }, ...SEED_DOCS];
+	await qb(lix)
+		.transaction()
+		.execute(async (trx) => {
+			for (const doc of allSeedDocs) {
+				const exists = await trx
+					.selectFrom("lix_file")
+					.where("path", "=", doc.path)
+					.select(["path"])
+					.executeTakeFirst();
+
+				if (exists) {
+					if (doc.path === "/AGENTS.md") {
+						continue;
+					}
+					await trx
+						.updateTable("lix_file")
+						.set({ data: encoder.encode(doc.content) })
+						.where("path", "=", doc.path)
+						.execute();
+					continue;
+				}
+
+				await trx
+					.insertInto("lix_file")
+					.values({ path: doc.path, data: encoder.encode(doc.content) })
+					.execute();
+			}
 		});
 }

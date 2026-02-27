@@ -2,8 +2,8 @@ import {
 	Circle,
 	CircleOff,
 	FileDown,
-	FilePlus,
 	Hammer,
+	Trash2,
 	Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,7 @@ import {
 	DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { useLix } from "@lix-js/react-utils";
-import { seedMarkdownFiles } from "@/seed";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
 
 /**
@@ -29,6 +28,7 @@ import { useKeyValue } from "@/hooks/key-value/use-key-value";
  */
 export function FlashtypeMenu() {
 	const lix = useLix();
+	const [resettingLix, setResettingLix] = useState(false);
 	const [deterministicMode, setDeterministicMode] = useKeyValue(
 		"lix_deterministic_mode" as any,
 		{
@@ -70,6 +70,25 @@ export function FlashtypeMenu() {
 		}
 	};
 
+	const handleResetLix = async () => {
+		if (resettingLix) return;
+		setResettingLix(true);
+		try {
+			const desktop = window.flashtypeDesktop?.lix;
+			if (!desktop?.wipe) {
+				console.error(
+					"Reset Lix is only available when running via Electron desktop bridge",
+				);
+				return;
+			}
+			await desktop.wipe();
+			window.location.reload();
+		} catch (error) {
+			console.error("Failed to reset Lix", error);
+			setResettingLix(false);
+		}
+	};
+
 	// Inspector is intentionally disabled for now to reduce merge conflicts.
 	// const handleToggleInspector = async () => {
 	// 	try {
@@ -78,16 +97,6 @@ export function FlashtypeMenu() {
 	// 		console.error("Failed to toggle Lix Inspector", error);
 	// 	}
 	// };
-
-	const handleSeedMarkdown = async () => {
-		if (!lix) return;
-		try {
-			await seedMarkdownFiles(lix);
-			console.log("Seeded Markdown files");
-		} catch (error) {
-			console.error("Seeding failed", error);
-		}
-	};
 
 	return (
 		<DropdownMenu>
@@ -133,15 +142,6 @@ export function FlashtypeMenu() {
 						<DropdownMenuItem
 							className="gap-1.5 text-xs"
 							onSelect={() => {
-								void handleSeedMarkdown();
-							}}
-						>
-							<FilePlus className="h-3.5 w-3.5" />
-							<span>Seed Markdown files</span>
-						</DropdownMenuItem>
-						<DropdownMenuItem
-							className="gap-1.5 text-xs"
-							onSelect={() => {
 								void toggleDeterministicMode();
 							}}
 						>
@@ -155,6 +155,16 @@ export function FlashtypeMenu() {
 									? "Turn off deterministic mode"
 									: "Turn on deterministic mode"}
 							</span>
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							disabled={resettingLix}
+							className="gap-1.5 text-xs text-destructive focus:text-destructive"
+							onSelect={() => {
+								void handleResetLix();
+							}}
+						>
+							<Trash2 className="h-3.5 w-3.5" />
+							<span>{resettingLix ? "Resetting lix..." : "Reset lix"}</span>
 						</DropdownMenuItem>
 					</DropdownMenuSubContent>
 				</DropdownMenuSub>

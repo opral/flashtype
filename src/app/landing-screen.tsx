@@ -1,9 +1,10 @@
-import { useCallback, type JSX } from "react";
-import { ClipboardPaste, FolderOpen, Files, Zap } from "lucide-react";
+import { useCallback, useState, type JSX } from "react";
+import { ClipboardPaste, FilePlus, FolderOpen, Files, Zap } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
 import type { ViewContext } from "./types";
 import { FILES_VIEW_KIND } from "./view-instance-helpers";
 import { importFromClipboard, importFromComputer } from "./import-file";
+import { seedStarterContent } from "@/seed";
 
 type LandingScreenProps = {
 	readonly context: ViewContext;
@@ -16,6 +17,8 @@ function LandingScreenContent({
 	onCreateNewFile,
 	isPanelFocused: _isPanelFocused,
 }: LandingScreenProps): JSX.Element {
+	const [isSeeding, setIsSeeding] = useState(false);
+
 	const openFilesView = useCallback(() => {
 		context.openView?.({
 			panel: "central",
@@ -44,6 +47,18 @@ function LandingScreenContent({
 			console.error("Failed to open file:", error);
 		}
 	}, [context]);
+
+	const handleSeedStarterFiles = useCallback(async () => {
+		if (isSeeding) return;
+		setIsSeeding(true);
+		try {
+			await seedStarterContent(context.lix);
+		} catch (error) {
+			console.error("Failed to seed starter files:", error);
+		} finally {
+			setIsSeeding(false);
+		}
+	}, [context.lix, isSeeding]);
 
 	return (
 		<div
@@ -96,6 +111,15 @@ function LandingScreenContent({
 						label="Open file from computer"
 						onClick={handleOpenFileFromComputer}
 						ariaLabel="Open file from computer"
+					/>
+					<ActionButton
+						icon={<FilePlus className="size-6" />}
+						label={isSeeding ? "Seeding starter files..." : "Seed starter files"}
+						onClick={() => {
+							void handleSeedStarterFiles();
+						}}
+						ariaLabel="Seed starter files"
+						disabled={isSeeding}
 					/>
 				</div>
 			</main>
