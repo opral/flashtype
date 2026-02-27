@@ -1,4 +1,5 @@
 import React, { Suspense, StrictMode } from "react";
+import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { expect, test } from "vitest";
 import { qb } from "@lix-js/kysely";
 import {
@@ -18,13 +19,6 @@ import { AstSchemas } from "@opral/markdown-wc";
 import type { Editor } from "@tiptap/core";
 import { MARKDOWN_PLUGIN_KEY } from "@/lib/lix-plugin-keys";
 import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
-import markdownPluginV2Manifest from "../../../../lix/packages/plugin-md-v2/manifest.json";
-import markdownPluginV2WasmRaw from "../../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
-
-const markdownPluginV2WasmBytes = Uint8Array.from(
-	markdownPluginV2WasmRaw,
-	(char) => char.charCodeAt(0),
-);
 
 function Providers({
 	lix,
@@ -79,8 +73,7 @@ test("renders initial document content", async () => {
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 	const fileId = "file_render_doc";
@@ -138,8 +131,7 @@ test("persists state changes on edit (paragraph append)", async () => {
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 
@@ -206,8 +198,7 @@ test("renders content under React.StrictMode", async () => {
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 
@@ -265,8 +256,7 @@ test("shows placeholder only while focused on an empty document", async () => {
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 
@@ -338,8 +328,7 @@ test("clicking the surface focuses the editor even when content exists", async (
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 
@@ -389,8 +378,7 @@ test("updates editor when switching to a version with different external state",
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 
@@ -488,8 +476,7 @@ test("updates editor when the file's state is changed externally in the same ver
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 
@@ -569,8 +556,7 @@ test("updates editor when file.data is updated externally (simulate updateFile w
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 
@@ -632,8 +618,7 @@ test("preserves main content when switching to a new version and back", async ()
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 
 	const fileId = "file_regression_main_preserve";
@@ -757,8 +742,7 @@ For example:
 		],
 	});
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 	await insertMarkdownSchemas({ lix });
 

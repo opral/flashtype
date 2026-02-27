@@ -1,4 +1,5 @@
 import { Suspense, act, type ReactNode } from "react";
+import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { DndContext } from "@dnd-kit/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -7,13 +8,6 @@ import type { PanelState, ViewContext } from "./types";
 import { openLix } from "@lix-js/sdk";
 import { ViewHostRegistryProvider } from "./view-host-registry";
 import { SEARCH_VIEW_KIND } from "./view-instance-helpers";
-import markdownPluginV2Manifest from "../../lix/packages/plugin-md-v2/manifest.json";
-import markdownPluginV2WasmRaw from "../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
-
-const markdownPluginV2WasmBytes = Uint8Array.from(
-	markdownPluginV2WasmRaw,
-	(char) => char.charCodeAt(0),
-);
 
 vi.mock("./view-registry", () => {
 	const definitions = [
@@ -58,8 +52,7 @@ let lix: Awaited<ReturnType<typeof openLix>> | null = null;
 beforeAll(async () => {
 	lix = await openLix();
 	await lix.installPlugin({
-		manifestJson: markdownPluginV2Manifest,
-		wasmBytes: markdownPluginV2WasmBytes,
+		archiveBytes: markdownPluginV2ArchiveBytes,
 	});
 });
 

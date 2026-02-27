@@ -1,6 +1,7 @@
 packages:
   - .
   - lix
+  - lix/packages/js-better-sqlite3-backend
   - lix/packages/js-sdk
   - lix/packages/js-kysely
   - lix/packages/react-utils
@@ -8,3 +9,4 @@ packages:
 
 onlyBuiltDependencies:
   - electron
+  - better-sqlite3

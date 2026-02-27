@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RotateCcw, Bug, AlertTriangle } from "lucide-react";
+import { RotateCcw, Bug, AlertTriangle, Trash2 } from "lucide-react";
 
 function formatError(err: unknown): string {
 	const asAny = err as any;
@@ -60,12 +60,29 @@ function containsOpfsHandleConflict(err: unknown): boolean {
  * Minimal error UI shown when Lix fails to load.
  */
 export function ErrorFallback(props: { error: unknown }) {
-	const [busy, setBusy] = useState(false);
+	const [busyAction, setBusyAction] = useState<"reload" | "wipe" | null>(null);
+	const [wipeError, setWipeError] = useState<string | null>(null);
+	const desktopLix = window.flashtypeDesktop?.lix;
+	const canWipe = typeof desktopLix?.wipe === "function";
+	const busy = busyAction !== null;
 
 	async function handleReset() {
 		if (busy) return;
-		setBusy(true);
+		setBusyAction("reload");
 		window.location.reload();
+	}
+
+	async function handleWipe() {
+		if (!canWipe || busy) return;
+		setBusyAction("wipe");
+		setWipeError(null);
+		try {
+			await desktopLix.wipe();
+			window.location.reload();
+		} catch (error) {
+			setBusyAction(null);
+			setWipeError(formatError(error));
+		}
 	}
 
 	if (containsOpfsHandleConflict(props.error)) {
@@ -123,8 +140,18 @@ export function ErrorFallback(props: { error: unknown }) {
 						disabled={busy}
 						className="inline-flex items-center gap-2 rounded-md bg-red-600 px-3 py-2 text-white text-sm disabled:opacity-60"
 					>
-						{busy ? "Reloading…" : "Reload App"}
+						{busyAction === "reload" ? "Reloading…" : "Reload App"}
 					</button>
+					{canWipe ? (
+						<button
+							onClick={handleWipe}
+							disabled={busy}
+							className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+						>
+							<Trash2 className="h-4 w-4" />
+							{busyAction === "wipe" ? "Wiping…" : "Wipe Local Lix"}
+						</button>
+					) : null}
 					<button
 						onClick={() => window.location.reload()}
 						className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
@@ -140,6 +167,12 @@ export function ErrorFallback(props: { error: unknown }) {
 						<Bug className="h-4 w-4" /> Report bug
 					</a>
 				</div>
+				{wipeError ? (
+					<div className="mt-4 text-xs text-destructive border border-destructive/40 rounded p-3 bg-destructive/5">
+						<div className="font-medium mb-2">Failed to wipe local Lix</div>
+						<pre>{wipeError}</pre>
+					</div>
+				) : null}
 				<div className="mt-4 text-xs opacity-80 border rounded p-3 bg-muted/20">
 					<div className="font-medium mb-2">Error details</div>
 					<pre>{formatError(props.error)}</pre>

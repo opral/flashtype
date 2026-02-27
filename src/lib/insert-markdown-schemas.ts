@@ -83,7 +83,7 @@ export async function insertMarkdownSchemas(args: { lix: Lix }): Promise<void> {
 
 	for (const insert of inserts) {
 		await lix.execute(
-			"INSERT INTO lix_stored_schema_by_version (value, lixcol_version_id) VALUES (lix_json(?1), ?2)",
+			"INSERT INTO lix_stored_schema_by_version (value, lixcol_version_id) VALUES (lix_json(?1), ?2) ON CONFLICT (entity_id, file_id, version_id) DO NOTHING",
 			[JSON.stringify(insert.value), insert.lixcol_version_id],
 		);
 	}

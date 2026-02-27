@@ -18,5 +18,5 @@
 		"jsx": "react-jsx",
 		"types": ["vite/client"]
 	},
-	"include": ["src", "setup-tests.ts"]
+	"include": ["src", "setup-tests.ts", "electron/types.d.ts"]
 }

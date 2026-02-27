@@ -1,10 +1,9 @@
 import React, { Suspense } from "react";
+import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { beforeAll, afterAll, describe, expect, test, vi } from "vitest";
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { LixProvider } from "@lix-js/react-utils";
 import { openLix } from "@lix-js/sdk";
-import markdownPluginV2Manifest from "../../../lix/packages/plugin-md-v2/manifest.json";
-import markdownPluginV2WasmRaw from "../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
 import { FilesView } from "./index";
 import type { ViewContext } from "../../app/types";
 import { qb } from "@lix-js/kysely";
@@ -12,11 +11,6 @@ import {
 	FILE_VIEW_KIND,
 	fileViewInstance,
 } from "../../app/view-instance-helpers";
-
-const markdownPluginV2WasmBytes = Uint8Array.from(
-	markdownPluginV2WasmRaw,
-	(char) => char.charCodeAt(0),
-);
 
 const createViewContext = (
 	lix: Awaited<ReturnType<typeof openLix>>,
@@ -57,8 +51,7 @@ describe("FilesView", () => {
 	test("creates an inline draft when Cmd+. is pressed", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		const openView = vi.fn();
 
@@ -73,7 +66,10 @@ describe("FilesView", () => {
 			);
 		});
 
-		const initialRows = await qb(lix).selectFrom("lix_file").select("id").execute();
+		const initialRows = await qb(lix)
+			.selectFrom("lix_file")
+			.select("id")
+			.execute();
 		expect(initialRows).toHaveLength(0);
 
 		await act(async () => {
@@ -122,8 +118,7 @@ describe("FilesView", () => {
 	test("Cmd+Backspace deletes the selected file", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		await qb(lix)
 			.insertInto("lix_file")
@@ -158,7 +153,10 @@ describe("FilesView", () => {
 		});
 
 		await waitFor(async () => {
-			const rows = await qb(lix).selectFrom("lix_file").select(["path"]).execute();
+			const rows = await qb(lix)
+				.selectFrom("lix_file")
+				.select(["path"])
+				.execute();
 			expect(rows).toHaveLength(0);
 		});
 
@@ -173,8 +171,7 @@ describe("FilesView", () => {
 	test("Cmd+Backspace deletes the selected directory", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		await qb(lix)
 			.insertInto("lix_directory")
@@ -223,8 +220,7 @@ describe("FilesView", () => {
 	test("replaces whitespace with dashes when creating files", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		const openView = vi.fn();
 
@@ -255,7 +251,10 @@ describe("FilesView", () => {
 		});
 
 		await waitFor(async () => {
-			const rows = await qb(lix).selectFrom("lix_file").select(["path"]).execute();
+			const rows = await qb(lix)
+				.selectFrom("lix_file")
+				.select(["path"])
+				.execute();
 			expect(rows).toHaveLength(1);
 			expect(rows[0]?.path).toBe("/hello%20nice%20one.md");
 		});
@@ -271,8 +270,7 @@ describe("FilesView", () => {
 	test("creates an inline directory draft when Shift+Cmd+. is pressed", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		const openView = vi.fn();
 
@@ -326,8 +324,7 @@ describe("FilesView", () => {
 	test("ignores Ctrl+. on macOS", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		const openView = vi.fn();
 
@@ -348,7 +345,10 @@ describe("FilesView", () => {
 
 		expect(utils!.queryByTestId("files-view-draft-input")).toBeNull();
 
-		const rows = await qb(lix).selectFrom("lix_file").select(["path"]).execute();
+		const rows = await qb(lix)
+			.selectFrom("lix_file")
+			.select(["path"])
+			.execute();
 		expect(rows).toHaveLength(0);
 		expect(openView).not.toHaveBeenCalled();
 
@@ -359,8 +359,7 @@ describe("FilesView", () => {
 	test("ignores Ctrl+Shift+. on macOS", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		const openView = vi.fn();
 
@@ -400,8 +399,7 @@ describe("FilesView", () => {
 	test("cancels the draft when Escape is pressed", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 		const openView = vi.fn();
 
@@ -432,7 +430,10 @@ describe("FilesView", () => {
 			expect(utils!.queryByTestId("files-view-draft-input")).toBeNull();
 		});
 
-		const rows = await qb(lix).selectFrom("lix_file").select(["path"]).execute();
+		const rows = await qb(lix)
+			.selectFrom("lix_file")
+			.select(["path"])
+			.execute();
 		expect(rows).toHaveLength(0);
 		expect(openView).not.toHaveBeenCalled();
 

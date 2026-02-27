@@ -1,21 +1,14 @@
 import { describe, expect, test } from "vitest";
+import { markdownPluginV2ArchiveBytes } from "@/test-utils/plugin-md-v2-archive";
 import { openLix } from "@lix-js/sdk";
-import markdownPluginV2Manifest from "../../../lix/packages/plugin-md-v2/manifest.json";
-import markdownPluginV2WasmRaw from "../../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
 import { selectWorkingDiffFiles } from "./queries";
 import { qb } from "@lix-js/kysely";
-
-const markdownPluginV2WasmBytes = Uint8Array.from(
-	markdownPluginV2WasmRaw,
-	(char) => char.charCodeAt(0),
-);
 
 describe("selectWorkingDiffFiles", () => {
 	test("returns changed files sorted by path and clears after checkpoint", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
-			manifestJson: markdownPluginV2Manifest,
-			wasmBytes: markdownPluginV2WasmBytes,
+			archiveBytes: markdownPluginV2ArchiveBytes,
 		});
 
 		const fileA = "checkpoint_view_a";

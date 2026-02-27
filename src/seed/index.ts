@@ -49,17 +49,21 @@ export async function seedMarkdownFiles(lix: Lix): Promise<void> {
 }
 
 export async function ensureAgentsFile(lix: Lix): Promise<void> {
-	const exists = await qb(lix)
-		.selectFrom("lix_file")
-		.where("path", "=", "/AGENTS.md")
-		.select(["path"])
-		.executeTakeFirst();
-
-	if (exists) return;
-
-	const data = encoder.encode(agentsSeed);
 	await qb(lix)
-		.insertInto("lix_file")
-		.values({ path: "/AGENTS.md", data })
-		.execute();
+		.transaction()
+		.execute(async (trx: any) => {
+			const exists = await trx
+				.selectFrom("lix_file")
+				.where("path", "=", "/AGENTS.md")
+				.select(["path"])
+				.executeTakeFirst();
+
+			if (exists) return;
+
+			const data = encoder.encode(agentsSeed);
+			await trx
+				.insertInto("lix_file")
+				.values({ path: "/AGENTS.md", data })
+				.execute();
+		});
 }
