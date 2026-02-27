@@ -37,6 +37,15 @@ export const KEY_VALUE_DEFINITIONS = {
 		defaultValue: "light",
 	} as KeyDef<"light" | "dark">,
 
+	/**
+	 * Developer setting controlling hidden-file visibility in the files widget.
+	 */
+	flashtype_show_hidden_files: {
+		defaultVersionId: "global",
+		untracked: true,
+		defaultValue: false,
+	} as KeyDef<boolean>,
+
 	// Test-only keys used in unit tests to exercise tracked behavior
 	flashtype_test_tracked: {
 		defaultVersionId: "active",

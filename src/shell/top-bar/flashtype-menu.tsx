@@ -1,6 +1,8 @@
 import {
 	Circle,
 	CircleOff,
+	Eye,
+	EyeOff,
 	FileDown,
 	Hammer,
 	Moon,
@@ -32,6 +34,9 @@ export function FlashtypeMenu() {
 	const lix = useLix();
 	const [resettingLix, setResettingLix] = useState(false);
 	const [themePreference, setThemePreference] = useKeyValue("flashtype_theme");
+	const [showHiddenFiles, setShowHiddenFiles] = useKeyValue(
+		"flashtype_show_hidden_files",
+	);
 	const [deterministicMode, setDeterministicMode] = useKeyValue(
 		"lix_deterministic_mode" as any,
 		{
@@ -53,6 +58,9 @@ export function FlashtypeMenu() {
 	const toggleThemeMode = useCallback(async () => {
 		await setThemePreference(isDarkMode ? "light" : "dark");
 	}, [isDarkMode, setThemePreference]);
+	const toggleShowHiddenFiles = useCallback(async () => {
+		await setShowHiddenFiles(!showHiddenFiles);
+	}, [setShowHiddenFiles, showHiddenFiles]);
 
 	const handleExportLix = async () => {
 		if (!lix) return;
@@ -162,6 +170,23 @@ export function FlashtypeMenu() {
 							<Search className="h-3.5 w-3.5" />
 							<span>Toggle Lix Inspector</span>
 						</DropdownMenuItem> */}
+						<DropdownMenuItem
+							className="gap-1.5 text-xs"
+							onSelect={() => {
+								void toggleShowHiddenFiles();
+							}}
+						>
+							{showHiddenFiles ? (
+								<EyeOff className="h-3.5 w-3.5" />
+							) : (
+								<Eye className="h-3.5 w-3.5" />
+							)}
+							<span>
+								{showHiddenFiles
+									? "Hide hidden files"
+									: "Show hidden files"}
+							</span>
+						</DropdownMenuItem>
 						<DropdownMenuItem
 							className="gap-1.5 text-xs"
 							onSelect={() => {

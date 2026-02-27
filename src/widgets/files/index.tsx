@@ -4,6 +4,7 @@ import { LixProvider, useLix, useQuery } from "@lix-js/react-utils";
 import { normalizeDirectoryPath, normalizeFilePath } from "@/lib/path";
 import { selectFilesystemEntries } from "@/queries";
 import { buildFilesystemTree } from "@/widgets/files/build-filesystem-tree";
+import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import type { WidgetContext } from "../../widget-runtime/types";
 import { FileTree } from "./file-tree";
 import { createReactWidgetDefinition } from "../../widget-runtime/react-widget";
@@ -15,6 +16,7 @@ import {
 	fileWidgetInstance,
 } from "../../widget-runtime/widget-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
+import type { FilesystemTreeNode } from "@/widgets/files/build-filesystem-tree";
 
 type FilesViewProps = {
 	readonly context?: WidgetContext;
@@ -41,6 +43,13 @@ export function FilesView({ context }: FilesViewProps) {
 		selectFilesystemEntries(lix),
 	);
 	const nodes = useMemo(() => buildFilesystemTree(entries ?? []), [entries]);
+	const [showHiddenFiles] = useKeyValue("flashtype_show_hidden_files");
+	const visibleNodes = useMemo(() => {
+		if (showHiddenFiles) {
+			return nodes;
+		}
+		return filterHiddenNodes(nodes);
+	}, [nodes, showHiddenFiles]);
 	const creatingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
 	const [pendingDirectoryPaths, setPendingDirectoryPaths] = useState<string[]>(
@@ -507,7 +516,7 @@ export function FilesView({ context }: FilesViewProps) {
 				</div>
 			)}
 			<FileTree
-				nodes={nodes}
+				nodes={visibleNodes}
 				openFileView={handleOpenFile}
 				onSelectItem={handleSelectItem}
 				selectedPath={selectedPath ?? undefined}
@@ -527,6 +536,26 @@ export function FilesView({ context }: FilesViewProps) {
 			/>
 		</div>
 	);
+}
+
+function filterHiddenNodes(
+	nodes: readonly FilesystemTreeNode[],
+): FilesystemTreeNode[] {
+	const visible: FilesystemTreeNode[] = [];
+	for (const node of nodes) {
+		if (node.hidden) {
+			continue;
+		}
+		if (node.type === "file") {
+			visible.push(node);
+			continue;
+		}
+		visible.push({
+			...node,
+			children: filterHiddenNodes(node.children),
+		});
+	}
+	return visible;
 }
 
 /**

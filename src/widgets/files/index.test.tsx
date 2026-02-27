@@ -217,6 +217,101 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
+	test("hides hidden files by default", async () => {
+		const lix = await openLix();
+		await lix.installPlugin({
+			archiveBytes: markdownPluginV2ArchiveBytes,
+		});
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{
+					id: "visible_file",
+					path: "/visible.md",
+					data: new Uint8Array(),
+					hidden: 0,
+				},
+				{
+					id: "hidden_file",
+					path: "/.hidden.md",
+					data: new Uint8Array(),
+					hidden: 1,
+				},
+			])
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.getByText("visible.md")).toBeInTheDocument();
+		});
+		expect(utils!.queryByText(".hidden.md")).toBeNull();
+
+		utils!.unmount();
+		await lix.close();
+	});
+
+	test("shows hidden files when the dev-tools toggle is enabled", async () => {
+		const lix = await openLix();
+		await lix.installPlugin({
+			archiveBytes: markdownPluginV2ArchiveBytes,
+		});
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{
+					id: "visible_file",
+					path: "/visible.md",
+					data: new Uint8Array(),
+					hidden: 0,
+				},
+				{
+					id: "hidden_file",
+					path: "/.hidden.md",
+					data: new Uint8Array(),
+					hidden: 1,
+				},
+			])
+			.execute();
+		await qb(lix)
+			.insertInto("lix_key_value_by_version")
+			.values({
+				key: "flashtype_show_hidden_files",
+				value: true,
+				lixcol_version_id: "global",
+				lixcol_untracked: true,
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.getByText("visible.md")).toBeInTheDocument();
+			expect(utils!.getByText(".hidden.md")).toBeInTheDocument();
+		});
+
+		utils!.unmount();
+		await lix.close();
+	});
+
 	test("replaces whitespace with dashes when creating files", async () => {
 		const lix = await openLix();
 		await lix.installPlugin({
