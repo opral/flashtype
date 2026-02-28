@@ -11,3 +11,6 @@ src/routeTree.gen.ts
 
 node_modules
 public/sqlite3.wasm
+
+# Ignore nested checkouts and generated artifacts under submodules
+submodule/*

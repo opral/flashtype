@@ -22,16 +22,16 @@ importers:
         version: 3.2.2(react@19.2.0)
       '@lix-js/better-sqlite3-backend':
         specifier: workspace:*
-        version: link:lix/packages/js-better-sqlite3-backend
+        version: link:submodule/lix/packages/js-better-sqlite3-backend
       '@lix-js/kysely':
         specifier: workspace:*
-        version: link:lix/packages/js-kysely
+        version: link:submodule/lix/packages/js-kysely
       '@lix-js/react-utils':
         specifier: workspace:*
-        version: link:lix/packages/react-utils
+        version: link:submodule/lix/packages/react-utils
       '@lix-js/sdk':
         specifier: workspace:*
-        version: link:lix/packages/js-sdk
+        version: link:submodule/lix/packages/js-sdk
       '@opral/markdown-wc':
         specifier: 0.6.0
         version: 0.6.0(@tiptap/core@3.14.0(@tiptap/pm@3.14.0))
@@ -169,7 +169,7 @@ importers:
         specifier: ^9.0.4
         version: 9.0.4
 
-  lix:
+  submodule/lix:
     devDependencies:
       '@changesets/cli':
         specifier: ^2.29.7
@@ -187,7 +187,7 @@ importers:
         specifier: ^3.1.1
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.10.15)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.30.2)(sass-embedded@1.97.1)(sass@1.97.1)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)
 
-  lix/packages/js-better-sqlite3-backend:
+  submodule/lix/packages/js-better-sqlite3-backend:
     dependencies:
       '@lix-js/sdk':
         specifier: workspace:*
@@ -203,7 +203,7 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.10.15)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.30.2)(sass-embedded@1.97.1)(sass@1.97.1)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)
 
-  lix/packages/js-kysely:
+  submodule/lix/packages/js-kysely:
     dependencies:
       json-schema-to-ts:
         specifier: ^3.1.1
@@ -222,7 +222,7 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.10.15)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.30.2)(sass-embedded@1.97.1)(sass@1.97.1)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)
 
-  lix/packages/js-sdk:
+  submodule/lix/packages/js-sdk:
     dependencies:
       '@bytecodealliance/jco':
         specifier: ^1.17.0
@@ -241,7 +241,7 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.10.15)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.30.2)(sass-embedded@1.97.1)(sass@1.97.1)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)
 
-  lix/packages/react-utils:
+  submodule/lix/packages/react-utils:
     devDependencies:
       '@lix-js/kysely':
         specifier: workspace:*
@@ -2277,9 +2277,6 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
-
-  axios@1.13.2:
-    resolution: {integrity: sha512-VPk9ebNqPcy5lRGuSlKx752IlDatOjT9paPlm8A7yOuW2Fbvp4X3JznJtT4f0GzGLLiWE9W8onz51SqLYwzGaA==}
 
   axios@1.13.5:
     resolution: {integrity: sha512-cz4ur7Vb0xS4/KUN0tPWe44eqxrIu31me+fbang3ijiNscE129POzipJJA6zniq2C/Z6sJCjMimjS8Lc/GAs8Q==}
@@ -7285,14 +7282,6 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  axios@1.13.2:
-    dependencies:
-      follow-redirects: 1.15.11
-      form-data: 4.0.5
-      proxy-from-env: 1.1.0
-    transitivePeerDependencies:
-      - debug
-
   axios@1.13.5:
     dependencies:
       follow-redirects: 1.15.11
@@ -9299,7 +9288,7 @@ snapshots:
   nx-cloud@19.1.0:
     dependencies:
       '@nrwl/nx-cloud': 19.1.0
-      axios: 1.13.2
+      axios: 1.13.5
       chalk: 4.1.2
       dotenv: 10.0.0
       fs-extra: 11.3.3
@@ -9317,7 +9306,7 @@ snapshots:
       '@yarnpkg/lockfile': 1.1.0
       '@yarnpkg/parsers': 3.0.2
       '@zkochan/js-yaml': 0.0.7
-      axios: 1.13.2
+      axios: 1.13.5
       chalk: 4.1.2
       cli-cursor: 3.1.0
       cli-spinners: 2.6.1

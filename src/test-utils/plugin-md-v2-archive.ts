@@ -1,7 +1,7 @@
-import markdownPluginV2Manifest from "../../lix/packages/plugin-md-v2/manifest.json";
-import markdownPluginV2WasmRaw from "../../lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
-import markdownDocumentSchema from "../../lix/packages/plugin-md-v2/schema/markdown_document.json";
-import markdownBlockSchema from "../../lix/packages/plugin-md-v2/schema/markdown_block.json";
+import markdownPluginV2Manifest from "../../submodule/lix/packages/plugin-md-v2/manifest.json";
+import markdownPluginV2WasmRaw from "../../submodule/lix/target/wasm32-wasip2/release/plugin_md_v2.wasm?raw";
+import markdownDocumentSchema from "../../submodule/lix/packages/plugin-md-v2/schema/markdown_document.json";
+import markdownBlockSchema from "../../submodule/lix/packages/plugin-md-v2/schema/markdown_block.json";
 
 function crc32(input: Uint8Array): number {
 	let crc = 0xffffffff;

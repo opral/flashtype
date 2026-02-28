@@ -8,7 +8,7 @@ import { KEY_VALUE_DEFINITIONS } from "./hooks/key-value/schema";
 import { ErrorFallback } from "./main.error";
 import { V2LayoutShell } from "./shell/layout-shell";
 import { openDesktopLix } from "./lib/lix-client";
-import markdownPluginV2ArchiveUrl from "../lix/packages/plugin-md-v2/plugin-md-v2.lixplugin?url";
+import markdownPluginV2ArchiveUrl from "../submodule/lix/packages/plugin-md-v2/plugin-md-v2.lixplugin?url";
 
 let markdownPluginV2ArchiveBytesPromise: Promise<Uint8Array> | undefined;
 

@@ -1,11 +1,11 @@
 packages:
   - .
-  - lix
-  - lix/packages/js-better-sqlite3-backend
-  - lix/packages/js-sdk
-  - lix/packages/js-kysely
-  - lix/packages/react-utils
-  - '!lix/packages/**/dist'
+  - submodule/lix
+  - submodule/lix/packages/js-better-sqlite3-backend
+  - submodule/lix/packages/js-sdk
+  - submodule/lix/packages/js-kysely
+  - submodule/lix/packages/react-utils
+  - '!submodule/lix/packages/**/dist'
 
 onlyBuiltDependencies:
   - electron

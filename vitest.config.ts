@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
@@ -14,5 +14,6 @@ export default defineConfig({
 		setupFiles: ["setup-tests.ts"],
 		testTimeout: 60_000,
 		hookTimeout: 60_000,
+		exclude: [...configDefaults.exclude, "lix/**", "submodule/**"],
 	},
 });
