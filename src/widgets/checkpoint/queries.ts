@@ -44,8 +44,10 @@ export function selectWorkingDiffFiles(lix: Lix) {
 			)`;
 
 			const aggregatedStatus = sql<WorkingFileSummary["status"]>`CASE
-				WHEN MAX(CASE WHEN diff.schema_key = 'lix_file_descriptor' AND diff.status = 'removed' THEN 1 ELSE 0 END) = 1 THEN 'removed'
-				WHEN MAX(CASE WHEN diff.schema_key = 'lix_file_descriptor' AND diff.status = 'added' THEN 1 ELSE 0 END) = 1 THEN 'added'
+				WHEN MAX(CASE WHEN diff.status = 'removed' THEN 1 ELSE 0 END) = 1 THEN 'removed'
+				WHEN MAX(CASE WHEN diff.status = 'added' THEN 1 ELSE 0 END) = 1
+					AND MAX(CASE WHEN diff.status = 'modified' THEN 1 ELSE 0 END) = 0
+					THEN 'added'
 				ELSE 'modified'
 			END`;
 

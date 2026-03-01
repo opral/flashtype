@@ -97,6 +97,16 @@ export type DesktopLixApi = {
 		}>;
 		options?: DesktopExecuteOptions;
 	}): Promise<SerializedQueryResult>;
+	transactionBegin(payload?: {
+		options?: DesktopExecuteOptions;
+	}): Promise<{ transactionId: string }>;
+	transactionExecute(payload: {
+		transactionId: string;
+		sql: string;
+		params?: ReadonlyArray<unknown>;
+	}): Promise<SerializedQueryResult>;
+	transactionCommit(payload: { transactionId: string }): Promise<void>;
+	transactionRollback(payload: { transactionId: string }): Promise<void>;
 	observeStart(payload: { query: DesktopObserveQuery }): Promise<string>;
 	observeNext(payload: {
 		observeId: string;

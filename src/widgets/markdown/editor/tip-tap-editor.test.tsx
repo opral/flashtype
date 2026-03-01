@@ -15,10 +15,16 @@ import { TipTapEditor } from "./tip-tap-editor";
 import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
 import { EditorProvider } from "./editor-context";
-import { AstSchemas } from "@opral/markdown-wc";
 import type { Editor } from "@tiptap/core";
 import { MARKDOWN_PLUGIN_KEY } from "@/lib/lix-plugin-keys";
 import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
+import {
+	MARKDOWN_V2_BLOCK_SCHEMA_KEY,
+	MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
+	MARKDOWN_V2_ROOT_ENTITY_ID,
+	MARKDOWN_V2_SCHEMA_VERSION,
+	type MarkdownV2BlockSnapshot,
+} from "@/lib/markdown-v2-schema";
 
 function Providers({
 	lix,
@@ -43,7 +49,7 @@ async function countWorkingDiffRows(args: {
 	fileId: string;
 }): Promise<number> {
 	const result = await args.lix.execute(
-		"SELECT COUNT(*) AS diff_count FROM diff WHERE file_id = ?1 AND status != 'unchanged'",
+		"SELECT COUNT(*) AS diff_count FROM lix_working_changes WHERE file_id = ?1 AND status != 'unchanged'",
 		[args.fileId],
 	);
 	const countIndex = result.columns.indexOf("diff_count");
@@ -58,6 +64,31 @@ async function countWorkingDiffRows(args: {
 		return Number(count);
 	}
 	return 0;
+}
+
+function parseSnapshotContent<T>(value: unknown): T | null {
+	if (value === null || value === undefined) return null;
+	if (typeof value === "string") {
+		try {
+			return JSON.parse(value) as T;
+		} catch {
+			return null;
+		}
+	}
+	return value as T;
+}
+
+function paragraphSnapshot(id: string, text: string): MarkdownV2BlockSnapshot {
+	return {
+		id,
+		type: "paragraph",
+		node: {
+			type: "paragraph",
+			data: { id },
+			children: [{ type: "text", value: text }],
+		},
+		markdown: `${text}\n`,
+	};
 }
 
 // Removed CaptureEditor and editor ref helpers; interact via DOM instead
@@ -159,8 +190,6 @@ test("persists state changes on edit (paragraph append)", async () => {
 		);
 	});
 
-	const paraSchemaKey = AstSchemas.schemasByType.paragraph["x-lix-key"];
-
 	await waitFor(async () => {
 		const end = editorRef.state.doc.content.size;
 		editorRef.commands.insertContentAt(end, {
@@ -172,14 +201,22 @@ test("persists state changes on edit (paragraph append)", async () => {
 	const rows = await qb(lix)
 		.selectFrom("lix_state")
 		.where("file_id", "=", fileId)
-		.where("schema_key", "=", paraSchemaKey)
+		.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
 		.select(["entity_id", "snapshot_content"])
 		.execute();
 
 	const hasNewParagraph = rows.some(
 		(r: any) =>
-			Array.isArray(r.snapshot_content?.children) &&
-			(r.snapshot_content.children as any[]).some(
+			parseSnapshotContent<MarkdownV2BlockSnapshot>(r.snapshot_content)?.node
+				?.type === "paragraph" &&
+			Array.isArray(
+				parseSnapshotContent<MarkdownV2BlockSnapshot>(r.snapshot_content)?.node
+					?.children,
+			) &&
+			(
+				parseSnapshotContent<MarkdownV2BlockSnapshot>(r.snapshot_content)?.node
+					?.children as any[]
+			).some(
 				(c: any) => c.type === "text" && c.value?.includes("New Paragraph"),
 			),
 	);
@@ -421,37 +458,32 @@ test("updates editor when switching to a version with different external state",
 	const vB = await lix.createVersion();
 
 	// Pre-seed version B's STATE to differ from main (explicit, deterministic)
-	const rootKey = AstSchemas.DocumentSchema["x-lix-key"];
-	const rootVer = AstSchemas.DocumentSchema["x-lix-version"];
-	const paraKey = AstSchemas.schemasByType.paragraph["x-lix-key"];
-	const paraVer = AstSchemas.schemasByType.paragraph["x-lix-version"];
 	await insertMarkdownSchemas({ lix });
 	await qb(lix)
 		.insertInto("lix_state_by_version")
 		.values({
-			entity_id: "root",
-			schema_key: rootKey,
+			entity_id: MARKDOWN_V2_ROOT_ENTITY_ID,
+			schema_key: MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
 			file_id: fileId,
 			version_id: vB.id,
 			plugin_key: MARKDOWN_PLUGIN_KEY,
-			snapshot_content: { order: ["p1"] } as any,
-			schema_version: rootVer,
+			snapshot_content: {
+				id: MARKDOWN_V2_ROOT_ENTITY_ID,
+				order: ["p1"],
+			} as any,
+			schema_version: MARKDOWN_V2_SCHEMA_VERSION,
 		} as any)
 		.execute();
 	await qb(lix)
 		.insertInto("lix_state_by_version")
 		.values({
 			entity_id: "p1",
-			schema_key: paraKey,
+			schema_key: MARKDOWN_V2_BLOCK_SCHEMA_KEY,
 			file_id: fileId,
 			version_id: vB.id,
 			plugin_key: MARKDOWN_PLUGIN_KEY,
-			snapshot_content: {
-				type: "paragraph",
-				data: { id: "p1" },
-				children: [{ type: "text", value: "Hello B" }],
-			} as any,
-			schema_version: paraVer,
+			snapshot_content: paragraphSnapshot("p1", "Hello B") as any,
+			schema_version: MARKDOWN_V2_SCHEMA_VERSION,
 		} as any)
 		.execute();
 
@@ -515,11 +547,9 @@ test("updates editor when the file's state is changed externally in the same ver
 	const editorA = await screen.findByTestId("tiptap-editor");
 	expect(editorA).toHaveTextContent("Hello A");
 
-	const paragraphSchemaKey = AstSchemas.schemasByType.paragraph["x-lix-key"];
-
 	const paragraph = await qb(lix)
 		.selectFrom("lix_state")
-		.where("schema_key", "=", paragraphSchemaKey)
+		.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
 		.where("file_id", "=", fileId)
 		.selectAll()
 		.executeTakeFirstOrThrow();
@@ -530,11 +560,7 @@ test("updates editor when the file's state is changed externally in the same ver
 		.where("entity_id", "=", paragraph.entity_id)
 		.where("file_id", "=", paragraph.file_id)
 		.set({
-			snapshot_content: {
-				type: "paragraph",
-				data: { id: paragraph.entity_id },
-				children: [{ type: "text", value: "Hello B" }],
-			},
+			snapshot_content: paragraphSnapshot(String(paragraph.entity_id), "Hello B"),
 		})
 		.execute();
 
@@ -647,35 +673,30 @@ test("preserves main content when switching to a new version and back", async ()
 	const mainId = (main as any).version_id as string;
 
 	// Seed state in main to "Hello world"
-	const rootKey = AstSchemas.DocumentSchema["x-lix-key"];
-	const rootVer = AstSchemas.DocumentSchema["x-lix-version"];
-	const paraKey = AstSchemas.schemasByType.paragraph["x-lix-key"];
-	const paraVer = AstSchemas.schemasByType.paragraph["x-lix-version"];
 	await insertMarkdownSchemas({ lix });
 	await qb(lix)
 		.insertInto("lix_state")
 		.values({
-			entity_id: "root",
-			schema_key: rootKey,
+			entity_id: MARKDOWN_V2_ROOT_ENTITY_ID,
+			schema_key: MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
 			file_id: fileId,
 			plugin_key: MARKDOWN_PLUGIN_KEY,
-			snapshot_content: { order: ["p1"] } as any,
-			schema_version: rootVer,
+			snapshot_content: {
+				id: MARKDOWN_V2_ROOT_ENTITY_ID,
+				order: ["p1"],
+			} as any,
+			schema_version: MARKDOWN_V2_SCHEMA_VERSION,
 		} as any)
 		.execute();
 	await qb(lix)
 		.insertInto("lix_state")
 		.values({
 			entity_id: "p1",
-			schema_key: paraKey,
+			schema_key: MARKDOWN_V2_BLOCK_SCHEMA_KEY,
 			file_id: fileId,
 			plugin_key: MARKDOWN_PLUGIN_KEY,
-			snapshot_content: {
-				type: "paragraph",
-				data: { id: "p1" },
-				children: [{ type: "text", value: "Hello world" }],
-			} as any,
-			schema_version: paraVer,
+			snapshot_content: paragraphSnapshot("p1", "Hello world") as any,
+			schema_version: MARKDOWN_V2_SCHEMA_VERSION,
 		} as any)
 		.execute();
 

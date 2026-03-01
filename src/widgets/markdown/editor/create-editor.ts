@@ -8,8 +8,16 @@ import {
 	astToTiptapDoc,
 	tiptapDocToAst,
 } from "@opral/markdown-wc/tiptap";
-import { parseMarkdown, AstSchemas, normalizeAst } from "@opral/markdown-wc";
+import { parseMarkdown, normalizeAst, serializeAst } from "@opral/markdown-wc";
 import { MARKDOWN_PLUGIN_KEY } from "@/lib/lix-plugin-keys";
+import {
+	MARKDOWN_V2_BLOCK_SCHEMA_KEY,
+	MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
+	MARKDOWN_V2_ROOT_ENTITY_ID,
+	MARKDOWN_V2_SCHEMA_VERSION,
+	type MarkdownV2BlockSnapshot,
+	type MarkdownV2DocumentSnapshot,
+} from "@/lib/markdown-v2-schema";
 import { handlePaste as defaultHandlePaste } from "./handle-paste";
 import { SlashCommandsExtension } from "./extensions/slash-commands";
 import { TableNavigationExtension } from "./extensions/table-navigation";
@@ -34,6 +42,18 @@ const cloneSnapshot = <T>(value: T): T =>
 
 const canonicalizeSnapshot = <T>(value: T): T =>
 	value == null ? value : normalizeAst(cloneSnapshot(value as any));
+
+const parseSnapshotContent = <T>(value: unknown): T | null => {
+	if (value === null || value === undefined) return null;
+	if (typeof value === "string") {
+		try {
+			return JSON.parse(value) as T;
+		} catch {
+			return null;
+		}
+	}
+	return value as T;
+};
 
 const snapshotFingerprint = (value: unknown): string => {
 	if (value === null || value === undefined) return "null";
@@ -84,34 +104,51 @@ export function createEditor(args: CreateEditorArgs): Editor {
 
 	// Removed markdown file writes; state is the source of truth.
 
-	async function upsertNodes(trx: any, fileId: string, nodes: any[]) {
+	function blockSnapshotFromNode(node: any): MarkdownV2BlockSnapshot {
+		const normalizedNode = canonicalizeSnapshot(node) as Record<string, unknown>;
+		const id = String((normalizedNode as any)?.data?.id ?? "");
+		const type =
+			typeof normalizedNode.type === "string" && normalizedNode.type.length > 0
+				? normalizedNode.type
+				: "paragraph";
+		const markdown = serializeAst({
+			type: "root",
+			children: [normalizedNode],
+		} as any);
+		return {
+			id,
+			type,
+			node: normalizedNode,
+			markdown,
+		};
+	}
+
+	async function upsertBlocks(trx: any, fileId: string, nodes: any[]) {
 		for (const node of nodes) {
-			const schema = AstSchemas.schemasByType[node.type];
-			if (!schema) continue;
-			const schemaKey = schema["x-lix-key"];
-			const schemaVersion = schema["x-lix-version"];
 			const entityId = node.data.id as string;
-			const normalizedNode = canonicalizeSnapshot(node);
-			const normalizedFingerprint = snapshotFingerprint(normalizedNode);
+			const snapshot = blockSnapshotFromNode(node);
+			const normalizedFingerprint = snapshotFingerprint(snapshot);
 
 			const existing = await trx
 				.selectFrom("lix_state")
 				.where("file_id", "=", fileId)
-				.where("schema_key", "=", schemaKey)
+				.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
 				.where("entity_id", "=", entityId)
 				.select(["entity_id", "snapshot_content"]) // small row
 				.executeTakeFirst();
 
 			if (existing) {
-				const prevSnapshot = canonicalizeSnapshot(existing.snapshot_content);
+				const prevSnapshot = canonicalizeSnapshot(
+					parseSnapshotContent(existing.snapshot_content),
+				);
 				if (snapshotFingerprint(prevSnapshot) === normalizedFingerprint) {
 					continue;
 				}
 				await trx
 					.updateTable("lix_state")
-					.set({ snapshot_content: normalizedNode })
+					.set({ snapshot_content: snapshot })
 					.where("file_id", "=", fileId)
-					.where("schema_key", "=", schemaKey)
+					.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
 					.where("entity_id", "=", entityId)
 					.execute();
 			} else {
@@ -120,10 +157,10 @@ export function createEditor(args: CreateEditorArgs): Editor {
 					.values({
 						entity_id: entityId,
 						file_id: fileId,
-						schema_key: schemaKey,
-						schema_version: schemaVersion,
+						schema_key: MARKDOWN_V2_BLOCK_SCHEMA_KEY,
+						schema_version: MARKDOWN_V2_SCHEMA_VERSION,
 						plugin_key: MARKDOWN_PLUGIN_KEY,
-						snapshot_content: normalizedNode,
+						snapshot_content: snapshot,
 					})
 					.execute();
 			}
@@ -131,22 +168,24 @@ export function createEditor(args: CreateEditorArgs): Editor {
 	}
 
 	async function upsertRootOrder(trx: any, fileId: string, order: string[]) {
-		const rootKey = (AstSchemas.DocumentSchema as any)["x-lix-key"] as string;
-		const rootVersion = (AstSchemas.DocumentSchema as any)[
-			"x-lix-version"
-		] as string;
+		const snapshotContent: MarkdownV2DocumentSnapshot = {
+			id: MARKDOWN_V2_ROOT_ENTITY_ID,
+			order,
+		};
 		const existingRoot = await trx
 			.selectFrom("lix_state")
 			.where("file_id", "=", fileId as any)
-			.where("schema_key", "=", rootKey)
+			.where("schema_key", "=", MARKDOWN_V2_DOCUMENT_SCHEMA_KEY)
+			.where("entity_id", "=", MARKDOWN_V2_ROOT_ENTITY_ID)
 			.select(["entity_id", "snapshot_content"]) // small row
 			.executeTakeFirst();
 
 		if (existingRoot) {
-			const prevOrder = Array.isArray(
-				(existingRoot as any).snapshot_content?.order,
-			)
-				? ((existingRoot as any).snapshot_content.order as string[])
+			const parsedRoot = parseSnapshotContent<MarkdownV2DocumentSnapshot>(
+				(existingRoot as any).snapshot_content,
+			);
+			const prevOrder = Array.isArray(parsedRoot?.order)
+				? (parsedRoot.order as string[])
 				: [];
 			if (
 				order.length === prevOrder.length &&
@@ -156,20 +195,21 @@ export function createEditor(args: CreateEditorArgs): Editor {
 			}
 			await trx
 				.updateTable("lix_state")
-				.set({ snapshot_content: { order } })
+				.set({ snapshot_content: snapshotContent })
 				.where("file_id", "=", fileId as any)
-				.where("schema_key", "=", rootKey)
+				.where("schema_key", "=", MARKDOWN_V2_DOCUMENT_SCHEMA_KEY)
+				.where("entity_id", "=", MARKDOWN_V2_ROOT_ENTITY_ID)
 				.execute();
 		} else {
 			await trx
 				.insertInto("lix_state")
 				.values({
-					entity_id: "root",
+					entity_id: MARKDOWN_V2_ROOT_ENTITY_ID,
 					file_id: fileId as any,
-					schema_key: rootKey,
-					schema_version: rootVersion,
+					schema_key: MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
+					schema_version: MARKDOWN_V2_SCHEMA_VERSION,
 					plugin_key: MARKDOWN_PLUGIN_KEY,
-					snapshot_content: { order },
+					snapshot_content: snapshotContent,
 				})
 				.execute();
 		}
@@ -254,22 +294,22 @@ export function createEditor(args: CreateEditorArgs): Editor {
 					})
 						.transaction()
 						.execute(async (trx: any) => {
-							await upsertNodes(trx, fileId, children);
+							await upsertBlocks(trx, fileId, children);
 							await upsertRootOrder(trx, fileId, order);
-							const keepIds = [...order, "root"];
-							if (keepIds.length > 0) {
+							if (order.length > 0) {
 								await trx
 									.deleteFrom("lix_state")
 									.where("file_id", "=", fileId as any)
 									.where("plugin_key", "=", MARKDOWN_PLUGIN_KEY)
-									.where("entity_id", "not in", keepIds as any)
+									.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
+									.where("entity_id", "not in", order as any)
 									.execute();
 							} else {
 								await trx
 									.deleteFrom("lix_state")
 									.where("file_id", "=", fileId as any)
 									.where("plugin_key", "=", MARKDOWN_PLUGIN_KEY)
-									.where("entity_id", "<>", "root")
+									.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
 									.execute();
 							}
 						});

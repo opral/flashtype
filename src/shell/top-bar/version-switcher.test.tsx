@@ -62,8 +62,9 @@ describe("VersionSwitcher", () => {
 		expect(trigger).toHaveTextContent("main");
 	});
 
-	test("switches to another version when selected", async () => {
-		const newVersion = await lix.createVersion({ name: "draft" });
+test("switches to another version when selected", async () => {
+		const draftName = `draft-${Math.random().toString(36).slice(2, 7)}`;
+		const newVersion = await lix.createVersion({ name: draftName });
 
 		await renderWithProviders();
 
@@ -76,26 +77,32 @@ describe("VersionSwitcher", () => {
 			fireEvent.pointerUp(trigger, { button: 0 });
 		});
 
-		const draftItem = await screen.findByRole("menuitem", { name: "draft" });
+		const draftItem = await screen.findByRole("menuitem", { name: draftName });
 
 		await act(async () => {
 			fireEvent.click(draftItem);
 		});
 
-		expect(
-			await screen.findByRole("button", { name: "Select version" }),
-		).toHaveTextContent("draft");
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "Select version" }),
+			).toHaveTextContent(draftName);
+		});
 
-		const active = await qb(lix)
-			.selectFrom("lix_active_version")
-			.select("version_id")
-			.executeTakeFirstOrThrow();
-		expect(active.version_id).toBe(newVersion.id);
+		await waitFor(async () => {
+			const active = await qb(lix)
+				.selectFrom("lix_active_version")
+				.select("version_id")
+				.executeTakeFirstOrThrow();
+			expect(active.version_id).toBe(newVersion.id);
+		});
 	});
 
-	test("renames a version via actions menu", async () => {
-		const target = await lix.createVersion({ name: "docs" });
-		const promptSpy = vi.fn().mockReturnValue("docs-renamed");
+test("renames a version via actions menu", async () => {
+		const baseName = `docs-${Math.random().toString(36).slice(2, 7)}`;
+		const renamedName = `${baseName}-renamed`;
+		const target = await lix.createVersion({ name: baseName });
+		const promptSpy = vi.fn().mockReturnValue(renamedName);
 		vi.stubGlobal("prompt", promptSpy);
 
 		await renderWithProviders();
@@ -110,7 +117,7 @@ describe("VersionSwitcher", () => {
 		});
 
 		const actionsButton = await screen.findByRole("button", {
-			name: "Version actions for docs",
+			name: `Version actions for ${baseName}`,
 		});
 		await act(async () => {
 			fireEvent.pointerDown(actionsButton, { button: 0 });
@@ -123,7 +130,7 @@ describe("VersionSwitcher", () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText("docs-renamed")).toBeInTheDocument();
+			expect(screen.getByText(renamedName)).toBeInTheDocument();
 		});
 
 		const row = await qb(lix)
@@ -131,11 +138,12 @@ describe("VersionSwitcher", () => {
 			.select(["id", "name"])
 			.where("id", "=", target.id)
 			.executeTakeFirstOrThrow();
-		expect(row.name).toBe("docs-renamed");
+		expect(row.name).toBe(renamedName);
 	});
 
-	test("deletes a version via actions menu", async () => {
-		const target = await lix.createVersion({ name: "temp" });
+test("deletes a version via actions menu", async () => {
+		const tempName = `temp-${Math.random().toString(36).slice(2, 7)}`;
+		const target = await lix.createVersion({ name: tempName });
 		const confirmSpy = vi.fn().mockReturnValue(true);
 		vi.stubGlobal("confirm", confirmSpy);
 
@@ -151,7 +159,7 @@ describe("VersionSwitcher", () => {
 		});
 
 		const actionsButton = await screen.findByRole("button", {
-			name: "Version actions for temp",
+			name: `Version actions for ${tempName}`,
 		});
 		await act(async () => {
 			fireEvent.pointerDown(actionsButton, { button: 0 });
@@ -174,7 +182,7 @@ describe("VersionSwitcher", () => {
 
 		await waitFor(() => {
 			expect(
-				screen.queryByRole("menuitem", { name: "temp" }),
+				screen.queryByRole("menuitem", { name: tempName }),
 			).not.toBeInTheDocument();
 		});
 

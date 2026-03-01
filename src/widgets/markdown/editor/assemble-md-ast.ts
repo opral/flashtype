@@ -1,6 +1,24 @@
 import type { Lix } from "@lix-js/sdk";
-import { AstSchemas } from "@opral/markdown-wc";
 import { qb } from "@lix-js/kysely";
+import {
+	MARKDOWN_V2_BLOCK_SCHEMA_KEY,
+	MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
+	MARKDOWN_V2_ROOT_ENTITY_ID,
+	type MarkdownV2BlockSnapshot,
+	type MarkdownV2DocumentSnapshot,
+} from "@/lib/markdown-v2-schema";
+
+function parseSnapshotContent<T>(value: unknown): T | null {
+	if (value === null || value === undefined) return null;
+	if (typeof value === "string") {
+		try {
+			return JSON.parse(value) as T;
+		} catch {
+			return null;
+		}
+	}
+	return value as T;
+}
 
 export async function assembleMdAst(args: {
 	lix: Lix;
@@ -9,32 +27,57 @@ export async function assembleMdAst(args: {
 	const { lix, fileId } = args;
 	if (!fileId) return { type: "root", children: [] };
 
-	const rootKey = AstSchemas.DocumentSchema["x-lix-key"] as string;
 	const root = await qb(lix)
 		.selectFrom("lix_state")
 		.where("file_id", "=", fileId)
-		.where("schema_key", "=", rootKey)
+		.where("schema_key", "=", MARKDOWN_V2_DOCUMENT_SCHEMA_KEY)
+		.where("entity_id", "=", MARKDOWN_V2_ROOT_ENTITY_ID)
 		.select(["snapshot_content"])
 		.executeTakeFirst();
 
-	const order: string[] = Array.isArray(root?.snapshot_content?.order)
-		? ((root as any).snapshot_content.order as string[])
+	const documentSnapshot = parseSnapshotContent<MarkdownV2DocumentSnapshot>(
+		root?.snapshot_content ?? null,
+	);
+	const order: string[] = Array.isArray(documentSnapshot?.order)
+		? documentSnapshot.order
 		: [];
-	if (!order.length) return { type: "root", children: [] };
 
 	const nodes = await qb(lix)
 		.selectFrom("lix_state")
 		.where("file_id", "=", fileId)
-		.select(["entity_id", "schema_key", "snapshot_content"])
+		.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
+		.select(["entity_id", "snapshot_content"])
 		.execute();
 
-	const byId = new Map<string, any>();
-	for (const r of nodes) byId.set(r.entity_id, r.snapshot_content);
+	const byId = new Map<string, MarkdownV2BlockSnapshot>();
+	for (const row of nodes) {
+		const snapshot = parseSnapshotContent<MarkdownV2BlockSnapshot>(
+			row.snapshot_content,
+		);
+		if (!snapshot?.id || !snapshot?.node) {
+			continue;
+		}
+		byId.set(snapshot.id, snapshot);
+	}
 
 	const children: any[] = [];
 	for (const id of order) {
-		const n = byId.get(id);
-		if (n) children.push(n);
+		const block = byId.get(id);
+		if (block?.node) {
+			children.push(block.node);
+		}
+	}
+
+	if (children.length < byId.size) {
+		const orderedIds = new Set(order);
+		for (const [id, block] of byId.entries()) {
+			if (orderedIds.has(id)) {
+				continue;
+			}
+			if (block.node) {
+				children.push(block.node);
+			}
+		}
 	}
 
 	return { type: "root", children };

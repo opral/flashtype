@@ -28,8 +28,6 @@ type DraftState = {
 	value: string;
 } | null;
 
-const TRACE_FILES_WIDGET = import.meta.env.DEV;
-
 /**
  * Files view - Browse and pin project documents. Owns the Cmd/Ctrl + . shortcut
  * that opens the inline creation prompt for a new markdown file. File paths are
@@ -105,62 +103,6 @@ export function FilesView({ context }: FilesViewProps) {
 			prev.filter((path) => !entryDirectorySet.has(path)),
 		);
 	}, [entryDirectorySet, pendingDirectoryPaths.length]);
-
-	useEffect(() => {
-		if (!TRACE_FILES_WIDGET) return;
-		console.log("[files-widget-trace] render snapshot", {
-			showHiddenFiles,
-			entryCount: entries?.length ?? 0,
-			nodeCount: nodes.length,
-			visibleNodeCount: visibleNodes.length,
-			entries: (entries ?? []).map((entry) => ({
-				kind: entry.kind,
-				path: entry.path,
-				hidden: entry.hidden,
-			})),
-			nodes: flattenNodes(nodes),
-			visibleNodes: flattenNodes(visibleNodes),
-		});
-	}, [entries, nodes, visibleNodes, showHiddenFiles]);
-
-	useEffect(() => {
-		if (!TRACE_FILES_WIDGET) return;
-		let canceled = false;
-		void (async () => {
-			try {
-				const [activeVersionRows, byVersionRows, activeRows] = await Promise.all([
-					qb(lix).selectFrom("lix_active_version").select(["version_id"]).execute(),
-					qb(lix)
-						.selectFrom("lix_directory_by_version")
-						.select(["path", "hidden", "lixcol_version_id"])
-						.where("path", "like", "/.%")
-						.orderBy("path", "asc")
-						.execute(),
-					qb(lix)
-						.selectFrom("lix_directory")
-						.select(["path", "hidden"])
-						.where("path", "like", "/.%")
-						.orderBy("path", "asc")
-						.execute(),
-				]);
-				if (canceled) return;
-				console.log("[files-widget-trace] filesystem query snapshot", {
-					activeVersionRows,
-					dotDirectoriesByVersion: byVersionRows,
-					dotDirectoriesActive: activeRows,
-				});
-			} catch (error) {
-				if (canceled) return;
-				console.log(
-					"[files-widget-trace] failed to query filesystem trace",
-					error,
-				);
-			}
-		})();
-		return () => {
-			canceled = true;
-		};
-	}, [lix, entries]);
 	const isMacPlatform = useMemo(() => detectMacPlatform(), []);
 	const isPanelFocused = context?.isPanelFocused ?? false;
 
@@ -218,8 +160,19 @@ export function FilesView({ context }: FilesViewProps) {
 						data: new TextEncoder().encode(""),
 					})
 					.returning("id")
-					.executeTakeFirstOrThrow();
-				const id = createdFile.id;
+					.executeTakeFirst();
+				const id =
+					(createdFile?.id as string | undefined) ??
+					(
+						await qb(lix)
+							.selectFrom("lix_file")
+							.select("id")
+							.where("path", "=", path)
+							.executeTakeFirst()
+					)?.id;
+				if (!id) {
+					throw new Error(`created file id not found for path '${path}'`);
+				}
 				setPendingPaths((prev) => [...prev, path]);
 				setSelectedPath(path);
 				setSelectedKind("file");
@@ -305,17 +258,6 @@ export function FilesView({ context }: FilesViewProps) {
 				: normalizeDirectoryPath(selectedPath);
 		try {
 			if (selectedKind === "file") {
-				const record = await qb(lix)
-					.selectFrom("lix_file")
-					.select(["id"])
-					.where("path", "=", normalizedPath)
-					.executeTakeFirst();
-				if (record?.id) {
-					await qb(lix)
-						.deleteFrom("lix_state")
-						.where("file_id", "=", record.id as any)
-						.execute();
-				}
 				await qb(lix)
 					.deleteFrom("lix_file")
 					.where("path", "=", normalizedPath)
@@ -614,26 +556,6 @@ function filterHiddenNodes(
 		});
 	}
 	return visible;
-}
-
-function flattenNodes(nodes: readonly FilesystemTreeNode[]): Array<{
-	kind: "file" | "directory";
-	path: string;
-	hidden: boolean;
-}> {
-	const all: Array<{ kind: "file" | "directory"; path: string; hidden: boolean }> =
-		[];
-	for (const node of nodes) {
-		all.push({
-			kind: node.type,
-			path: node.path,
-			hidden: node.hidden,
-		});
-		if (node.type === "directory") {
-			all.push(...flattenNodes(node.children));
-		}
-	}
-	return all;
 }
 
 /**

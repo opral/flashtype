@@ -1,15 +1,15 @@
 import type { Lix } from "@lix-js/sdk";
-import { AstSchemas } from "@opral/markdown-wc";
 import { qb } from "@lix-js/kysely";
+import { MARKDOWN_V2_SCHEMA_DEFINITIONS } from "./markdown-v2-schema";
 
-type MarkdownSchemaDefinition = (typeof AstSchemas.allSchemas)[number];
+type MarkdownSchemaDefinition = Record<string, unknown>;
 
 function normalizeSchemaVersion(version: string): string {
-	return version === "1.0" ? "1" : version;
+	return version;
 }
 
 /**
- * Ensures all Markdown WC schema definitions are stored in the current Lix.
+ * Ensures all plugin-md-v2 schema definitions are stored in the current Lix.
  *
  * Seeds `lix_stored_schema_by_version` with any schema definitions that are not
  * already present for the `global` version. Existing definitions are left
@@ -56,7 +56,7 @@ export async function insertMarkdownSchemas(args: { lix: Lix }): Promise<void> {
 		lixcol_version_id: "global";
 	}> = [];
 
-	for (const schema of AstSchemas.allSchemas as MarkdownSchemaDefinition[]) {
+	for (const schema of MARKDOWN_V2_SCHEMA_DEFINITIONS) {
 		const schemaKey = schema["x-lix-key"];
 		const schemaVersionRaw = schema["x-lix-version"];
 		const schemaVersion =

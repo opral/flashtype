@@ -24,6 +24,9 @@ export async function openDesktopLix(): Promise<Lix> {
 	await desktop.lix.open();
 
 	let closed = false;
+	const openSqlTransactions = new Set<{
+		forceRollback: () => Promise<void>;
+	}>();
 
 	const ensureOpen = (methodName: string): void => {
 		if (closed) {
@@ -68,8 +71,10 @@ export async function openDesktopLix(): Promise<Lix> {
 		ensureOpen("beginTransaction");
 		const releaseSlot = await acquireTransactionSlot();
 		let transactionClosed = false;
+		let transactionId = "";
 		try {
-			await desktop.lix.execute({ sql: "BEGIN", params: [], options });
+			const handle = await desktop.lix.transactionBegin({ options });
+			transactionId = handle.transactionId;
 		} catch (error) {
 			releaseSlot();
 			throw error;
@@ -84,27 +89,48 @@ export async function openDesktopLix(): Promise<Lix> {
 					throw new Error("transaction is closed; execute() is unavailable");
 				}
 				ensureOpen("transaction.execute");
-				return await desktop.lix.execute({ sql, params, options });
+				return await desktop.lix.transactionExecute({
+					transactionId,
+					sql,
+					params,
+				});
 			},
 			commit: async (): Promise<void> => {
 				if (transactionClosed) return;
 				try {
-					await desktop.lix.execute({ sql: "COMMIT", params: [], options });
+					await desktop.lix.transactionCommit({ transactionId });
 				} finally {
 					transactionClosed = true;
+					openSqlTransactions.delete(txHandle);
 					releaseSlot();
 				}
 			},
 			rollback: async (): Promise<void> => {
 				if (transactionClosed) return;
 				try {
-					await desktop.lix.execute({ sql: "ROLLBACK", params: [], options });
+					await desktop.lix.transactionRollback({ transactionId });
+				} finally {
+					transactionClosed = true;
+					openSqlTransactions.delete(txHandle);
+					releaseSlot();
+				}
+			},
+		} satisfies SqlTransaction;
+
+		const txHandle = {
+			forceRollback: async (): Promise<void> => {
+				if (transactionClosed) {
+					return;
+				}
+				try {
+					await desktop.lix.transactionRollback({ transactionId });
 				} finally {
 					transactionClosed = true;
 					releaseSlot();
 				}
 			},
-		} satisfies SqlTransaction;
+		};
+		openSqlTransactions.add(txHandle);
 
 		return tx;
 	};
@@ -275,6 +301,14 @@ export async function openDesktopLix(): Promise<Lix> {
 			return;
 		}
 		closed = true;
+		for (const tx of [...openSqlTransactions]) {
+			try {
+				await tx.forceRollback();
+			} catch {
+				// ignore rollback failures while shutting down
+			}
+		}
+		openSqlTransactions.clear();
 		await desktop.lix.close();
 	};
 

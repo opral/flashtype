@@ -1,7 +1,7 @@
 import { MARKDOWN_PLUGIN_KEY } from "@/lib/lix-plugin-keys";
+import { MARKDOWN_V2_DOCUMENT_SCHEMA_KEY } from "@/lib/markdown-v2-schema";
 import type { Lix } from "@lix-js/sdk";
 import { qb, sql } from "@lix-js/kysely";
-import { AstSchemas } from "@opral/markdown-wc";
 
 export type CheckpointFileChangeRow = {
 	readonly file_id: string;
@@ -34,7 +34,7 @@ export function selectCheckpointFiles({
 }) {
 	const pathExpr = sql<string>`COALESCE(
 		MAX(lix_file.path),
-		change_set_element.file_id
+		lix_change_set_element.file_id
 	)`;
 
 	return qb(lix)
@@ -43,7 +43,7 @@ export function selectCheckpointFiles({
 		.leftJoin("lix_file", "lix_file.id", "lix_change_set_element.file_id")
 		.where("lix_change_set_element.change_set_id", "=", changeSetId)
 		.where("lix_change.plugin_key", "=", MARKDOWN_PLUGIN_KEY)
-		.where("lix_change.schema_key", "!=", AstSchemas.DocumentSchema["x-lix-key"])
+		.where("lix_change.schema_key", "!=", MARKDOWN_V2_DOCUMENT_SCHEMA_KEY)
 		.groupBy(["lix_change_set_element.file_id"])
 		.select((eb) => [
 			eb.ref("lix_change_set_element.file_id").as("file_id"),

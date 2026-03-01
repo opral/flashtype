@@ -5,6 +5,14 @@ const lix = {
 	execute: (payload) => ipcRenderer.invoke("lix:execute", payload),
 	executeTransaction: (payload) =>
 		ipcRenderer.invoke("lix:executeTransaction", payload),
+	transactionBegin: (payload) =>
+		ipcRenderer.invoke("lix:transaction:begin", payload),
+	transactionExecute: (payload) =>
+		ipcRenderer.invoke("lix:transaction:execute", payload),
+	transactionCommit: (payload) =>
+		ipcRenderer.invoke("lix:transaction:commit", payload),
+	transactionRollback: (payload) =>
+		ipcRenderer.invoke("lix:transaction:rollback", payload),
 	observeStart: (payload) => ipcRenderer.invoke("lix:observe:start", payload),
 	observeNext: (payload) => ipcRenderer.invoke("lix:observe:next", payload),
 	observeClose: (payload) => ipcRenderer.invoke("lix:observe:close", payload),

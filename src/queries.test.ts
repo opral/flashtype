@@ -8,6 +8,10 @@ import {
 	selectWorkingDiffCount,
 } from "@/queries";
 
+function isHidden(value: unknown): boolean {
+	return value === 1 || value === true || value === "true";
+}
+
 describe("selectFiles", () => {
 	test("returns minimal rows sorted by path", async () => {
 		const lix = await openLix();
@@ -24,12 +28,13 @@ describe("selectFiles", () => {
 			.execute();
 
 		const rows = await selectFiles(lix).execute();
+		const userRows = rows.filter((row) => !row.path.startsWith("/.lix/"));
 
 		// Sorted ascending by path
-		expect(rows.map((r) => r.path)).toEqual(["/a.md", "/b.md"]);
+		expect(userRows.map((r) => r.path)).toEqual(["/a.md", "/b.md"]);
 		// Minimal shape
-		expect(rows[0]).toHaveProperty("id");
-		expect(rows[0]).toHaveProperty("path");
+		expect(userRows[0]).toHaveProperty("id");
+		expect(userRows[0]).toHaveProperty("path");
 	});
 });
 
@@ -64,31 +69,34 @@ describe("selectFilesystemEntries", () => {
 			.execute();
 
 		const rows = await selectFilesystemEntries(lix).execute();
-		expect(rows.map((row) => row.kind)).toEqual([
+		const userRows = rows.filter((row) => !row.path.startsWith("/.lix/"));
+		expect(userRows.map((row) => row.kind)).toEqual([
 			"file",
 			"directory",
 			"directory",
 			"file",
 		]);
-		expect(rows.map((row) => row.path)).toEqual([
+		expect(userRows.map((row) => row.path)).toEqual([
 			"/README.md",
 			"/docs/",
 			"/docs/guides/",
 			"/docs/guides/intro.md",
 		]);
 
-		const docsRow = rows.find((row) => row.path === "/docs/");
+		const docsRow = userRows.find((row) => row.path === "/docs/");
 		expect(docsRow?.parent_id).toBeNull();
 		expect(docsRow?.display_name).toBe("docs");
 
-		const guidesRow = rows.find((row) => row.path === "/docs/guides/");
+		const guidesRow = userRows.find((row) => row.path === "/docs/guides/");
 		expect(guidesRow?.parent_id).toBe(docsRow?.id);
 		expect(guidesRow?.display_name).toBe("guides");
 
-		const nestedFile = rows.find((row) => row.path === "/docs/guides/intro.md");
+		const nestedFile = userRows.find(
+			(row) => row.path === "/docs/guides/intro.md",
+		);
 		expect(nestedFile?.parent_id).toBe(guidesRow?.id);
 		expect(nestedFile?.display_name).toBe("intro.md");
-		expect(nestedFile?.hidden).toBe(0);
+		expect(isHidden(nestedFile?.hidden)).toBe(false);
 	});
 
 	test("distinguishes root files from nested files", async () => {
@@ -142,9 +150,9 @@ describe("selectFilesystemEntries", () => {
 
 		const rows = await selectFilesystemEntries(lix).execute();
 		const dirRow = rows.find((row) => row.path === "/private/");
-		expect(dirRow?.hidden).toBe(1);
+		expect(isHidden(dirRow?.hidden)).toBe(true);
 		const fileRow = rows.find((row) => row.path === "/secret.md");
-		expect(fileRow?.hidden).toBe(1);
+		expect(isHidden(fileRow?.hidden)).toBe(true);
 	});
 });
 

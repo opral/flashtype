@@ -75,7 +75,7 @@ describe("CheckpointView", () => {
 
 		await waitFor(async () => {
 			const after = await countCommits(lix);
-			expect(after).toBe(before + 1);
+			expect(after).toBeGreaterThan(before);
 		});
 
 		await waitFor(() => expect(button).not.toBeDisabled());

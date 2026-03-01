@@ -33,6 +33,10 @@ function setNavigatorPlatform(value: string) {
 	});
 }
 
+function isUserPath(path: string): boolean {
+	return !path.startsWith("/.lix/");
+}
+
 describe("FilesView", () => {
 	beforeAll(() => {
 		setNavigatorPlatform("MacIntel");
@@ -68,9 +72,9 @@ describe("FilesView", () => {
 
 		const initialRows = await qb(lix)
 			.selectFrom("lix_file")
-			.select("id")
+			.select(["id", "path"])
 			.execute();
-		expect(initialRows).toHaveLength(0);
+		expect(initialRows.filter((row) => isUserPath(row.path))).toHaveLength(0);
 
 		await act(async () => {
 			fireEvent.keyDown(document, { key: ".", metaKey: true });
@@ -94,9 +98,10 @@ describe("FilesView", () => {
 				.selectFrom("lix_file")
 				.select(["id", "path"])
 				.execute();
-			expect(rows).toHaveLength(1);
-			expect(rows[0]?.path).toBe("/notes.md");
-			const createdId = rows[0]?.id as string;
+			const userRows = rows.filter((row) => isUserPath(row.path));
+			expect(userRows).toHaveLength(1);
+			expect(userRows[0]?.path).toBe("/notes.md");
+			const createdId = userRows[0]?.id as string;
 			expect(openWidget).toHaveBeenCalledWith({
 				panel: "central",
 				kind: FILE_WIDGET_KIND,
@@ -157,7 +162,7 @@ describe("FilesView", () => {
 				.selectFrom("lix_file")
 				.select(["path"])
 				.execute();
-			expect(rows).toHaveLength(0);
+			expect(rows.filter((row) => isUserPath(row.path))).toHaveLength(0);
 		});
 
 		await waitFor(() => {
@@ -350,8 +355,9 @@ describe("FilesView", () => {
 				.selectFrom("lix_file")
 				.select(["path"])
 				.execute();
-			expect(rows).toHaveLength(1);
-			expect(rows[0]?.path).toBe("/hello%20nice%20one.md");
+			const userRows = rows.filter((row) => isUserPath(row.path));
+			expect(userRows).toHaveLength(1);
+			expect(userRows[0]?.path).toBe("/hello%20nice%20one.md");
 		});
 
 		await waitFor(() => {
@@ -444,7 +450,7 @@ describe("FilesView", () => {
 			.selectFrom("lix_file")
 			.select(["path"])
 			.execute();
-		expect(rows).toHaveLength(0);
+		expect(rows.filter((row) => isUserPath(row.path))).toHaveLength(0);
 		expect(openWidget).not.toHaveBeenCalled();
 
 		utils!.unmount();
@@ -484,7 +490,7 @@ describe("FilesView", () => {
 			.selectFrom("lix_directory")
 			.select(["path"])
 			.execute();
-		expect(rows).toHaveLength(0);
+		expect(rows.filter((row) => isUserPath(row.path))).toHaveLength(0);
 		expect(openWidget).not.toHaveBeenCalled();
 
 		utils!.unmount();
@@ -529,7 +535,7 @@ describe("FilesView", () => {
 			.selectFrom("lix_file")
 			.select(["path"])
 			.execute();
-		expect(rows).toHaveLength(0);
+		expect(rows.filter((row) => isUserPath(row.path))).toHaveLength(0);
 		expect(openWidget).not.toHaveBeenCalled();
 
 		utils!.unmount();

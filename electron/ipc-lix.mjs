@@ -3,6 +3,7 @@ import { closeLix, ensureLixOpen, wipeLixStorage } from "./lix.mjs";
 
 const observeHandles = new Map();
 const stateCommitStreamHandles = new Map();
+const transactionHandles = new Map();
 let registered = false;
 
 export function registerLixIpc() {
@@ -38,6 +39,48 @@ export function registerLixIpc() {
 			normalizeExecuteOptions(payload?.options),
 		);
 		return serializeQueryResult(result);
+	});
+
+	ipcMain.handle("lix:transaction:begin", async (_event, payload) => {
+		const lix = await ensureLixOpen();
+		const transaction = await lix.beginTransaction(
+			normalizeExecuteOptions(payload?.options),
+		);
+		const transactionId = createId("transaction");
+		transactionHandles.set(transactionId, transaction);
+		return { transactionId };
+	});
+
+	ipcMain.handle("lix:transaction:execute", async (_event, payload) => {
+		const transaction = transactionHandles.get(String(payload?.transactionId ?? ""));
+		if (!transaction) {
+			throw new Error("transaction handle does not exist or is closed");
+		}
+		const result = await transaction.execute(
+			String(payload?.sql ?? ""),
+			normalizeParams(payload?.params),
+		);
+		return serializeQueryResult(result);
+	});
+
+	ipcMain.handle("lix:transaction:commit", async (_event, payload) => {
+		const transactionId = String(payload?.transactionId ?? "");
+		const transaction = transactionHandles.get(transactionId);
+		if (!transaction) {
+			throw new Error("transaction handle does not exist or is closed");
+		}
+		transactionHandles.delete(transactionId);
+		await transaction.commit();
+	});
+
+	ipcMain.handle("lix:transaction:rollback", async (_event, payload) => {
+		const transactionId = String(payload?.transactionId ?? "");
+		const transaction = transactionHandles.get(transactionId);
+		if (!transaction) {
+			throw new Error("transaction handle does not exist or is closed");
+		}
+		transactionHandles.delete(transactionId);
+		await transaction.rollback();
 	});
 
 	ipcMain.handle("lix:observe:start", async (_event, payload) => {
@@ -133,22 +176,22 @@ export function registerLixIpc() {
 	});
 
 	ipcMain.handle("lix:close", async () => {
-		closeAllHandles();
+		await closeAllHandles();
 		await closeLix();
 	});
 
 	ipcMain.handle("lix:wipe", async () => {
-		closeAllHandles();
+		await closeAllHandles();
 		await wipeLixStorage();
 	});
 }
 
 export async function disposeLixIpc() {
-	closeAllHandles();
+	await closeAllHandles();
 	await closeLix();
 }
 
-function closeAllHandles() {
+async function closeAllHandles() {
 	for (const observeEvents of observeHandles.values()) {
 		observeEvents.close();
 	}
@@ -158,6 +201,16 @@ function closeAllHandles() {
 		stream.close();
 	}
 	stateCommitStreamHandles.clear();
+
+	const openTransactions = [...transactionHandles.values()];
+	transactionHandles.clear();
+	for (const transaction of openTransactions) {
+		try {
+			await transaction.rollback();
+		} catch {
+			// ignore rollback errors while closing handles
+		}
+	}
 }
 
 function createId(prefix) {

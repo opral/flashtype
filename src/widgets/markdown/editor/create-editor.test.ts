@@ -5,13 +5,68 @@ import { createEditor } from "./create-editor";
 import { astToTiptapDoc } from "@opral/markdown-wc/tiptap";
 import { parseMarkdown } from "@opral/markdown-wc";
 import { handlePaste } from "./handle-paste";
-import { AstSchemas } from "@opral/markdown-wc";
 import { insertMarkdownSchemas } from "../../../lib/insert-markdown-schemas";
 import { Editor } from "@tiptap/core";
 import { qb } from "@lix-js/kysely";
+import {
+	MARKDOWN_V2_BLOCK_SCHEMA_KEY,
+	MARKDOWN_V2_DOCUMENT_SCHEMA_KEY,
+	type MarkdownV2BlockSnapshot,
+	type MarkdownV2DocumentSnapshot,
+} from "@/lib/markdown-v2-schema";
 
 const ensureTrailingNewline = (value: string) =>
 	value.endsWith("\n") ? value : `${value}\n`;
+
+function parseSnapshotContent<T>(value: unknown): T | null {
+	if (value === null || value === undefined) return null;
+	if (typeof value === "string") {
+		try {
+			return JSON.parse(value) as T;
+		} catch {
+			return null;
+		}
+	}
+	return value as T;
+}
+
+function snapshotNodeText(snapshot: MarkdownV2BlockSnapshot | null | undefined): string {
+	const node = snapshot?.node as { children?: Array<{ value?: string }> } | undefined;
+	const children = Array.isArray(node?.children) ? node.children : [];
+	return children
+		.map((child) => (typeof child.value === "string" ? child.value : ""))
+		.join("");
+}
+
+async function readRootOrder(lix: Awaited<ReturnType<typeof openLix>>, fileId: string) {
+	const root = await qb(lix)
+		.selectFrom("lix_state")
+		.where("file_id", "=", fileId)
+		.where("schema_key", "=", MARKDOWN_V2_DOCUMENT_SCHEMA_KEY)
+		.select(["snapshot_content"])
+		.executeTakeFirst();
+	const snapshot = parseSnapshotContent<MarkdownV2DocumentSnapshot>(
+		root?.snapshot_content,
+	);
+	return (snapshot?.order ?? []) as string[];
+}
+
+async function readParagraphBlocks(
+	lix: Awaited<ReturnType<typeof openLix>>,
+	fileId: string,
+) {
+	const blocks = await qb(lix)
+		.selectFrom("lix_state")
+		.where("file_id", "=", fileId)
+		.where("schema_key", "=", MARKDOWN_V2_BLOCK_SCHEMA_KEY)
+		.select(["entity_id", "snapshot_content"])
+		.execute();
+	return blocks.filter(
+		(row) =>
+			parseSnapshotContent<MarkdownV2BlockSnapshot>(row.snapshot_content)?.node
+				?.type === "paragraph",
+	);
+}
 
 async function createEditorFromFile(args: {
 	lix: Awaited<ReturnType<typeof openLix>>;
@@ -86,38 +141,22 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 	});
 	await new Promise((resolve) => setTimeout(resolve, 0));
 
-	const rootOrderAfter = await qb(lix)
-		.selectFrom("lix_state")
-		.where("file_id", "=", fileId)
-		.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-		.select(["snapshot_content"])
-		.execute();
+	const orderIds = await readRootOrder(lix, fileId);
+	expect(orderIds.length).toBe(2);
 
-	expect(rootOrderAfter).toHaveLength(1);
-	expect(rootOrderAfter[0]?.snapshot_content.order.length).toBe(2);
-	const orderIds = rootOrderAfter[0]?.snapshot_content.order as string[];
-
-	const paragraphsAfter = await qb(lix)
-		.selectFrom("lix_state")
-		.where("file_id", "=", fileId)
-		.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-		.select(["entity_id", "snapshot_content"])
-		.execute();
+	const paragraphsAfter = await readParagraphBlocks(lix, fileId);
 
 	expect(paragraphsAfter).toHaveLength(2);
 	const paragraphById = new Map(
 		paragraphsAfter.map((row: any) => [
 			row.entity_id as string,
-			row.snapshot_content as any,
+			parseSnapshotContent<MarkdownV2BlockSnapshot>(
+				row.snapshot_content,
+			) as MarkdownV2BlockSnapshot,
 		]),
 	);
 	const orderedTexts = orderIds.map((id) => {
-		const snap = paragraphById.get(id);
-		if (!snap) return "";
-		const children = Array.isArray(snap.children)
-			? (snap.children as any[])
-			: [];
-		return children.map((child) => child.value ?? "").join("");
+		return snapshotNodeText(paragraphById.get(id));
 	});
 	expect(orderedTexts).toEqual(["New", "Start"]);
 
@@ -353,24 +392,11 @@ test("Enter splits paragraph → assigns unique ids and root order has no duplic
 	// Give onUpdate/persist a tick (persistDebounceMs=0 still runs async)
 	await new Promise((r) => setTimeout(r, 0));
 
-	const root = await qb(lix)
-		.selectFrom("lix_state")
-		.where("file_id", "=", fileId)
-		.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-		.select(["snapshot_content"])
-		.executeTakeFirst();
-
-	const order =
-		(root?.snapshot_content as { order?: string[] } | undefined)?.order ?? [];
+	const order = await readRootOrder(lix, fileId);
 	expect(order.length).toBe(2);
 	expect(new Set(order).size).toBe(order.length); // no duplicates
 
-	const paras = await qb(lix)
-		.selectFrom("lix_state")
-		.where("file_id", "=", fileId)
-		.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-		.select(["entity_id", "snapshot_content"])
-		.execute();
+	const paras = await readParagraphBlocks(lix, fileId);
 	expect(paras.length).toBe(2);
 
 	editor.destroy();
@@ -414,21 +440,11 @@ test("two Enters create three paragraphs with unique ids and correct order", asy
 	let order: string[] = [];
 	let paras: { entity_id: string; snapshot_content: unknown }[] = [];
 	for (let i = 0; i < 40; i++) {
-		const root = await qb(lix)
-			.selectFrom("lix_state")
-			.where("file_id", "=", fileId)
-			.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-			.select(["snapshot_content"])
-			.executeTakeFirst();
-		order = ((root?.snapshot_content as { order?: string[] } | undefined)
-			?.order ?? []) as string[];
-
-		paras = (await qb(lix)
-			.selectFrom("lix_state")
-			.where("file_id", "=", fileId)
-			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id", "snapshot_content"])
-			.execute()) as { entity_id: string; snapshot_content: unknown }[];
+		order = await readRootOrder(lix, fileId);
+		paras = (await readParagraphBlocks(lix, fileId)) as {
+			entity_id: string;
+			snapshot_content: unknown;
+		}[];
 
 		if (order.length === 3 && paras.length === 3) break;
 		await new Promise((r) => setTimeout(r, 20));
@@ -443,14 +459,10 @@ test("two Enters create three paragraphs with unique ids and correct order", asy
 	const paraIds = paras.map((p) => p.entity_id as string);
 	expect(new Set(paraIds).size).toBe(3);
 	const texts = paras.map((p) => {
-		const sc = p.snapshot_content as
-			| { children?: Array<{ value?: string }> }
-			| undefined;
-		const children = sc?.children ?? [];
-		return children
-			.map((c) => (typeof c.value === "string" ? c.value : ""))
-			.join("")
-			.trim();
+		const snapshot = parseSnapshotContent<MarkdownV2BlockSnapshot>(
+			p.snapshot_content,
+		);
+		return snapshotNodeText(snapshot).trim();
 	});
 	// Order in DB may not be textual order; ensure all expected texts are present
 	expect(new Set(texts)).toEqual(
@@ -650,21 +662,11 @@ test("rapid Enter/type coalescing persists 3 paragraphs with unique ids", async 
 	let order: string[] = [];
 	let paras: { entity_id: string; snapshot_content: unknown }[] = [];
 	for (let i = 0; i < 40; i++) {
-		const root = await qb(lix)
-			.selectFrom("lix_state")
-			.where("file_id", "=", fileId)
-			.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-			.select(["snapshot_content"])
-			.executeTakeFirst();
-		order = ((root?.snapshot_content as { order?: string[] } | undefined)
-			?.order ?? []) as string[];
-
-		paras = (await qb(lix)
-			.selectFrom("lix_state")
-			.where("file_id", "=", fileId)
-			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id", "snapshot_content"])
-			.execute()) as { entity_id: string; snapshot_content: unknown }[];
+		order = await readRootOrder(lix, fileId);
+		paras = (await readParagraphBlocks(lix, fileId)) as {
+			entity_id: string;
+			snapshot_content: unknown;
+		}[];
 
 		if (order.length === 3 && paras.length === 3) break;
 		await new Promise((r) => setTimeout(r, 20));
@@ -676,14 +678,10 @@ test("rapid Enter/type coalescing persists 3 paragraphs with unique ids", async 
 	const paraIds = paras.map((p) => p.entity_id as string);
 	expect(new Set(paraIds).size).toBe(3);
 	const texts = paras.map((p) => {
-		const sc = p.snapshot_content as
-			| { children?: Array<{ value?: string }> }
-			| undefined;
-		const children = sc?.children ?? [];
-		return children
-			.map((c) => (typeof c.value === "string" ? c.value : ""))
-			.join("")
-			.trim();
+		const snapshot = parseSnapshotContent<MarkdownV2BlockSnapshot>(
+			p.snapshot_content,
+		);
+		return snapshotNodeText(snapshot).trim();
 	});
 	expect(new Set(texts)).toEqual(new Set(["Start", "Second", "Third"]));
 	const paraIdSet = new Set(paraIds);
@@ -723,22 +721,13 @@ test("state cleanup on delete removes row and prunes root order", async () => {
 	// Poll until state reflects 3 paragraphs and capture the id for "Second"
 	let secondId: string | null = null;
 	for (let i = 0; i < 40; i++) {
-		const paras = await qb(lix)
-			.selectFrom("lix_state")
-			.where("file_id", "=", fileId)
-			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id", "snapshot_content"])
-			.execute();
+		const paras = await readParagraphBlocks(lix, fileId);
 		if (paras.length === 3) {
 			const texts = paras.map((p) => {
-				const sc = p.snapshot_content as
-					| { children?: Array<{ value?: string }> }
-					| undefined;
-				const children = sc?.children ?? [];
-				return children
-					.map((c) => (typeof c.value === "string" ? c.value : ""))
-					.join("")
-					.trim();
+				const snapshot = parseSnapshotContent<MarkdownV2BlockSnapshot>(
+					p.snapshot_content,
+				);
+				return snapshotNodeText(snapshot).trim();
 			});
 			const idx = texts.findIndex((t) => t === "Second");
 			if (idx >= 0) {
@@ -758,21 +747,8 @@ test("state cleanup on delete removes row and prunes root order", async () => {
 	// Poll until state reflects 2 paragraphs and root order pruned
 	let order: string[] = [];
 	for (let i = 0; i < 40; i++) {
-		const root = await qb(lix)
-			.selectFrom("lix_state")
-			.where("file_id", "=", fileId)
-			.where("schema_key", "=", AstSchemas.DocumentSchema["x-lix-key"])
-			.select(["snapshot_content"])
-			.executeTakeFirst();
-		order = ((root?.snapshot_content as { order?: string[] } | undefined)
-			?.order ?? []) as string[];
-
-		const paras = await qb(lix)
-			.selectFrom("lix_state")
-			.where("file_id", "=", fileId)
-			.where("schema_key", "=", AstSchemas.ParagraphSchema["x-lix-key"])
-			.select(["entity_id"])
-			.execute();
+		order = await readRootOrder(lix, fileId);
+		const paras = await readParagraphBlocks(lix, fileId);
 		if (paras.length === 2 && order.length === 2) {
 			// Ensure "Second" id is gone
 			const ids = paras.map((p) => p.entity_id as string);

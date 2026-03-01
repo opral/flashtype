@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { qb } from "@lix-js/kysely";
+import { qb, sql } from "@lix-js/kysely";
 import {
 	useLix,
 	useQuery,
@@ -59,7 +59,10 @@ export function VersionSwitcher() {
 				"commit_id",
 				"working_commit_id",
 			])
-			.where("hidden", "!=", true)
+			.where(
+				() =>
+					sql`COALESCE(CAST(lix_version.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+			)
 			.orderBy("name", "asc"),
 	);
 
