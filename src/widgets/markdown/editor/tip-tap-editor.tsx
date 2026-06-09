@@ -43,9 +43,51 @@ export function TipTapEditor({
 	focusOnLoad,
 	isActiveView = true,
 }: TipTapEditorProps) {
+	if (fileId) {
+		return (
+			<TipTapEditorContent
+				activeFileId={fileId}
+				className={className}
+				onReady={onReady}
+				persistDebounceMs={persistDebounceMs}
+				focusOnLoad={focusOnLoad}
+				isActiveView={isActiveView}
+			/>
+		);
+	}
+
+	return (
+		<TipTapEditorWithActiveKey
+			className={className}
+			onReady={onReady}
+			persistDebounceMs={persistDebounceMs}
+			focusOnLoad={focusOnLoad}
+			isActiveView={isActiveView}
+		/>
+	);
+}
+
+function TipTapEditorWithActiveKey(props: Omit<TipTapEditorProps, "fileId">) {
+	const [activeFileId] = useKeyValue("flashtype_active_file_id");
+	return (
+		<TipTapEditorContent
+			{...props}
+			activeFileId={typeof activeFileId === "string" ? activeFileId : null}
+		/>
+	);
+}
+
+function TipTapEditorContent({
+	activeFileId,
+	className,
+	onReady,
+	persistDebounceMs,
+	focusOnLoad,
+	isActiveView = true,
+}: Omit<TipTapEditorProps, "fileId"> & {
+	readonly activeFileId?: string | null;
+}) {
 	const lix = useLix();
-	const [activeFileIdKV] = useKeyValue("flashtype_active_file_id");
-	const activeFileId = fileId ?? activeFileIdKV;
 	const initialFile = useQueryTakeFirst(
 		(lix) =>
 			qb(lix)
@@ -221,7 +263,7 @@ export function TipTapEditor({
 		return () => {
 			cancelled = true;
 		};
-	}, [lix, activeFileId]);
+	}, [lix, activeFileId, initialAstLoaded]);
 
 	useEffect(() => {
 		if (!editor) return;

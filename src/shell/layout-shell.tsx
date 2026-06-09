@@ -219,6 +219,9 @@ function LayoutShellContent() {
 		useWidgetRegistry();
 	const [uiStateKV, setUiStateKV] = useKeyValue(FLASHTYPE_UI_STATE_KEY);
 	const [themePreference] = useKeyValue("flashtype_theme");
+	const [activeFileId, setActiveFileId] = useKeyValue(
+		"flashtype_active_file_id",
+	);
 	const theme = themePreference === "dark" ? "dark" : "light";
 	const lix = useLix();
 	const uiState = useMemo(
@@ -881,6 +884,17 @@ function LayoutShellContent() {
 			null
 		);
 	}, [centralPanel]);
+	const activeCentralFileId =
+		activeCentralEntry?.kind === FILE_WIDGET_KIND &&
+		typeof activeCentralEntry.state?.fileId === "string"
+			? activeCentralEntry.state.fileId
+			: null;
+
+	useEffect(() => {
+		if (!activeCentralFileId) return;
+		if (activeFileId === activeCentralFileId) return;
+		void setActiveFileId(activeCentralFileId);
+	}, [activeCentralFileId, activeFileId, setActiveFileId]);
 
 	const activeStatusLabel = useMemo(() => {
 		if (!activeCentralEntry) return null;

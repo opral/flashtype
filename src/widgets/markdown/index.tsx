@@ -17,6 +17,7 @@ type MarkdownViewProps = {
 	readonly filePath?: string;
 	readonly isActiveView?: boolean;
 	readonly focusOnLoad?: boolean;
+	readonly syncActiveFile?: boolean;
 };
 
 /**
@@ -30,6 +31,7 @@ export function MarkdownView({
 	filePath,
 	isActiveView = true,
 	focusOnLoad = false,
+	syncActiveFile = true,
 }: MarkdownViewProps) {
 	return (
 		<Suspense fallback={<MarkdownLoadingSpinner />}>
@@ -38,6 +40,7 @@ export function MarkdownView({
 				filePath={filePath}
 				isActiveView={isActiveView}
 				focusOnLoad={focusOnLoad}
+				syncActiveFile={syncActiveFile}
 			/>
 		</Suspense>
 	);
@@ -48,11 +51,8 @@ function MarkdownViewContent({
 	filePath,
 	isActiveView = true,
 	focusOnLoad = false,
+	syncActiveFile = true,
 }: MarkdownViewProps) {
-	const [activeFileId, setActiveFileId] = useKeyValue(
-		"flashtype_active_file_id",
-	);
-
 	const fileRow = useQueryTakeFirst(
 		(lix) =>
 			qb(lix)
@@ -62,13 +62,6 @@ function MarkdownViewContent({
 				.limit(1),
 		{ subscribe: false },
 	);
-
-	useEffect(() => {
-		if (!fileRow?.id) return;
-		if (!isActiveView) return;
-		if (activeFileId === fileRow.id) return;
-		void setActiveFileId(fileRow.id);
-	}, [fileRow?.id, activeFileId, setActiveFileId, isActiveView]);
 
 	let content: ReactNode;
 	const hasTarget = Boolean(fileId || filePath);
@@ -103,8 +96,34 @@ function MarkdownViewContent({
 	}
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col px-2 py-2">{content}</div>
+		<div className="flex min-h-0 flex-1 flex-col px-2 py-2">
+			{syncActiveFile ? (
+				<ActiveFileSync fileId={fileRow?.id} isActiveView={isActiveView} />
+			) : null}
+			{content}
+		</div>
 	);
+}
+
+function ActiveFileSync({
+	fileId,
+	isActiveView,
+}: {
+	readonly fileId?: string;
+	readonly isActiveView: boolean;
+}) {
+	const [activeFileId, setActiveFileId] = useKeyValue(
+		"flashtype_active_file_id",
+	);
+
+	useEffect(() => {
+		if (!fileId) return;
+		if (!isActiveView) return;
+		if (activeFileId === fileId) return;
+		void setActiveFileId(fileId);
+	}, [fileId, activeFileId, setActiveFileId, isActiveView]);
+
+	return null;
 }
 
 function MarkdownLoadingSpinner(): ReactNode {
@@ -136,6 +155,7 @@ export const widget = createReactWidgetDefinition({
 				filePath={instance.state?.filePath as string | undefined}
 				isActiveView={context.isActiveView ?? false}
 				focusOnLoad={Boolean(instance.state?.focusOnLoad)}
+				syncActiveFile={false}
 			/>
 		</LixProvider>
 	),
