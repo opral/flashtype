@@ -12,12 +12,21 @@ function enqueue(operation) {
 }
 
 function getLixFilename() {
+	const testPath = process.env.FLASHTYPE_LIX_PATH?.trim();
+	if (testPath) {
+		return path.resolve(testPath);
+	}
 	return path.join(app.getPath("documents"), "lix", "main.lix");
 }
 
 function getLixStoragePaths() {
 	const filename = getLixFilename();
-	return [filename, `${filename}-wal`, `${filename}-shm`, `${filename}-journal`];
+	return [
+		filename,
+		`${filename}-wal`,
+		`${filename}-shm`,
+		`${filename}-journal`,
+	];
 }
 
 export async function ensureLixOpen() {
@@ -84,10 +93,9 @@ function createCompatLix(nativeLix, filename) {
 			let result = emptyExecuteResult();
 			try {
 				for (const statement of statements) {
-					result = await transaction.execute(
-						rewriteCompatSql(statement.sql),
-						[...(statement.params ?? [])],
-					);
+					result = await transaction.execute(rewriteCompatSql(statement.sql), [
+						...(statement.params ?? []),
+					]);
 				}
 				await transaction.commit();
 				return result;
