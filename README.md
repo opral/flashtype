@@ -16,7 +16,7 @@ Flashtype demonstrates key Lix capabilities:
 | **Branches**           | AI generates content in isolated branches, letting you review before merging. |
 | **Diffs**              | Claude Code-style accept/reject UI shows granular changes inline.             |
 | **Change Proposals**   | AI proposes edits, humans stay in control of what ships.                      |
-| **Single SQLite File** | Your documents persist in browser storage as a portable `.lix` file.          |
+| **Filesystem Backend** | Desktop documents persist as real files in a Lix-backed workspace folder.     |
 
 ## 🚀 Try It
 

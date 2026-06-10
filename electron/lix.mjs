@@ -1,7 +1,7 @@
 import { app } from "electron";
 import path from "node:path";
 import { mkdir, readFile, rm } from "node:fs/promises";
-import { openLix, SqliteBackend } from "@lix-js/sdk";
+import { FsBackend, openLix } from "@lix-js/sdk";
 
 let lixPromise = null;
 let lifecycle = Promise.resolve();
@@ -11,22 +11,12 @@ function enqueue(operation) {
 	return lifecycle;
 }
 
-function getLixFilename() {
-	const testPath = process.env.FLASHTYPE_LIX_PATH?.trim();
-	if (testPath) {
-		return path.resolve(testPath);
+function getLixWorkspaceDir() {
+	const workspacePath = process.env.FLASHTYPE_LIX_DIR?.trim();
+	if (workspacePath) {
+		return path.resolve(workspacePath);
 	}
-	return path.join(app.getPath("documents"), "lix", "main.lix");
-}
-
-function getLixStoragePaths() {
-	const filename = getLixFilename();
-	return [
-		filename,
-		`${filename}-wal`,
-		`${filename}-shm`,
-		`${filename}-journal`,
-	];
+	return path.join(app.getPath("documents"), "flashtype");
 }
 
 export async function ensureLixOpen() {
@@ -34,12 +24,12 @@ export async function ensureLixOpen() {
 	await enqueue(async () => {
 		if (!lixPromise) {
 			lixPromise = (async () => {
-				const filename = getLixFilename();
-				await mkdir(path.dirname(filename), { recursive: true });
+				const workspaceDir = getLixWorkspaceDir();
+				await mkdir(workspaceDir, { recursive: true });
 				const nativeLix = await openLix({
-					backend: new SqliteBackend({ path: filename }),
+					backend: new FsBackend({ path: workspaceDir }),
 				});
-				return createDesktopLixHandle(nativeLix, filename);
+				return createDesktopLixHandle(nativeLix, workspaceDir);
 			})();
 		}
 		outPromise = lixPromise;
@@ -64,12 +54,10 @@ export async function closeLix() {
 
 export async function wipeLixStorage() {
 	await closeLix();
-	for (const pathToDelete of getLixStoragePaths()) {
-		await rm(pathToDelete, { force: true });
-	}
+	await rm(getLixWorkspaceDir(), { force: true, recursive: true });
 }
 
-function createDesktopLixHandle(nativeLix, filename) {
+function createDesktopLixHandle(nativeLix, workspaceDir) {
 	let operationQueue = Promise.resolve();
 
 	async function acquireOperationSlot() {
@@ -179,7 +167,7 @@ function createDesktopLixHandle(nativeLix, filename) {
 			return await runQueued(() => nativeLix.switchBranch(options));
 		},
 		async exportSnapshot() {
-			return await readFile(filename);
+			return await readFile(path.join(workspaceDir, ".lix"));
 		},
 		async close() {
 			await runQueued(() => nativeLix.close());

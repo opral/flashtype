@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { _electron as electron, type ElectronApplication } from "playwright";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import seedrandom from "seedrandom";
 
@@ -10,6 +11,7 @@ const electronCloseTimeoutMs = 5_000;
 
 test("left files panel survives a seeded random file click tour", async ({}, testInfo) => {
 	const rng = seedrandom(testInfo.repeatEachIndex.toString());
+	const workspaceDir = testInfo.outputPath("workspace");
 
 	let electronApp: ElectronApplication | undefined;
 	try {
@@ -19,7 +21,7 @@ test("left files panel survives a seeded random file click tour", async ({}, tes
 			env: {
 				...process.env,
 				VITE_DEV_SERVER_URL: rendererUrl,
-				FLASHTYPE_LIX_PATH: testInfo.outputPath("main.lix"),
+				FLASHTYPE_LIX_DIR: workspaceDir,
 			},
 		});
 
@@ -33,6 +35,7 @@ test("left files panel survives a seeded random file click tour", async ({}, tes
 		await expect(page.getByTestId("landing-screen")).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
 		await seedStarterFiles(page);
+		await expectMaterializedSeedFiles(workspaceDir);
 
 		const fileItems = page.locator('[data-testid^="file-tree-item-"]');
 		await expect(fileItems.first()).toBeVisible();
@@ -91,6 +94,27 @@ async function seedStarterFiles(page: Page): Promise<void> {
 	await expect(seedButton).toBeVisible();
 	await seedButton.click();
 	await expect(seedButton).toBeEnabled();
+}
+
+async function expectMaterializedSeedFiles(
+	workspaceDir: string,
+): Promise<void> {
+	await expect
+		.poll(() => readTextFile(path.join(workspaceDir, "welcome.md")))
+		.toContain("Welcome to Opral's repository.");
+	await expect
+		.poll(() =>
+			readTextFile(path.join(workspaceDir, "notes", "meeting-notes.md")),
+		)
+		.toContain("Team Meeting");
+}
+
+async function readTextFile(filePath: string): Promise<string> {
+	try {
+		return await readFile(filePath, "utf8");
+	} catch {
+		return "";
+	}
 }
 
 async function closeElectronApp(
