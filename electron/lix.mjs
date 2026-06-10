@@ -12,11 +12,16 @@ function enqueue(operation) {
 }
 
 function getLixWorkspaceDir() {
-	const workspacePath = process.env.FLASHTYPE_LIX_DIR?.trim();
-	if (workspacePath) {
+	const workspacePath = getWorkspacePathArgument(process.argv);
+	if (workspacePath !== undefined) {
 		return path.resolve(workspacePath);
 	}
 	return path.join(app.getPath("documents"), "flashtype");
+}
+
+function getWorkspacePathArgument(argv) {
+	const argumentOffset = process.defaultApp === true ? 2 : 1;
+	return argv[argumentOffset];
 }
 
 export async function ensureLixOpen() {

@@ -9,7 +9,7 @@ const rendererUrl = "http://127.0.0.1:4173";
 const clickCount = 100;
 const electronCloseTimeoutMs = 5_000;
 
-test("left files panel survives a seeded random file click tour", async ({}, testInfo) => {
+test("left files panel survives a seeded random file click tour", async (_, testInfo) => {
 	const rng = seedrandom(testInfo.repeatEachIndex.toString());
 	const workspaceDir = testInfo.outputPath("workspace");
 
@@ -17,11 +17,10 @@ test("left files panel survives a seeded random file click tour", async ({}, tes
 	try {
 		electronApp = await electron.launch({
 			cwd: repoRoot,
-			args: ["./electron/main.mjs"],
+			args: ["./electron/main.mjs", workspaceDir],
 			env: {
 				...process.env,
 				VITE_DEV_SERVER_URL: rendererUrl,
-				FLASHTYPE_LIX_DIR: workspaceDir,
 			},
 		});
 
