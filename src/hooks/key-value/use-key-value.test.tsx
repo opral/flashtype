@@ -49,6 +49,7 @@ test("reads a global, untracked key (test fixture)", async () => {
 			key: testKey,
 			value: "alpha",
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 		})
 		.execute();
 
@@ -162,6 +163,7 @@ test("shows Suspense fallback first, then renders value on initial read", async 
 			key: testKey,
 			value: "ready",
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 		})
 		.execute();
 	const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -389,6 +391,7 @@ test("memoized children should not re-render when parent state changes", async (
 			key: testKey,
 			value: "initial",
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 		})
 		.execute();
 

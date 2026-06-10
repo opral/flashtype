@@ -82,6 +82,7 @@ test("paste at start inserts before existing content (TipTap + Lix)", async () =
 				key: "lix_deterministic_mode",
 				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 		],
 	});

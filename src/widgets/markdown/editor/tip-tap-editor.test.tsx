@@ -43,8 +43,9 @@ test("renders initial document content", async () => {
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 		],
 	});
@@ -69,6 +70,7 @@ test("renders initial document content", async () => {
 			key: "flashtype_active_file_id",
 			value: fileId,
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 			lixcol_untracked: true,
 		})
 		.execute();
@@ -95,13 +97,15 @@ test("persists state changes on edit (paragraph append)", async () => {
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 			{
 				key: "flashtype_active_file_id",
 				value: fileId,
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 				lixcol_untracked: true,
 			},
 		],
@@ -159,8 +163,9 @@ test("renders content under React.StrictMode", async () => {
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 		],
 	});
@@ -185,6 +190,7 @@ test("renders content under React.StrictMode", async () => {
 			key: "flashtype_active_file_id",
 			value: fileId,
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 			lixcol_untracked: true,
 		})
 		.execute();
@@ -211,13 +217,15 @@ test("shows placeholder only while focused on an empty document", async () => {
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 			{
 				key: "flashtype_active_file_id",
 				value: fileId,
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 				lixcol_untracked: true,
 			},
 		],
@@ -283,13 +291,15 @@ test("clicking the surface focuses the editor even when content exists", async (
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 			{
 				key: "flashtype_active_file_id",
 				value: fileId,
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 				lixcol_untracked: true,
 			},
 		],
@@ -339,8 +349,9 @@ test("updates editor when switching to a branch with different external state", 
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 		],
 	});
@@ -366,6 +377,7 @@ test("updates editor when switching to a branch with different external state", 
 			key: "flashtype_active_file_id",
 			value: fileId,
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 			lixcol_untracked: true,
 		})
 		.execute();
@@ -408,8 +420,9 @@ test("updates editor when file.data is updated externally (simulate updateFile w
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 		],
 	});
@@ -434,6 +447,7 @@ test("updates editor when file.data is updated externally (simulate updateFile w
 			key: "flashtype_active_file_id",
 			value: fileId,
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 			lixcol_untracked: true,
 		})
 		.execute();
@@ -470,8 +484,9 @@ test("preserves main content when switching to a new branch and back", async () 
 		keyValues: [
 			{
 				key: "lix_deterministic_mode",
-				value: "enabled",
+				value: { enabled: true },
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 			},
 		],
 	});
@@ -496,6 +511,7 @@ test("preserves main content when switching to a new branch and back", async () 
 			key: "flashtype_active_file_id",
 			value: fileId,
 			lixcol_branch_id: "global",
+			lixcol_global: true,
 			lixcol_untracked: true,
 		})
 		.execute();

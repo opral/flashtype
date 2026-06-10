@@ -58,6 +58,7 @@ describe("MarkdownView", () => {
 				key: "flashtype_active_file_id",
 				value: "file_1",
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 				lixcol_untracked: true,
 			})
 			.execute();
@@ -121,6 +122,7 @@ describe("MarkdownView", () => {
 				key: "flashtype_active_file_id",
 				value: "file_alpha",
 				lixcol_branch_id: "global",
+				lixcol_global: true,
 				lixcol_untracked: true,
 			})
 			.execute();

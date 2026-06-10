@@ -74,6 +74,23 @@ declare module "@lix-js/sdk" {
 	}
 
 	export function openLix(
-		options?: OpenLixOptions & { keyValues?: Record<string, unknown> },
+		options?: OpenLixOptions & {
+			keyValues?: ReadonlyArray<
+				{
+					key: string;
+					value: unknown;
+					lixcol_untracked?: boolean;
+				} & (
+					| {
+							lixcol_branch_id: string;
+							lixcol_global: boolean;
+					  }
+					| {
+							lixcol_branch_id?: undefined;
+							lixcol_global?: boolean;
+					  }
+				)
+			>;
+		},
 	): Promise<Lix>;
 }

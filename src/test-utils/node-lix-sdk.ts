@@ -72,6 +72,26 @@ type ObserveEvents = {
 	close(): void;
 };
 
+type OpenLixKeyValueEntry = {
+	key: string;
+	value: unknown;
+	lixcol_untracked?: boolean;
+} & (
+	| {
+			lixcol_branch_id: string;
+			lixcol_global: boolean;
+	  }
+	| {
+			lixcol_branch_id?: undefined;
+			lixcol_global?: boolean;
+	  }
+);
+
+type OpenLixOptions = {
+	backend?: SqliteBackend;
+	keyValues?: ReadonlyArray<OpenLixKeyValueEntry>;
+};
+
 const nativeAddonPath = resolve(
 	process.cwd(),
 	"submodule/lix/packages/js-sdk/lix_js_sdk.node",
@@ -91,7 +111,7 @@ export class SqliteBackend {
 	}
 }
 
-export async function openLix(options: any = {}) {
+export async function openLix(options: OpenLixOptions = {}) {
 	const raw =
 		options?.backend instanceof SqliteBackend
 			? addon.Lix.openSqlite(options.backend.path)
@@ -102,15 +122,19 @@ export async function openLix(options: any = {}) {
 			if (!entry || typeof entry.key !== "string") {
 				continue;
 			}
-			const value = normalizeOpenLixKeyValue(entry.key, entry.value);
 			if (typeof entry.lixcol_branch_id === "string") {
+				if (typeof entry.lixcol_global !== "boolean") {
+					throw new TypeError(
+						"branch-scoped keyValues entries require lixcol_global",
+					);
+				}
 				await lix.execute(
 					"INSERT INTO lix_key_value_by_branch (key, value, lixcol_branch_id, lixcol_global, lixcol_untracked) VALUES ($1, $2, $3, $4, $5)",
 					[
 						entry.key,
-						value,
+						entry.value,
 						entry.lixcol_branch_id,
-						entry.lixcol_global ?? entry.lixcol_branch_id === "global",
+						entry.lixcol_global,
 						entry.lixcol_untracked ?? true,
 					],
 				);
@@ -118,31 +142,11 @@ export async function openLix(options: any = {}) {
 			}
 			await lix.execute(
 				"INSERT INTO lix_key_value (key, value, lixcol_global, lixcol_untracked) VALUES ($1, $2, true, true)",
-				[entry.key, value],
-			);
-		}
-	} else if (options?.keyValues && typeof options.keyValues === "object") {
-		for (const [key, value] of Object.entries(options.keyValues)) {
-			await lix.execute(
-				"INSERT INTO lix_key_value (key, value, lixcol_global, lixcol_untracked) VALUES ($1, $2, true, true)",
-				[key, normalizeOpenLixKeyValue(key, value)],
+				[entry.key, entry.value],
 			);
 		}
 	}
 	return lix;
-}
-
-function normalizeOpenLixKeyValue(key: string, value: unknown): unknown {
-	if (key !== "lix_deterministic_mode") {
-		return value;
-	}
-	if (value === "enabled") {
-		return { enabled: true };
-	}
-	if (value === "disabled") {
-		return { enabled: false };
-	}
-	return value;
 }
 
 function createNativeLixAdapter(raw: RawNativeLix) {
@@ -254,15 +258,13 @@ function createTestLixAdapter(nativeLix: NativeLix) {
 			params: ReadonlyArray<unknown> = [],
 			_options?: ExecuteOptions,
 		) {
-			const statement = rewriteCompatStatement(sql, params);
-			return await nativeLix.execute(statement.sql, statement.params);
+			return await nativeLix.execute(sql, [...params]);
 		},
 		async beginTransaction() {
 			const transaction = await nativeLix.beginTransaction();
 			return {
 				async execute(sql: string, params: ReadonlyArray<unknown> = []) {
-					const statement = rewriteCompatStatement(sql, params);
-					return await transaction.execute(statement.sql, statement.params);
+					return await transaction.execute(sql, [...params]);
 				},
 				async commit() {
 					await transaction.commit();
@@ -348,48 +350,6 @@ async function seedMarkdownSchemas(nativeLix: NativeLix) {
 	}
 }
 
-function rewriteLegacySqlForTests(sql: string) {
-	let out = String(sql);
-	out = out.replace(/\bchange\s+as\s+/g, "lix_change as ");
-	out = out.replace(
-		/\b(from|join)\s+lix_active_branch\b/gi,
-		(_, keyword) => `${keyword} ${activeBranchSubquery()}`,
-	);
-	return out;
-}
-
-function rewriteCompatStatement(
-	sql: string,
-	params: ReadonlyArray<unknown> = [],
-): { sql: string; params: unknown[] } {
-	let out = rewriteLegacySqlForTests(sql);
-	const nextParams = [...params];
-	const insertMatch = out.match(
-		/^\s*insert\s+into\s+lix_key_value_by_branch\s*\(([^)]*)\)\s*values\s*\(([^)]*)\)/i,
-	);
-	if (insertMatch) {
-		const columns = insertMatch[1]
-			.split(",")
-			.map((column) => column.trim().toLowerCase());
-		const branchIdIndex = columns.indexOf("lixcol_branch_id");
-		if (
-			branchIdIndex >= 0 &&
-			!columns.includes("lixcol_global") &&
-			nextParams[branchIdIndex] === "global"
-		) {
-			const replacement = insertMatch[0]
-				.replace(`) values (`, `, lixcol_global) values (`)
-				.replace(/\)\s*$/, ", true)");
-			out = out.replace(insertMatch[0], replacement);
-		}
-	}
-	return { sql: out, params: nextParams };
-}
-
-function activeBranchSubquery() {
-	return "(SELECT value AS branch_id FROM lix_key_value WHERE key = 'lix_workspace_branch_id' LIMIT 1) AS lix_active_branch";
-}
-
 function emptyExecuteResult(): NativeExecuteResult {
 	return { columns: [], rows: [], rowsAffected: 0, notices: [] } as any;
 }
@@ -410,8 +370,9 @@ function createPollingObserve(
 		if (closed || polling) return;
 		polling = true;
 		try {
-			const statement = rewriteCompatStatement(query.sql, query.params ?? []);
-			const result = await nativeLix.execute(statement.sql, statement.params);
+			const result = await nativeLix.execute(query.sql, [
+				...(query.params ?? []),
+			]);
 			const key = JSON.stringify(
 				result.rows.map((row: { toObject(): Record<string, unknown> }) =>
 					row.toObject(),
