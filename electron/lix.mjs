@@ -1,4 +1,4 @@
-import { app } from "electron";
+import { dialog } from "electron";
 import path from "node:path";
 import { mkdir, readFile } from "node:fs/promises";
 import { FsBackend, openLix } from "@lix-js/sdk";
@@ -11,12 +11,12 @@ function enqueue(operation) {
 	return lifecycle;
 }
 
-function getLixWorkspaceDir() {
+async function getLixWorkspaceDir(parentWindow) {
 	const workspacePath = getWorkspacePathArgument(process.argv);
 	if (workspacePath !== undefined) {
 		return path.resolve(workspacePath);
 	}
-	return path.join(app.getPath("documents"), "flashtype");
+	return await chooseWorkspaceDir(parentWindow);
 }
 
 function getWorkspacePathArgument(argv) {
@@ -24,22 +24,45 @@ function getWorkspacePathArgument(argv) {
 	return argv[argumentOffset];
 }
 
-export async function ensureLixOpen() {
+export async function ensureLixOpen(parentWindow) {
 	let outPromise;
 	await enqueue(async () => {
 		if (!lixPromise) {
-			lixPromise = (async () => {
-				const workspaceDir = getLixWorkspaceDir();
+			const openingPromise = (async () => {
+				const workspaceDir = await getLixWorkspaceDir(parentWindow);
 				await mkdir(workspaceDir, { recursive: true });
 				const nativeLix = await openLix({
 					backend: new FsBackend({ path: workspaceDir }),
 				});
 				return createDesktopLixHandle(nativeLix, workspaceDir);
 			})();
+			lixPromise = openingPromise;
+			openingPromise.catch(() => {
+				if (lixPromise === openingPromise) {
+					lixPromise = null;
+				}
+			});
 		}
 		outPromise = lixPromise;
 	});
 	return await outPromise;
+}
+
+async function chooseWorkspaceDir(parentWindow) {
+	const options = {
+		title: "Open Flashtype Workspace",
+		buttonLabel: "Open Workspace",
+		properties: ["openDirectory", "createDirectory"],
+	};
+	const result =
+		parentWindow && !parentWindow.isDestroyed()
+			? await dialog.showOpenDialog(parentWindow, options)
+			: await dialog.showOpenDialog(options);
+	const workspaceDir = result.filePaths[0];
+	if (result.canceled || workspaceDir === undefined) {
+		throw new Error("Workspace selection was canceled.");
+	}
+	return workspaceDir;
 }
 
 export async function closeLix() {

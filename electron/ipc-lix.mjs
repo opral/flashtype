@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import { closeLix, ensureLixOpen } from "./lix.mjs";
 
 const observeHandles = new Map();
@@ -17,12 +17,12 @@ export function registerLixIpc() {
 	}
 	registered = true;
 
-	ipcMain.handle("lix:open", async () => {
-		await ensureLixOpen();
+	ipcMain.handle("lix:open", async (event) => {
+		await ensureLixOpenForEvent(event);
 	});
 
-	ipcMain.handle("lix:execute", async (_event, payload) => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:execute", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
 		const sql = String(payload?.sql ?? "");
 		const params = normalizeParams(payload?.params);
 		const options = normalizeExecuteOptions(payload?.options);
@@ -51,8 +51,8 @@ export function registerLixIpc() {
 		}
 	});
 
-	ipcMain.handle("lix:executeTransaction", async (_event, payload) => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:executeTransaction", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
 		const statements = Array.isArray(payload?.statements)
 			? payload.statements.map((statement) => ({
 					sql: String(statement?.sql ?? ""),
@@ -94,8 +94,8 @@ export function registerLixIpc() {
 		}
 	});
 
-	ipcMain.handle("lix:transaction:begin", async (_event, payload) => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:transaction:begin", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
 		const transaction = await lix.beginTransaction(
 			normalizeExecuteOptions(payload?.options),
 		);
@@ -158,8 +158,8 @@ export function registerLixIpc() {
 		await transaction.rollback();
 	});
 
-	ipcMain.handle("lix:observe:start", async (_event, payload) => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:observe:start", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
 		const sql = String(payload?.query?.sql ?? "");
 		const params = normalizeParams(payload?.query?.params);
 		const observeEvents = lix.observe({
@@ -235,25 +235,25 @@ export function registerLixIpc() {
 		observeEvents.close();
 	});
 
-	ipcMain.handle("lix:activeBranchId", async () => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:activeBranchId", async (event) => {
+		const lix = await ensureLixOpenForEvent(event);
 		return await lix.activeBranchId();
 	});
 
-	ipcMain.handle("lix:createBranch", async (_event, payload) => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:createBranch", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
 		return await lix.createBranch(payload?.options ?? {});
 	});
 
-	ipcMain.handle("lix:switchBranch", async (_event, payload) => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:switchBranch", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
 		return await lix.switchBranch({
 			branchId: String(payload?.branchId ?? ""),
 		});
 	});
 
-	ipcMain.handle("lix:exportSnapshot", async () => {
-		const lix = await ensureLixOpen();
+	ipcMain.handle("lix:exportSnapshot", async (event) => {
+		const lix = await ensureLixOpenForEvent(event);
 		return await lix.exportSnapshot();
 	});
 
@@ -261,6 +261,10 @@ export function registerLixIpc() {
 		await closeAllHandles();
 		await closeLix();
 	});
+}
+
+async function ensureLixOpenForEvent(event) {
+	return await ensureLixOpen(BrowserWindow.fromWebContents(event.sender));
 }
 
 export async function disposeLixIpc() {
