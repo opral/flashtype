@@ -210,13 +210,11 @@ export function registerLixIpc() {
 				...observeTraceMeta.get(observeId),
 				outcome: "event",
 				sequence: event.sequence,
-				stateCommitSequence: event.stateCommitSequence,
 				rowCount: serializedRows.rows.length,
 				columnCount: serializedRows.columns.length,
 			});
 			return {
 				sequence: event.sequence,
-				stateCommitSequence: event.stateCommitSequence,
 				rows: serializedRows,
 			};
 		} catch (error) {

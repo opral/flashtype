@@ -53,7 +53,6 @@ export type ObserveQuery = {
 
 export type ObserveEvent = {
 	sequence: number;
-	stateCommitSequence?: number | null;
 	rows: ReadonlyArray<ReadonlyArray<unknown>>;
 	columns?: string[];
 };

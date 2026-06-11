@@ -212,7 +212,6 @@ export async function openDesktopLix(): Promise<Lix> {
 				}
 				return {
 					sequence: event.sequence,
-					stateCommitSequence: event.stateCommitSequence,
 					rows: event.rows.rows,
 					columns: event.rows.columns,
 				} as ObserveEvent;

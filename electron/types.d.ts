@@ -51,7 +51,6 @@ export type DesktopSwitchBranchResult = {
 export type DesktopObserveEvent = {
 	sequence: number;
 	rows: SerializedQueryResult;
-	stateCommitSequence: number | null;
 };
 
 export type DesktopLixApi = {
