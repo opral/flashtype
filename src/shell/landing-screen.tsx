@@ -90,7 +90,7 @@ function LandingScreenContent({
 				className="-translate-x-1/2 absolute left-1/2 top-6 sm:top-12 flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-5 py-1.5 text-sm"
 			>
 				<Zap className="h-3.5 w-3.5 text-brand-600" />
-				<span className="font-semibold text-neutral-900">flashtype.ai</span>
+				<span className="font-semibold text-neutral-900">flashtype.com</span>
 			</a>
 
 			<main className="flex h-full w-full max-w-3xl flex-col items-center justify-center gap-8 py-20 sm:py-24 text-center">

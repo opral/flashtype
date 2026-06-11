@@ -41,7 +41,7 @@ export function WelcomeScreen({
 				{/* Logo/Brand */}
 				<div className="flex items-center gap-2 text-xl">
 					<Zap className="h-5 w-5 text-brand-600" />
-					<span className="font-semibold text-neutral-900">flashtype.ai</span>
+					<span className="font-semibold text-neutral-900">flashtype.com</span>
 				</div>
 
 				{/* Description */}

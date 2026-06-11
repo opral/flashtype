@@ -20,7 +20,7 @@ Flashtype demonstrates key Lix capabilities:
 
 ## 🚀 Try It
 
-Visit [flashtype.ai](https://flashtype.ai) to try it in your browser—no installation required.
+Visit [flashtype.com](https://flashtype.com) to try it in your browser—no installation required.
 
 ## 🔗 Learn More About Lix
 

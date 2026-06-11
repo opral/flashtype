@@ -90,7 +90,7 @@ export function ErrorFallback(props: { error: unknown }) {
 							<RotateCcw className="h-4 w-4" /> Reload this tab
 						</button>
 						<a
-							href="https://github.com/opral/flashtype.ai/issues"
+							href="https://github.com/opral/flashtype/issues"
 							target="_blank"
 							rel="noopener noreferrer"
 							className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
@@ -133,7 +133,7 @@ export function ErrorFallback(props: { error: unknown }) {
 						<RotateCcw className="h-4 w-4" /> Reload app
 					</button>
 					<a
-						href="https://github.com/opral/flashtype.ai/issues"
+						href="https://github.com/opral/flashtype/issues"
 						target="_blank"
 						rel="noopener noreferrer"
 						className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
