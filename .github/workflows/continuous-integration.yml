@@ -32,6 +32,9 @@ jobs:
           node-version: ${{ matrix.version }}
           cache: "pnpm"
 
+      - name: Install Rust wasm target
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Install dependencies
         run: pnpm install
 
