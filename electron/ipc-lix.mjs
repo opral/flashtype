@@ -1,10 +1,12 @@
 import { BrowserWindow, ipcMain } from "electron";
+import { Value } from "@lix-js/sdk";
 import { closeLix, ensureLixOpen } from "./lix.mjs";
 
 const observeHandles = new Map();
 const observeTraceMeta = new Map();
 const transactionHandles = new Map();
 let registered = false;
+const LIX_VALUE_ENVELOPE_KEY = "__lixValue";
 const LIX_TRACE_SLOW_MS = Number.parseInt(
 	process.env.FLASHTYPE_TRACE_LIX_SLOW_MS ?? "25",
 	10,
@@ -358,10 +360,10 @@ function normalizeParams(params) {
 	if (!Array.isArray(params)) {
 		return [];
 	}
-	return params.map((param) => normalizeSqlParam(param));
+	return params.map((param, index) => normalizeSqlParam(param, index));
 }
 
-function normalizeSqlParam(value) {
+function normalizeSqlParam(value, index = 0) {
 	if (
 		value === null ||
 		typeof value === "string" ||
@@ -386,59 +388,188 @@ function normalizeSqlParam(value) {
 		return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 	}
 
-	if (Array.isArray(value)) {
-		return JSON.stringify(value);
+	if (isLixValueEnvelope(value)) {
+		return normalizeLixValueEnvelope(value, index);
 	}
 
-	if (!value || typeof value !== "object") {
+	if (Array.isArray(value) || isPlainObject(value)) {
+		return normalizeJsonValue(value, `params[${index}]`);
+	}
+
+	throw new TypeError(
+		`SQL parameter ${index + 1} must be a primitive, Uint8Array, JSON value, or tagged Lix value envelope`,
+	);
+}
+
+function normalizeLixValueEnvelope(value, index) {
+	const kind = normalizeLixValueKind(value.kind);
+	switch (kind) {
+		case "null":
+			if (value.value !== null) {
+				throw new TypeError(
+					`SQL parameter ${index + 1} null envelope must contain null`,
+				);
+			}
+			return Value.null();
+		case "boolean":
+			if (typeof value.value !== "boolean") {
+				throw new TypeError(
+					`SQL parameter ${index + 1} boolean envelope must contain a boolean`,
+				);
+			}
+			return Value.boolean(value.value);
+		case "integer": {
+			if (
+				typeof value.value !== "number" ||
+				!Number.isSafeInteger(value.value)
+			) {
+				throw new TypeError(
+					`SQL parameter ${index + 1} integer envelope must contain a safe integer`,
+				);
+			}
+			return Value.integer(value.value);
+		}
+		case "real": {
+			if (typeof value.value !== "number" || !Number.isFinite(value.value)) {
+				throw new TypeError(
+					`SQL parameter ${index + 1} real envelope must contain a finite number`,
+				);
+			}
+			return Value.real(value.value);
+		}
+		case "text":
+			if (typeof value.value !== "string") {
+				throw new TypeError(
+					`SQL parameter ${index + 1} text envelope must contain a string`,
+				);
+			}
+			return Value.text(value.value);
+		case "json":
+			return Value.json(
+				normalizeJsonValue(value.value, `params[${index}].value`),
+			);
+		case "blob":
+			return Value.blob(normalizeBlobValue(value, index));
+		default:
+			throw new TypeError(
+				`SQL parameter ${index + 1} has unsupported Lix value kind '${String(value.kind)}'`,
+			);
+	}
+}
+
+function normalizeLixValueKind(kind) {
+	switch (kind) {
+		case "null":
+		case "Null":
+			return "null";
+		case "bool":
+		case "boolean":
+		case "Boolean":
+			return "boolean";
+		case "int":
+		case "integer":
+		case "Integer":
+			return "integer";
+		case "float":
+		case "real":
+		case "Real":
+			return "real";
+		case "text":
+		case "Text":
+			return "text";
+		case "json":
+		case "Json":
+		case "JSON":
+			return "json";
+		case "blob":
+		case "Blob":
+			return "blob";
+		default:
+			return undefined;
+	}
+}
+
+function normalizeBlobValue(value, index) {
+	if (typeof value.base64 === "string") {
+		return base64ToBytes(value.base64);
+	}
+	const raw = value.value;
+	if (raw instanceof Uint8Array) {
+		return raw;
+	}
+	if (raw instanceof ArrayBuffer) {
+		return new Uint8Array(raw);
+	}
+	if (ArrayBuffer.isView(raw)) {
+		return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+	}
+	if (typeof raw === "string") {
+		return base64ToBytes(raw);
+	}
+	throw new TypeError(
+		`SQL parameter ${index + 1} blob envelope must contain base64 or binary data`,
+	);
+}
+
+function normalizeJsonValue(value, path, seen = new WeakSet()) {
+	if (
+		value === null ||
+		typeof value === "string" ||
+		typeof value === "boolean"
+	) {
 		return value;
 	}
-
-	if (typeof value.kind === "string") {
-		const kind = value.kind;
-		if (kind === "null" || kind === "Null") {
-			return null;
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) {
+			throw new TypeError(`${path} must contain only finite JSON numbers`);
 		}
-		if (kind === "bool" || kind === "Boolean") {
-			return Boolean(value.value);
-		}
-		if (
-			kind === "int" ||
-			kind === "Integer" ||
-			kind === "float" ||
-			kind === "Real"
-		) {
-			const parsed = Number(value.value);
-			return Number.isFinite(parsed) ? parsed : null;
-		}
-		if (kind === "text" || kind === "Text") {
-			return typeof value.value === "string"
-				? value.value
-				: String(value.value ?? "");
-		}
-		if (kind === "blob" || kind === "Blob") {
-			if (typeof value.base64 === "string") {
-				return base64ToBytes(value.base64);
-			}
-			const raw = value.value;
-			if (raw instanceof Uint8Array) {
-				return raw;
-			}
-			if (raw instanceof ArrayBuffer) {
-				return new Uint8Array(raw);
-			}
-			if (ArrayBuffer.isView(raw)) {
-				return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
-			}
-			if (typeof raw === "string") {
-				return base64ToBytes(raw);
-			}
-			return new Uint8Array();
+		return value;
+	}
+	if (Array.isArray(value)) {
+		enterJsonContainer(value, path, seen);
+		try {
+			return value.map((entry, index) =>
+				normalizeJsonValue(entry, `${path}[${index}]`, seen),
+			);
+		} finally {
+			seen.delete(value);
 		}
 	}
+	if (isPlainObject(value)) {
+		enterJsonContainer(value, path, seen);
+		try {
+			return Object.fromEntries(
+				Object.entries(value).map(([key, entry]) => [
+					key,
+					normalizeJsonValue(entry, `${path}.${key}`, seen),
+				]),
+			);
+		} finally {
+			seen.delete(value);
+		}
+	}
+	throw new TypeError(`${path} must be JSON-serializable`);
+}
 
-	// Backward-compatible fallback: plain objects were historically JSON-stringified.
-	return JSON.stringify(value);
+function enterJsonContainer(value, path, seen) {
+	if (seen.has(value)) {
+		throw new TypeError(`${path} must not contain circular references`);
+	}
+	seen.add(value);
+}
+
+function isLixValueEnvelope(value) {
+	return (
+		isPlainObject(value) &&
+		value[LIX_VALUE_ENVELOPE_KEY] === true &&
+		typeof value.kind === "string"
+	);
+}
+
+function isPlainObject(value) {
+	if (!value || typeof value !== "object") return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
 }
 
 function base64ToBytes(base64) {
