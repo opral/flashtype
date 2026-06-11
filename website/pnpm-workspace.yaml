@@ -1,0 +1,9 @@
+# Marks website/ as its own workspace root so it installs standalone,
+# without requiring the app's submodules to be checked out.
+packages:
+  - .
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd
