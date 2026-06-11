@@ -2,6 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 import type { Lix, SqlTransaction } from "@/lib/lix-types";
 import { installWidgetFromFiles, uninstallWidget } from "./widget-installation";
 
+const encoder = new TextEncoder();
+
 function createMockLix() {
 	const txExecute = vi.fn(async () => ({ rows: [], columns: [] }));
 	const tx = {
@@ -53,7 +55,9 @@ describe("widget installation", () => {
 			"INSERT INTO lix_file_by_branch (path, data, lixcol_branch_id, lixcol_global) VALUES (?, ?, ?, ?)",
 			[
 				"/.lix_system/app_data/flashtype/widgets/conversation/manifest.json",
-				'{"id":"conversation","name":"Conversation","entry":"./index.js"}',
+				encoder.encode(
+					'{"id":"conversation","name":"Conversation","entry":"./index.js"}',
+				),
 				"global",
 				true,
 			],
@@ -71,7 +75,9 @@ describe("widget installation", () => {
 			"INSERT INTO lix_file_by_branch (path, data, lixcol_branch_id, lixcol_global) VALUES (?, ?, ?, ?)",
 			[
 				"/.lix_system/app_data/flashtype/widgets/conversation/index.js",
-				"export function render({ target }) { target.textContent = 'ok'; }",
+				encoder.encode(
+					"export function render({ target }) { target.textContent = 'ok'; }",
+				),
 				"global",
 				true,
 			],

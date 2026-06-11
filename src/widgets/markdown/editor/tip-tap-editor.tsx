@@ -137,7 +137,6 @@ function TipTapEditorContent({
 	}, [
 		lix,
 		activeFileId,
-		activeBranchId,
 		PERSIST_DEBOUNCE_MS,
 		writerKey,
 		hasInitialFile,

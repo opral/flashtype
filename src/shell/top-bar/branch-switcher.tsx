@@ -193,9 +193,11 @@ export function BranchSwitcher() {
 					branches.map((branch) => {
 						const isActive = branch.id === activeBranchRow.id;
 						const isDeleteDisabled = isActive;
+						const branchLabelId = `branch-switcher-label-${branch.id}`;
 						return (
 							<DropdownMenuItem
 								key={branch.id}
+								aria-labelledby={branchLabelId}
 								onSelect={(event) => {
 									type DropdownSelectEvent = Event & {
 										detail?: { originalEvent?: Event };
@@ -218,20 +220,27 @@ export function BranchSwitcher() {
 										<Check className="h-3 w-3 text-brand-600" />
 									) : null}
 								</span>
-								<span className="truncate">{branch.name}</span>
+								<span id={branchLabelId} className="truncate">
+									{branch.name}
+								</span>
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
 										<button
 											type="button"
 											className="ml-auto flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
 											data-branch-actions
-											aria-label={`Branch actions for ${branch.name}`}
 											onClick={(event) => {
 												event.preventDefault();
 												event.stopPropagation();
 											}}
 										>
-											<MoreVertical className="h-3.5 w-3.5 text-neutral-400" />
+											<span className="sr-only">
+												Branch actions for {branch.name}
+											</span>
+											<MoreVertical
+												className="h-3.5 w-3.5 text-neutral-400"
+												aria-hidden="true"
+											/>
 										</button>
 									</DropdownMenuTrigger>
 									<DropdownMenuContent

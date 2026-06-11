@@ -108,6 +108,7 @@ function parseManifest(
 	} catch (error) {
 		throw new Error(
 			`Invalid manifest JSON at ${manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+			{ cause: error },
 		);
 	}
 	if (!parsed || typeof parsed !== "object") {

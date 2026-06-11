@@ -2,6 +2,7 @@ import type { Lix } from "@/lib/lix-types";
 
 const GLOBAL_BRANCH_ID = "global";
 const WIDGETS_ROOT = "/.lix_system/app_data/flashtype/widgets";
+const textEncoder = new TextEncoder();
 
 function validateWidgetId(widgetId: string): string {
 	const normalized = widgetId.trim();
@@ -38,6 +39,10 @@ function widgetRootPath(widgetId: string): string {
 	return `${WIDGETS_ROOT}/${validateWidgetId(widgetId)}`;
 }
 
+function normalizeFileData(data: string | Uint8Array): Uint8Array {
+	return typeof data === "string" ? textEncoder.encode(data) : data;
+}
+
 type InstallWidgetFromFilesArgs = {
 	readonly widgetId: string;
 	readonly files: ReadonlyArray<{
@@ -66,7 +71,7 @@ export async function installWidgetFromFiles(
 			);
 			await tx.execute(
 				"INSERT INTO lix_file_by_branch (path, data, lixcol_branch_id, lixcol_global) VALUES (?, ?, ?, ?)",
-				[fullPath, file.data, GLOBAL_BRANCH_ID, true],
+				[fullPath, normalizeFileData(file.data), GLOBAL_BRANCH_ID, true],
 			);
 		}
 	});

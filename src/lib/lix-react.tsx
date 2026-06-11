@@ -21,6 +21,10 @@ export function useLix() {
 }
 
 const queryPromiseCache = new Map<string, Promise<any>>();
+const observeQueryCache = new Map<
+	string,
+	{ sql: string; params: ReadonlyArray<unknown> }
+>();
 const lixInstanceIds = new WeakMap<object, number>();
 let nextLixInstanceId = 1;
 
@@ -46,13 +50,10 @@ export function useQuery<TRow>(
 	const { subscribe = true } = options;
 	const builder = query(lix);
 	const compiled = builder.compile();
-	const observeQuery = {
-		sql: compiled.sql,
-		params: [...compiled.parameters],
-	};
 	const cacheKey =
 		`${getLixInstanceId(lix)}:${subscribe ? "sub" : "once"}:` +
 		`${compiled.sql}:${JSON.stringify(compiled.parameters)}`;
+	const observeQuery = getObserveQuery(cacheKey, compiled);
 
 	const cached = queryPromiseCache.get(cacheKey) as Promise<TRow[]> | undefined;
 	const promise =
@@ -68,7 +69,7 @@ export function useQuery<TRow>(
 
 	useEffect(() => {
 		setRows(initialRows);
-	}, [cacheKey]);
+	}, [cacheKey, initialRows]);
 
 	useEffect(() => {
 		if (!subscribe) return;
@@ -95,7 +96,7 @@ export function useQuery<TRow>(
 			closed = true;
 			events.close();
 		};
-	}, [cacheKey, subscribe, lix]);
+	}, [cacheKey, subscribe, lix, observeQuery]);
 
 	return subscribe ? rows : initialRows;
 }
@@ -144,5 +145,24 @@ function getLixInstanceId(lix: Lix): number {
 	}
 	const next = nextLixInstanceId++;
 	lixInstanceIds.set(asObject, next);
+	return next;
+}
+
+function getObserveQuery(
+	cacheKey: string,
+	compiled: {
+		sql: string;
+		parameters: ReadonlyArray<unknown>;
+	},
+): { sql: string; params: ReadonlyArray<unknown> } {
+	const cached = observeQueryCache.get(cacheKey);
+	if (cached) {
+		return cached;
+	}
+	const next = {
+		sql: compiled.sql,
+		params: [...compiled.parameters],
+	};
+	observeQueryCache.set(cacheKey, next);
 	return next;
 }
