@@ -1,0 +1,32 @@
+{
+	"name": "website",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"packageManager": "pnpm@10.13.1",
+	"scripts": {
+		"dev": "vite dev --port 3060",
+		"build": "vite build",
+		"preview": "vite preview",
+		"deploy": "pnpm run build && wrangler deploy",
+		"cf-typegen": "wrangler types",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@tanstack/react-router": "^1.170.15",
+		"@tanstack/react-start": "^1.168.25",
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "^1.40.2",
+		"@tailwindcss/vite": "^4.3.0",
+		"@types/react": "^19.2.17",
+		"@types/react-dom": "^19.2.3",
+		"@vitejs/plugin-react": "^6.0.2",
+		"tailwindcss": "^4.3.0",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16",
+		"wrangler": "^4.100.0"
+	}
+}
