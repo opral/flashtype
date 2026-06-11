@@ -3,6 +3,7 @@
 	"private": true,
 	"version": "0.0.0",
 	"type": "module",
+	"main": "electron/main.mjs",
 	"packageManager": "pnpm@10.13.1",
 	"scripts": {
 		"dev": "concurrently -k \"pnpm run dev:renderer\" \"pnpm run dev:electron\"",
@@ -10,6 +11,9 @@
 		"dev:electron": "wait-on tcp:4173 && VITE_DEV_SERVER_URL=http://127.0.0.1:4173 electron ./electron/main.mjs",
 		"build:markdown-wc": "pnpm -C submodule/markdown-wc/js run build:web",
 		"rebuild:electron-native": "electron-rebuild -f -w node-pty",
+		"fix:lix-native-macos": "node scripts/fix-lix-native-macos.mjs",
+		"package:mac": "pnpm run build && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish never",
+		"release:mac": "pnpm run build && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish always",
 		"dev:web": "vite",
 		"predev": "pnpm run build:lix && pnpm run build:markdown-wc && pnpm run rebuild:electron-native",
 		"predev:web": "pnpm run build:markdown-wc",
@@ -62,6 +66,7 @@
 		"tailwind-merge": "^3.3.1"
 	},
 	"devDependencies": {
+		"@electron/notarize": "^3.1.1",
 		"@electron/rebuild": "^4.0.3",
 		"@playwright/test": "^1.60.0",
 		"@tailwindcss/vite": "^4.0.0",
@@ -75,6 +80,7 @@
 		"babel-plugin-react-compiler": "^1.0.0",
 		"concurrently": "^9.2.1",
 		"electron": "^40.6.1",
+		"electron-builder": "^26.15.2",
 		"happy-dom": "^18.0.1",
 		"oxlint": "^1.23.0",
 		"playwright": "^1.60.0",

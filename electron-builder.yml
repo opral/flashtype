@@ -1,0 +1,80 @@
+appId: ai.flashtype.app
+productName: Flashtype
+executableName: Flashtype
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+forceCodeSigning: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - package.json
+  - dist/**/*
+  - electron/**/*
+  - node_modules/**/*
+  - "!node_modules/@lix-js/sdk-darwin-arm64/**/*"
+  - "!node_modules/node-pty/prebuilds/darwin-x64/**/*"
+  - "!node_modules/node-pty/prebuilds/win32-arm64/**/*"
+  - "!node_modules/node-pty/prebuilds/win32-x64/**/*"
+  - submodule/lix/packages/js-sdk/dist/**/*
+  - submodule/lix/packages/js-sdk/lix_js_sdk.node
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/node-pty/**/*"
+  - "submodule/lix/packages/js-sdk/lix_js_sdk.node"
+npmRebuild: false
+publish:
+  provider: github
+  owner: opral
+  repo: flashtype
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  notarize: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  extendInfo:
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Markdown Document
+        CFBundleTypeRole: Editor
+        LSHandlerRank: Owner
+        LSItemContentTypes:
+          - public.markdown
+          - net.daringfireball.markdown
+        CFBundleTypeExtensions:
+          - md
+          - markdown
+          - mdown
+          - mkd
+    UTImportedTypeDeclarations:
+      - UTTypeIdentifier: net.daringfireball.markdown
+        UTTypeDescription: Markdown Document
+        UTTypeConformsTo:
+          - public.plain-text
+        UTTypeTagSpecification:
+          public.filename-extension:
+            - md
+            - markdown
+            - mdown
+            - mkd
+          public.mime-type:
+            - text/markdown
+            - text/x-markdown
+dmg:
+  icon: build/icon.icns
+  contents:
+    - x: 130
+      y: 220
+      type: file
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

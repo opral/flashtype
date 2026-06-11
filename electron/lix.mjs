@@ -1,10 +1,11 @@
 import { dialog } from "electron";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
 
 let lixPromise = null;
 let chosenWorkspaceDir = null;
+let requestedOpenPath = null;
 let lifecycle = Promise.resolve();
 
 function enqueue(operation) {
@@ -13,9 +14,10 @@ function enqueue(operation) {
 }
 
 async function getLixWorkspaceDir(parentWindow) {
-	const workspacePath = getWorkspacePathArgument(process.argv);
+	const workspacePath =
+		getWorkspacePathArgument(process.argv) ?? requestedOpenPath;
 	if (workspacePath !== undefined) {
-		return path.resolve(workspacePath);
+		return await resolveWorkspaceDir(workspacePath);
 	}
 	if (chosenWorkspaceDir !== null) {
 		return chosenWorkspaceDir;
@@ -27,6 +29,23 @@ async function getLixWorkspaceDir(parentWindow) {
 function getWorkspacePathArgument(argv) {
 	const argumentOffset = process.defaultApp === true ? 2 : 1;
 	return argv[argumentOffset];
+}
+
+export function setRequestedOpenPath(filePath) {
+	requestedOpenPath = filePath;
+}
+
+async function resolveWorkspaceDir(workspacePath) {
+	const resolved = path.resolve(workspacePath);
+	try {
+		const stats = await stat(resolved);
+		if (stats.isFile()) {
+			return path.dirname(resolved);
+		}
+	} catch {
+		// Keep the original resolved path so the backend can report the error.
+	}
+	return resolved;
 }
 
 export async function ensureLixOpen(parentWindow) {
