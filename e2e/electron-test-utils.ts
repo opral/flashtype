@@ -30,6 +30,7 @@ export async function launchPackagedElectronApp({
 }): Promise<ElectronApplication> {
 	const env = { ...process.env };
 	delete env.VITE_DEV_SERVER_URL;
+	env.FLASHTYPE_DISABLE_AUTO_UPDATE = "1";
 
 	return await electron.launch({
 		cwd: repoRoot,

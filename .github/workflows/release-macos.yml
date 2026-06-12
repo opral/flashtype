@@ -71,3 +71,5 @@ jobs:
           files: |
             release/*.dmg
             release/*.zip
+            release/*.zip.blockmap
+            release/latest-mac.yml
