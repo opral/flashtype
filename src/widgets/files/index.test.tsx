@@ -6,10 +6,6 @@ import { openLix } from "@/test-utils/node-lix-sdk";
 import { FilesView } from "./index";
 import type { WidgetContext } from "../../widget-runtime/types";
 import { qb } from "@/lib/lix-kysely";
-import {
-	FILE_WIDGET_KIND,
-	fileWidgetInstance,
-} from "../../widget-runtime/widget-instance-helpers";
 
 const createViewContext = (
 	lix: Awaited<ReturnType<typeof openLix>>,
@@ -53,14 +49,14 @@ describe("FilesView", () => {
 
 	test("creates an inline draft when Cmd+. is pressed", async () => {
 		const lix = await openLix();
-		const openWidget = vi.fn();
+		const openFile = vi.fn();
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { openWidget })} />
+						<FilesView context={createViewContext(lix, { openFile })} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -98,16 +94,11 @@ describe("FilesView", () => {
 			expect(userRows).toHaveLength(1);
 			expect(userRows[0]?.path).toBe("/notes.md");
 			const createdId = userRows[0]?.id as string;
-			expect(openWidget).toHaveBeenCalledWith({
+			expect(openFile).toHaveBeenCalledWith({
 				panel: "central",
-				kind: FILE_WIDGET_KIND,
-				instance: fileWidgetInstance(createdId),
-				state: {
-					fileId: createdId,
-					filePath: "/notes.md",
-					flashtype: { label: "notes.md" },
-					focusOnLoad: true,
-				},
+				fileId: createdId,
+				filePath: "/notes.md",
+				state: { focusOnLoad: true },
 				focus: true,
 			});
 		});
@@ -166,9 +157,9 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
-	test("opens non-markdown files as file widget tabs", async () => {
+	test("asks the host to open CSV files", async () => {
 		const lix = await openLix();
-		const openWidget = vi.fn();
+		const openFile = vi.fn();
 		await qb(lix)
 			.insertInto("lix_file")
 			.values({
@@ -183,7 +174,7 @@ describe("FilesView", () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { openWidget })} />
+						<FilesView context={createViewContext(lix, { openFile })} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -197,15 +188,52 @@ describe("FilesView", () => {
 			fireEvent.click(utils!.getByText("data.csv"));
 		});
 
-		expect(openWidget).toHaveBeenCalledWith({
+		expect(openFile).toHaveBeenCalledWith({
 			panel: "central",
-			kind: FILE_WIDGET_KIND,
-			instance: fileWidgetInstance("file_csv"),
-			state: {
-				fileId: "file_csv",
-				filePath: "/data.csv",
-				flashtype: { label: "data.csv" },
-			},
+			fileId: "file_csv",
+			filePath: "/data.csv",
+			focus: false,
+		});
+
+		utils!.unmount();
+		await lix.close();
+	});
+
+	test("asks the host to open unsupported files", async () => {
+		const lix = await openLix();
+		const openFile = vi.fn();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_txt",
+				path: "/notes.txt",
+				data: new TextEncoder().encode("hello"),
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView context={createViewContext(lix, { openFile })} />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.getByText("notes.txt")).toBeInTheDocument();
+		});
+
+		await act(async () => {
+			fireEvent.click(utils!.getByText("notes.txt"));
+		});
+
+		expect(openFile).toHaveBeenCalledWith({
+			panel: "central",
+			fileId: "file_txt",
+			filePath: "/notes.txt",
 			focus: false,
 		});
 

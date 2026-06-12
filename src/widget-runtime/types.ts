@@ -85,6 +85,13 @@ export interface WidgetDefinition {
 	readonly label: string;
 	readonly description: string;
 	readonly icon: LucideIcon;
+	/**
+	 * Lowercase file extensions this widget can render when a file is opened.
+	 *
+	 * @example
+	 * fileExtensions: ["md", "markdown"]
+	 */
+	readonly fileExtensions?: readonly string[];
 	readonly activate?: (args: {
 		context: WidgetContext;
 		instance: WidgetInstance;
@@ -119,6 +126,14 @@ export interface WidgetContext {
 		readonly launchArgs?: WidgetLaunchArgs;
 		readonly focus?: boolean;
 		readonly instance?: string;
+		readonly pending?: boolean;
+	}) => void;
+	readonly openFile?: (args: {
+		readonly panel: PanelSide;
+		readonly fileId: string;
+		readonly filePath: string;
+		readonly state?: WidgetState;
+		readonly focus?: boolean;
 		readonly pending?: boolean;
 	}) => void;
 	readonly closeWidget?: (args: {

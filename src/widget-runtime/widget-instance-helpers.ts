@@ -3,14 +3,18 @@ import type { DiffWidgetConfig, WidgetKind } from "./types";
 import type { WidgetInstance } from "./types";
 
 export const FILES_WIDGET_KIND = "flashtype_files" as WidgetKind;
-export const SEARCH_WIDGET_KIND = "flashtype_search" as WidgetKind;
-export const TASKS_WIDGET_KIND = "flashtype_tasks" as WidgetKind;
 export const FILE_WIDGET_KIND = "flashtype_file" as WidgetKind;
+export const CSV_WIDGET_KIND = "flashtype_csv" as WidgetKind;
 export const DIFF_WIDGET_KIND = "flashtype_diff" as WidgetKind;
 export const TERMINAL_WIDGET_KIND = "flashtype_terminal" as WidgetKind;
 
+export const fileWidgetInstanceForKind = (
+	kind: WidgetKind,
+	fileId: string,
+): string => `${kind}:${fileId}`;
+
 export const fileWidgetInstance = (fileId: string): string =>
-	`${FILE_WIDGET_KIND}:${fileId}`;
+	fileWidgetInstanceForKind(FILE_WIDGET_KIND, fileId);
 
 export const diffWidgetInstance = (fileId: string): string =>
 	`${DIFF_WIDGET_KIND}:${fileId}`;

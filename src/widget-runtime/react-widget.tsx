@@ -7,6 +7,7 @@ import type {
 	WidgetInstance,
 	WidgetKind,
 } from "./types";
+import { normalizeFileExtensions } from "./file-handlers";
 
 type ReactRenderer = (args: {
 	context: WidgetContext;
@@ -23,6 +24,7 @@ export function createReactWidgetDefinition(args: {
 	label: string;
 	description: string;
 	icon: LucideIcon;
+	fileExtensions?: readonly string[];
 	component: ReactRenderer;
 	activate?: ReactActivator;
 }): WidgetDefinition {
@@ -33,6 +35,7 @@ export function createReactWidgetDefinition(args: {
 		label: args.label,
 		description: args.description,
 		icon: args.icon,
+		fileExtensions: normalizeFileExtensions(args.fileExtensions),
 		activate: args.activate,
 		render: ({ context, instance, target }) => {
 			let root = (target as unknown as Record<symbol, Root | undefined>)[

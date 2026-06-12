@@ -220,6 +220,7 @@ export const widget = createReactWidgetDefinition({
 	label: "File",
 	description: "Display file contents.",
 	icon: FileText,
+	fileExtensions: ["md", "markdown"],
 	component: ({ context, instance }) => (
 		<LixProvider lix={context.lix}>
 			<MarkdownView

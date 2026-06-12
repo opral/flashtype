@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { cloneWidgetInstance, reorderPanelWidgetsByIndex } from "./panel-utils";
 import type { PanelState, WidgetInstance } from "../widget-runtime/types";
-import {
-	FILES_WIDGET_KIND,
-	SEARCH_WIDGET_KIND,
-	TASKS_WIDGET_KIND,
-} from "../widget-runtime/widget-instance-helpers";
+import { FILES_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
+
+const TEST_SEARCH_WIDGET_KIND = "test_search";
+const TEST_TASKS_WIDGET_KIND = "test_tasks";
 
 describe("cloneViewInstanceByKey", () => {
 	test("clones the matched view and its state", () => {
@@ -72,8 +71,8 @@ describe("panel view reordering", () => {
 	const samplePanel: PanelState = {
 		views: [
 			{ instance: "files-1", kind: FILES_WIDGET_KIND },
-			{ instance: "search-1", kind: SEARCH_WIDGET_KIND },
-			{ instance: "tasks-1", kind: TASKS_WIDGET_KIND },
+			{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND },
+			{ instance: "tasks-1", kind: TEST_TASKS_WIDGET_KIND },
 		],
 		activeInstance: "files-1",
 	};

@@ -56,9 +56,11 @@ import {
 	DIFF_WIDGET_KIND,
 	diffLabelFromPath,
 	fileWidgetInstance,
+	fileWidgetInstanceForKind,
 	FILE_WIDGET_KIND,
 	activeMarkdownFileIdFromWidgetInstance,
 } from "../widget-runtime/widget-instance-helpers";
+import { findFileHandlerWidget } from "../widget-runtime/file-handlers";
 import {
 	installWidgetFromFiles as installWidgetFromFilesInLix,
 	uninstallWidget as uninstallWidgetInLix,
@@ -79,7 +81,63 @@ import { cloneWidgetInstance, reorderPanelWidgetsByIndex } from "./panel-utils";
 
 const stripLaunchArgs = (view: WidgetInstance): WidgetInstance => {
 	const { launchArgs: _omitLaunch, ...rest } = view as any;
-	return rest;
+	const state = sanitizeWidgetStateForPersistence(rest.state);
+	if (state === undefined) {
+		const { state: _omitState, ...viewWithoutState } = rest;
+		return viewWithoutState;
+	}
+	return { ...rest, state };
+};
+
+const sanitizeWidgetStateForPersistence = (
+	state: WidgetState | undefined,
+): WidgetState | undefined => {
+	if (state === undefined) return undefined;
+	const sanitized = sanitizeJsonValue(state);
+	if (!isPlainObject(sanitized)) return undefined;
+	return Object.keys(sanitized).length > 0
+		? (sanitized as WidgetState)
+		: undefined;
+};
+
+const sanitizeJsonValue = (
+	value: unknown,
+	seen = new WeakSet<object>(),
+): unknown => {
+	if (value === null || typeof value === "string" || typeof value === "boolean") {
+		return value;
+	}
+	if (typeof value === "number") {
+		return Number.isFinite(value) ? value : undefined;
+	}
+	if (Array.isArray(value)) {
+		if (seen.has(value)) return undefined;
+		seen.add(value);
+		const sanitized = value.map((entry) => {
+			const next = sanitizeJsonValue(entry, seen);
+			return next === undefined ? null : next;
+		});
+		seen.delete(value);
+		return sanitized;
+	}
+	if (isPlainObject(value)) {
+		if (seen.has(value)) return undefined;
+		seen.add(value);
+		const entries = Object.entries(value)
+			.map(([key, entry]) => [key, sanitizeJsonValue(entry, seen)] as const)
+			.filter((entry): entry is readonly [string, unknown] => {
+				return entry[1] !== undefined;
+			});
+		seen.delete(value);
+		return Object.fromEntries(entries);
+	}
+	return undefined;
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+	if (!value || typeof value !== "object") return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
 };
 
 const sanitizePanels = (
@@ -651,6 +709,41 @@ function LayoutShellContent() {
 		[ensurePanelExpanded, setPanelState],
 	);
 
+	const handleOpenFile = useCallback(
+		({
+			panel,
+			fileId,
+			filePath,
+			state,
+			focus = true,
+			pending = false,
+		}: {
+			panel: PanelSide;
+			fileId: string;
+			filePath: string;
+			state?: WidgetState;
+			focus?: boolean;
+			pending?: boolean;
+		}) => {
+			const handler =
+				findFileHandlerWidget(widgetMap.values(), filePath) ??
+				widgetMap.get(FILE_WIDGET_KIND);
+			const kind = handler?.kind ?? FILE_WIDGET_KIND;
+			handleOpenView({
+				panel,
+				kind,
+				instance: fileWidgetInstanceForKind(kind, fileId),
+				state: {
+					...buildFileWidgetProps({ fileId, filePath }),
+					...(state ?? {}),
+				},
+				focus,
+				pending,
+			});
+		},
+		[handleOpenView, widgetMap],
+	);
+
 	const handleCloseView = useCallback(
 		({
 			panel,
@@ -870,14 +963,13 @@ function LayoutShellContent() {
 			.where("path", "=", path)
 			.executeTakeFirstOrThrow();
 		const id = createdFile.id;
-		handleOpenView({
+		handleOpenFile({
 			panel: "central",
-			kind: FILE_WIDGET_KIND,
-			instance: fileWidgetInstance(id),
-			state: buildFileWidgetProps({ fileId: id, filePath: path }),
+			fileId: id,
+			filePath: path,
 			focus: true,
 		});
-	}, [handleOpenView, lix]);
+	}, [handleOpenFile, lix]);
 
 	const activeCentralEntry = useMemo(() => {
 		const activeInstance =
@@ -1121,6 +1213,7 @@ function LayoutShellContent() {
 	const sharedViewContext = useMemo(
 		() => ({
 			openWidget: handleOpenView,
+			openFile: handleOpenFile,
 			closeWidget: handleCloseView,
 			setTabBadgeCount: () => {},
 			moveWidgetToPanel: handleMoveViewToPanel,
@@ -1132,6 +1225,7 @@ function LayoutShellContent() {
 		}),
 		[
 			handleOpenView,
+			handleOpenFile,
 			handleCloseView,
 			handleMoveViewToPanel,
 			handleInstallWidgetFromFiles,

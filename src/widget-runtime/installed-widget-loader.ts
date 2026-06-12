@@ -2,6 +2,7 @@ import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
 import { MessageSquare, Puzzle, type LucideIcon } from "lucide-react";
 import type { WidgetContext, WidgetDefinition, WidgetInstance } from "./types";
+import { normalizeFileExtensions } from "./file-handlers";
 
 const WIDGET_ROOT = "/.lix_system/app_data/flashtype/widgets/";
 const MANIFEST_SUFFIX = "/manifest.json";
@@ -12,6 +13,7 @@ type WidgetManifest = {
 	description?: string;
 	icon?: string;
 	entry: string;
+	fileExtensions?: string[];
 };
 
 type WidgetModuleContract = {
@@ -98,7 +100,7 @@ function resolveWidgetEntryPath(manifestPath: string, entry: string): string {
 	return resolved;
 }
 
-function parseManifest(
+export function parseManifest(
 	manifestPath: string,
 	manifestContent: string,
 ): WidgetManifest {
@@ -126,6 +128,14 @@ function parseManifest(
 		description: m.description ? String(m.description) : undefined,
 		icon: m.icon ? String(m.icon) : undefined,
 		entry: String(m.entry),
+		fileExtensions: Array.isArray(m.fileExtensions)
+			? normalizeFileExtensions(
+					m.fileExtensions.filter(
+						(extension): extension is string =>
+							typeof extension === "string",
+					),
+				)
+			: undefined,
 	};
 }
 
@@ -205,6 +215,7 @@ export async function loadInstalledWidgetsFromLix(
 				description:
 					manifest.description ?? `Installed widget: ${manifest.name}`,
 				icon,
+				fileExtensions: manifest.fileExtensions,
 				activate: module.activate,
 				render: module.render,
 			});

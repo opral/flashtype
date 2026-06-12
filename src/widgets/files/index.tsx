@@ -12,12 +12,7 @@ import type { WidgetContext } from "../../widget-runtime/types";
 import { FileTree } from "./file-tree";
 import { createReactWidgetDefinition } from "../../widget-runtime/react-widget";
 import { qb } from "@/lib/lix-kysely";
-import {
-	FILE_WIDGET_KIND,
-	FILES_WIDGET_KIND,
-	buildFileWidgetProps,
-	fileWidgetInstance,
-} from "../../widget-runtime/widget-instance-helpers";
+import { FILES_WIDGET_KIND } from "../../widget-runtime/widget-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
 
 type FilesViewProps = {
@@ -167,14 +162,11 @@ export function FilesView({ context }: FilesViewProps) {
 				setPendingPaths((prev) => [...prev, path]);
 				setSelectedPath(path);
 				setSelectedKind("file");
-				context?.openWidget?.({
+				context?.openFile?.({
 					panel: "central",
-					kind: FILE_WIDGET_KIND,
-					instance: fileWidgetInstance(id),
-					state: {
-						...buildFileWidgetProps({ fileId: id, filePath: path }),
-						focusOnLoad: true,
-					},
+					fileId: id,
+					filePath: path,
+					state: { focusOnLoad: true },
 					focus: true,
 				});
 			} catch (error) {
@@ -222,11 +214,10 @@ export function FilesView({ context }: FilesViewProps) {
 		async (fileId: string, path: string) => {
 			setSelectedPath(path);
 			setSelectedKind("file");
-			context?.openWidget?.({
+			context?.openFile?.({
 				panel: "central",
-				kind: FILE_WIDGET_KIND,
-				instance: fileWidgetInstance(fileId),
-				state: buildFileWidgetProps({ fileId, filePath: path }),
+				fileId,
+				filePath: path,
 				focus: false,
 			});
 		},
@@ -443,14 +434,10 @@ export function FilesView({ context }: FilesViewProps) {
 							.executeTakeFirst();
 
 						if (newFile?.id) {
-							context?.openWidget?.({
+							context?.openFile?.({
 								panel: "central",
-								kind: FILE_WIDGET_KIND,
-								instance: fileWidgetInstance(newFile.id as string),
-								state: buildFileWidgetProps({
-									fileId: newFile.id as string,
-									filePath,
-								}),
+								fileId: newFile.id as string,
+								filePath,
 							});
 						}
 					}

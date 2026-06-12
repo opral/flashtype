@@ -6,12 +6,13 @@ import { CentralPanel } from "./central-panel";
 import type { PanelState, WidgetContext } from "../widget-runtime/types";
 import { openLix } from "@/test-utils/node-lix-sdk";
 import { WidgetHostRegistryProvider } from "../widget-runtime/widget-host-registry";
-import { SEARCH_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
+
+const TEST_SEARCH_WIDGET_KIND = "test_search";
 
 vi.mock("../widget-runtime/widget-registry", () => {
 	const definitions = [
 		{
-			kind: "flashtype_search" as const,
+			kind: "test_search" as const,
 			label: "Search",
 			description: "Search view",
 			icon: () => <svg></svg>,
@@ -28,7 +29,7 @@ vi.mock("../widget-runtime/widget-registry", () => {
 				input.addEventListener("pointerdown", () => {
 					context.openWidget?.({
 						panel: "central",
-						kind: "flashtype_search",
+						kind: "test_search",
 						instance: "search-view",
 						focus: false,
 					});
@@ -92,7 +93,7 @@ const createViewContext = (
 describe("CentralPanel", () => {
 	test("renders the active view and wires tab selection", async () => {
 		const panelState: PanelState = {
-			views: [{ instance: "search-1", kind: SEARCH_WIDGET_KIND }],
+			views: [{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND }],
 			activeInstance: "search-1",
 		};
 		const handleSelect = vi.fn();
@@ -121,7 +122,7 @@ describe("CentralPanel", () => {
 
 	test("active tab is not focused when panel loses focus", async () => {
 		const panelState: PanelState = {
-			views: [{ instance: "search-1", kind: SEARCH_WIDGET_KIND }],
+			views: [{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND }],
 			activeInstance: "search-1",
 		};
 
@@ -145,7 +146,11 @@ describe("CentralPanel", () => {
 	test("finalizes pending view when interacting with content", async () => {
 		const panelState: PanelState = {
 			views: [
-				{ instance: "search-1", kind: SEARCH_WIDGET_KIND, isPending: true },
+				{
+					instance: "search-1",
+					kind: TEST_SEARCH_WIDGET_KIND,
+					isPending: true,
+				},
 			],
 			activeInstance: "search-1",
 		};

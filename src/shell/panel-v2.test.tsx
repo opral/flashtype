@@ -49,17 +49,20 @@ import type { Lix } from "@/lib/lix-types";
 import { Flag, Search } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
-import { SEARCH_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
+
+const TEST_SEARCH_WIDGET_KIND = "test_search";
 
 const emptyPanel: PanelState = { views: [], activeInstance: null };
 
 const singleSearchPanel: PanelState = {
-	views: [{ instance: "search-1", kind: SEARCH_WIDGET_KIND }],
+	views: [{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND }],
 	activeInstance: "search-1",
 };
 
 const pendingSearchPanel: PanelState = {
-	views: [{ instance: "search-1", kind: SEARCH_WIDGET_KIND, isPending: true }],
+	views: [
+		{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND, isPending: true },
+	],
 	activeInstance: "search-1",
 };
 
@@ -75,7 +78,7 @@ const createViewContext = (
 });
 
 const searchViewOverride: WidgetDefinition = {
-	kind: SEARCH_WIDGET_KIND,
+	kind: TEST_SEARCH_WIDGET_KIND,
 	label: "Search",
 	description: "Test search view",
 	icon: Search,
