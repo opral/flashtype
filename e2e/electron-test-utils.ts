@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { _electron as electron, type ElectronApplication } from "playwright";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -66,24 +66,24 @@ export async function ensureFilesViewOpenInLeftPanel(
 	await expect(filesTab).toHaveAttribute("data-focused", "true");
 }
 
-export async function seedStarterFiles(page: Page): Promise<void> {
-	const seedButton = page.getByLabel("Seed starter files");
-	await expect(seedButton).toBeVisible();
-	await seedButton.click();
-	await expect(seedButton).toBeEnabled();
-}
-
-export async function expectMaterializedSeedFiles(
-	workspaceDir: string,
-): Promise<void> {
-	await expect
-		.poll(() => readTextFile(path.join(workspaceDir, "welcome.md")))
-		.toContain("Welcome to Opral's repository.");
-	await expect
-		.poll(() =>
-			readTextFile(path.join(workspaceDir, "notes", "meeting-notes.md")),
-		)
-		.toContain("Team Meeting");
+/**
+ * Writes starter markdown files into the workspace folder before launch.
+ * The workspace is a plain folder on disk; the app ingests whatever it finds.
+ */
+export async function writeStarterFiles(workspaceDir: string): Promise<void> {
+	await mkdir(path.join(workspaceDir, "notes"), { recursive: true });
+	await writeFile(
+		path.join(workspaceDir, "welcome.md"),
+		"# Welcome\n\nStarter file for e2e tests.\n",
+	);
+	await writeFile(
+		path.join(workspaceDir, "changelog.md"),
+		"# Changelog\n\n- initial entry\n",
+	);
+	await writeFile(
+		path.join(workspaceDir, "notes", "meeting-notes.md"),
+		"# Team Meeting\n\n- agenda item\n",
+	);
 }
 
 export async function expectInstalledPluginArchives(
@@ -159,14 +159,6 @@ async function readBinaryFile(filePath: string): Promise<number> {
 		return (await readFile(filePath)).byteLength;
 	} catch {
 		return 0;
-	}
-}
-
-async function readTextFile(filePath: string): Promise<string> {
-	try {
-		return await readFile(filePath, "utf8");
-	} catch {
-		return "";
 	}
 }
 

@@ -226,7 +226,7 @@ describe("PanelV2", () => {
 		);
 	});
 
-	test("renders any extra tab bar content", () => {
+	test("renders the add-view button when onAddView is provided", () => {
 		renderWithinProvider(
 			<PanelV2
 				side="left"
@@ -235,13 +235,13 @@ describe("PanelV2", () => {
 				onFocusPanel={vi.fn()}
 				onSelectWidget={vi.fn()}
 				onRemoveWidget={vi.fn()}
+				onAddView={vi.fn()}
 				viewContext={createViewContext()}
-				extraTabBarContent={<button data-testid="add-btn">+</button>}
 				viewOverrides={[searchViewOverride]}
 			/>,
 		);
 
-		expect(screen.getByTestId("add-btn")).toBeInTheDocument();
+		expect(screen.getByLabelText("Add view")).toBeInTheDocument();
 	});
 
 	test("invokes the pending finalizer when the active view is interacted with", async () => {

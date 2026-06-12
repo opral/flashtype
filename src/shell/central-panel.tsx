@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { LixProvider } from "@/lib/lix-react";
+import { ArrowRight, FilePlus } from "lucide-react";
 import type {
 	PanelState,
 	PanelSide,
@@ -7,7 +7,6 @@ import type {
 	WidgetDefinition,
 } from "../widget-runtime/types";
 import { PanelV2 } from "./panel-v2";
-import { LandingScreen } from "./landing-screen";
 
 type CentralPanelProps = {
 	readonly panel: PanelState;
@@ -53,13 +52,10 @@ export function CentralPanel({
 	);
 
 	const emptyState = (
-		<LixProvider lix={viewContext.lix}>
-			<EmptyStateContent
-				viewContext={viewContext}
-				onCreateNewFile={onCreateNewFile}
-				isFocused={isFocused}
-			/>
-		</LixProvider>
+		<EmptyStateContent
+			onCreateNewFile={onCreateNewFile}
+			onAskAgent={() => viewContext.focusPanel?.("right")}
+		/>
 	);
 
 	const labelResolver = useCallback(
@@ -86,22 +82,47 @@ export function CentralPanel({
 }
 
 /**
- * Empty central panel content that renders the landing screen.
+ * Empty editor island in an open workspace: start a document, or hand off to
+ * the agent island.
  */
 function EmptyStateContent({
-	viewContext,
 	onCreateNewFile,
-	isFocused,
+	onAskAgent,
 }: {
-	viewContext: WidgetContext;
 	onCreateNewFile?: () => void | Promise<void>;
-	isFocused: boolean;
+	onAskAgent?: () => void;
 }) {
 	return (
-		<LandingScreen
-			context={viewContext}
-			onCreateNewFile={onCreateNewFile}
-			isPanelFocused={isFocused}
-		/>
+		<div
+			className="flex h-full flex-col items-center justify-center p-10 text-center"
+			data-testid="central-panel-empty-state"
+		>
+			<FilePlus className="size-8 text-ink-faint" strokeWidth={1.5} />
+			<h1 className="mt-4 text-2xl font-bold tracking-[-0.02em] text-neutral-900">
+				Start writing
+			</h1>
+			<p className="mt-1.5 max-w-90 text-sm leading-relaxed text-ink-muted text-pretty">
+				Open a file from the left, or create a new document — saved as plain
+				markdown in this folder.
+			</p>
+			{onCreateNewFile ? (
+				<button
+					type="button"
+					onClick={() => void onCreateNewFile()}
+					className="mt-6 flex items-center gap-2 rounded-[10px] bg-linear-to-b from-brand-500 to-brand-600 px-6 py-2.75 text-sm font-bold text-neutral-0 shadow-[0_6px_18px_rgba(232,89,12,0.32),inset_0_1px_0_rgba(255,255,255,0.25)] hover:brightness-[1.06]"
+				>
+					New document
+					<span className="text-[11.5px] font-semibold opacity-75">⌘.</span>
+				</button>
+			) : null}
+			<button
+				type="button"
+				onClick={onAskAgent}
+				className="mt-4.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-neutral-400 hover:text-neutral-600"
+			>
+				or ask your agent to draft one
+				<ArrowRight className="size-3" strokeWidth={2} />
+			</button>
+		</div>
 	);
 }

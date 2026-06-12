@@ -127,12 +127,29 @@ export type DesktopTerminalApi = {
 	onExit(listener: (event: DesktopTerminalExitEvent) => void): () => void;
 };
 
+export type DesktopWorkspace = {
+	path: string;
+	name: string;
+};
+
+export type DesktopWorkspaceApi = {
+	get(): Promise<DesktopWorkspace | null>;
+	/**
+	 * Opens a workspace. With a path (e.g. from a dropped folder) it adopts it
+	 * directly; without one it shows the native directory picker. Resolves to
+	 * null when the picker is canceled.
+	 */
+	open(payload?: { path: string }): Promise<DesktopWorkspace | null>;
+	getPathForFile(file: File): string;
+};
+
 declare global {
 	interface Window {
 		flashtypeDesktop?: {
 			platform: string;
 			lix: DesktopLixApi;
 			terminal: DesktopTerminalApi;
+			workspace: DesktopWorkspaceApi;
 		};
 	}
 }

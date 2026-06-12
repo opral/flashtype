@@ -452,7 +452,7 @@ export function FilesView({ context }: FilesViewProps) {
 
 	return (
 		<div
-			className="relative flex min-h-0 flex-1 flex-col px-1 py-1"
+			className="relative flex min-h-0 flex-1 flex-col p-2"
 			onDragEnter={handleDragEnter}
 			onDragOver={handleDragOver}
 			onDragLeave={handleDragLeave}
@@ -463,17 +463,15 @@ export function FilesView({ context }: FilesViewProps) {
 				<button
 					type="button"
 					onClick={handleNewFile}
-					className="mb-1 flex w-full items-center justify-between gap-2 rounded border border-transparent px-2 py-1 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-1"
+					className="mb-px flex w-full items-center justify-between gap-2 rounded-[7px] px-2.25 py-1.25 text-left text-[13px] text-neutral-600 transition-colors hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
 					aria-label="New file"
 					title="New file (⌘.)"
 				>
 					<span className="flex items-center gap-2">
-						<FilePlus className="h-3.5 w-3.5 text-neutral-500" />
+						<FilePlus className="size-3.25 text-neutral-400" strokeWidth={2} />
 						<span>New file</span>
 					</span>
-					<span className="text-[10px] font-semibold text-neutral-500">
-						⌘ ·
-					</span>
+					<span className="text-[10px] font-semibold text-ink-faint">⌘ ·</span>
 				</button>
 			)}
 			{isDraggingOver && (

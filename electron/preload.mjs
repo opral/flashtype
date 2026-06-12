@@ -1,4 +1,11 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
+
+const workspace = {
+	get: () => ipcRenderer.invoke("workspace:get"),
+	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
+	// Resolves the on-disk path of a File dropped onto the window.
+	getPathForFile: (file) => webUtils.getPathForFile(file),
+};
 
 const lix = {
 	open: () => ipcRenderer.invoke("lix:open"),
@@ -49,4 +56,5 @@ contextBridge.exposeInMainWorld("flashtypeDesktop", {
 	platform: process.platform,
 	lix,
 	terminal,
+	workspace,
 });

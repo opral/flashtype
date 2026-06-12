@@ -143,10 +143,8 @@ describe("SidePanel", () => {
 			</WidgetHostRegistryProvider>,
 		);
 
-		expect(screen.getByText("Left Panel")).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: "Open View" }),
-		).toBeInTheDocument();
+		expect(screen.getByText("No view open")).toBeInTheDocument();
+		expect(screen.getByLabelText("Add view")).toBeInTheDocument();
 	});
 
 	test("renders the active view and forwards interactions", async () => {

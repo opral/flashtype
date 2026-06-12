@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from "electron";
+import { ipcMain } from "electron";
 import { Value } from "@lix-js/sdk";
 import { closeLix, ensureLixOpen } from "./lix.mjs";
 
@@ -268,8 +268,8 @@ export function registerLixIpc() {
 	});
 }
 
-async function ensureLixOpenForEvent(event) {
-	return await ensureLixOpen(BrowserWindow.fromWebContents(event.sender));
+async function ensureLixOpenForEvent(_event) {
+	return await ensureLixOpen();
 }
 
 export async function disposeLixIpc() {

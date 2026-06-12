@@ -8,11 +8,10 @@ import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
 	expectInstalledPluginArchives,
-	expectMaterializedSeedFiles,
 	launchPackagedElectronApp,
 	registerRendererConsoleLogging,
 	repoRoot,
-	seedStarterFiles,
+	writeStarterFiles,
 } from "./electron-test-utils";
 
 const execFileAsync = promisify(execFile);
@@ -97,6 +96,7 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 	const workspaceDir = testInfo.outputPath("workspace");
 	let electronApp: ElectronApplication | undefined;
 	try {
+		await writeStarterFiles(workspaceDir);
 		electronApp = await launchPackagedElectronApp({
 			executablePath: packagedAppExecutablePath,
 			workspaceDir,
@@ -105,11 +105,9 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("landing-screen")).toBeVisible();
+		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await expectInstalledPluginArchives(workspaceDir);
 		await ensureFilesViewOpenInLeftPanel(page);
-		await seedStarterFiles(page);
-		await expectMaterializedSeedFiles(workspaceDir);
 
 		const firstFile = page.locator('[data-testid^="file-tree-item-"]').first();
 		await expect(firstFile).toBeVisible();

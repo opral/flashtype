@@ -91,7 +91,7 @@ export function FlashtypeMenu() {
 				<Button
 					variant="ghost"
 					size="icon"
-					className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 data-[state=open]:bg-neutral-200 data-[state=open]:text-neutral-900"
+					className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 data-[state=open]:bg-neutral-200 data-[state=open]:text-neutral-900 [-webkit-app-region:no-drag]"
 				>
 					<Zap className="size-4 text-brand-600" />
 				</Button>

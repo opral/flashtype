@@ -15,18 +15,31 @@
 	--color-brand-700: rgb(194, 65, 12);
 	--color-brand-800: rgb(154, 52, 18);
 	--color-brand-900: rgb(124, 45, 18);
+	/* Warm neutral (Tailwind stone) — the app uses a warm gray throughout. */
 	--color-neutral-0: rgb(255, 255, 255);
-	--color-neutral-50: rgb(250, 250, 250);
-	--color-neutral-100: rgb(244, 244, 245);
-	--color-neutral-200: rgb(228, 228, 231);
-	--color-neutral-300: rgb(212, 212, 216);
-	--color-neutral-400: rgb(161, 161, 170);
-	--color-neutral-500: rgb(113, 113, 122);
-	--color-neutral-600: rgb(82, 82, 91);
-	--color-neutral-700: rgb(63, 63, 70);
-	--color-neutral-800: rgb(39, 39, 42);
-	--color-neutral-900: rgb(24, 24, 27);
-	--color-neutral-950: rgb(9, 9, 11);
+	--color-neutral-50: rgb(250, 250, 249);
+	--color-neutral-100: rgb(245, 245, 244);
+	--color-neutral-200: rgb(231, 229, 228);
+	--color-neutral-300: rgb(214, 211, 209);
+	--color-neutral-400: rgb(168, 162, 158);
+	--color-neutral-500: rgb(120, 113, 108);
+	--color-neutral-600: rgb(87, 83, 78);
+	--color-neutral-700: rgb(68, 64, 60);
+	--color-neutral-800: rgb(41, 37, 36);
+	--color-neutral-900: rgb(28, 25, 23);
+	--color-neutral-950: rgb(12, 10, 9);
+
+	/* Shell chrome — values off the stone scale, from the islands design. */
+	--color-shell: rgb(244, 242, 239); /* window background */
+	--color-island-border: rgb(236, 232, 226);
+	--color-island-divider: rgb(244, 241, 236); /* tab-row bottom border */
+	--color-ink-muted: rgb(140, 133, 128); /* secondary copy, header icons */
+	--color-ink-faint: rgb(181, 175, 166); /* empty states, "+" buttons */
+	--color-chrome-icon: rgb(163, 156, 149); /* footer + outer chrome icons */
+	--color-hover-soft: rgb(245, 242, 237); /* row + quiet-button hover, chips */
+	--color-focus-tint: rgb(251, 239, 228); /* focused chip / selected file */
+	--color-focus-ring: rgb(243, 216, 190);
+	--color-focus-close: rgb(201, 168, 136); /* ✕ on the focused chip */
 	--color-error-50: rgb(254, 242, 242);
 	--color-error-100: rgb(254, 226, 226);
 	--color-error-200: rgb(254, 202, 202);

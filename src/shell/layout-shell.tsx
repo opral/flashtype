@@ -27,6 +27,8 @@ import { normalizeFilePath } from "@/lib/path";
 import { SidePanel } from "./side-panel";
 import { CentralPanel } from "./central-panel";
 import { TopBar } from "./top-bar";
+import { FlashtypeMenu } from "./top-bar/flashtype-menu";
+import { BranchSwitcher } from "./top-bar/branch-switcher";
 import { StatusBar } from "./status-bar";
 import { qb } from "@/lib/lix-kysely";
 import {
@@ -104,7 +106,11 @@ const sanitizeJsonValue = (
 	value: unknown,
 	seen = new WeakSet<object>(),
 ): unknown => {
-	if (value === null || typeof value === "string" || typeof value === "boolean") {
+	if (
+		value === null ||
+		typeof value === "string" ||
+		typeof value === "boolean"
+	) {
 		return value;
 	}
 	if (typeof value === "number") {
@@ -257,11 +263,20 @@ async function resolveNextUntitledMarkdownPath(
 	return normalizeFilePath(`/new-file-${Date.now()}.md`);
 }
 
-export function V2LayoutShell() {
+export function V2LayoutShell({
+	workspaceName,
+	onOpenWorkspace,
+}: {
+	readonly workspaceName?: string;
+	readonly onOpenWorkspace?: () => void;
+}) {
 	return (
 		<WidgetRegistryProvider>
 			<WidgetHostRegistryProvider>
-				<LayoutShellContent />
+				<LayoutShellContent
+					workspaceName={workspaceName}
+					onOpenWorkspace={onOpenWorkspace}
+				/>
 			</WidgetHostRegistryProvider>
 		</WidgetRegistryProvider>
 	);
@@ -273,7 +288,13 @@ export function V2LayoutShell() {
  * @example
  * <V2LayoutShell />
  */
-function LayoutShellContent() {
+function LayoutShellContent({
+	workspaceName,
+	onOpenWorkspace,
+}: {
+	readonly workspaceName?: string;
+	readonly onOpenWorkspace?: () => void;
+}) {
 	const { widgetMap, replaceInstalledWidgets, clearInstalledWidgets } =
 		useWidgetRegistry();
 	const [uiStateKV, setUiStateKV] = useKeyValue(FLASHTYPE_UI_STATE_KEY);
@@ -784,10 +805,15 @@ function LayoutShellContent() {
 	);
 
 	const handleAddView = useCallback(
-		(side: PanelSide, kind: WidgetKind) => {
-			handleOpenView({ panel: side, kind });
+		(side: PanelSide, kind: WidgetKind, state?: WidgetState) => {
+			// Multi-instance kinds (agent terminals) get a fresh instance per
+			// add; single-instance kinds reuse the existing view.
+			const instance = widgetMap.get(kind)?.multiInstance
+				? createWidgetInstanceId(kind)
+				: undefined;
+			handleOpenView({ panel: side, kind, state, instance });
 		},
-		[handleOpenView],
+		[handleOpenView, widgetMap],
 	);
 
 	const focusPanel = useCallback((side: PanelSide) => {
@@ -1012,12 +1038,14 @@ function LayoutShellContent() {
 	const isRightFocused = focusedPanel === "right";
 
 	const addViewOnLeft = useCallback(
-		(type: WidgetKind) => handleAddView("left", type),
+		(type: WidgetKind, state?: WidgetState) =>
+			handleAddView("left", type, state),
 		[handleAddView],
 	);
 
 	const addViewOnRight = useCallback(
-		(type: WidgetKind) => handleAddView("right", type),
+		(type: WidgetKind, state?: WidgetState) =>
+			handleAddView("right", type, state),
 		[handleAddView],
 	);
 
@@ -1422,19 +1450,22 @@ function LayoutShellContent() {
 			onDragEnd={handleDragEnd}
 		>
 			<div
-				className="relative flex flex-col bg-neutral-100 text-neutral-900"
+				className="relative flex flex-col bg-shell text-neutral-900"
 				style={{
 					// Pin the shell to the available viewport (inspector offset included) to avoid vertical scrolling.
 					height: "calc(100dvh - var(--lix-inspector-offset, 0px))",
 				}}
 			>
 				<TopBar
+					workspaceName={workspaceName}
+					onWorkspaceTitleClick={onOpenWorkspace}
+					menu={<FlashtypeMenu />}
 					onToggleLeftSidebar={toggleLeftSidebar}
 					onToggleRightSidebar={toggleRightSidebar}
 					isLeftSidebarVisible={!isLeftCollapsed}
 					isRightSidebarVisible={!isRightCollapsed}
 				/>
-				<div className="flex flex-1 min-h-0 overflow-hidden px-2 gap-4">
+				<div className="flex flex-1 min-h-0 overflow-hidden px-2">
 					<PanelGroup direction="horizontal" onLayout={handleLayoutChange}>
 						<Panel
 							ref={leftPanelRef}
@@ -1458,7 +1489,7 @@ function LayoutShellContent() {
 								viewContext={leftViewContext}
 							/>
 						</Panel>
-						<PanelResizeHandle className="relative w-1 flex items-center justify-center group">
+						<PanelResizeHandle className="group relative flex w-1.75 items-center justify-center">
 							<div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 h-full rounded-full bg-gradient-to-b from-transparent via-brand-600/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
 						</PanelResizeHandle>
 						<Panel
@@ -1473,7 +1504,7 @@ function LayoutShellContent() {
 								onFocusPanel={focusPanel}
 								onSelectWidget={handleSelectCentralView}
 								onRemoveWidget={(key) => handleRemoveView("central", key)}
-								onFinalizePendingView={(key) =>
+									onFinalizePendingView={(key) =>
 									setPanelState(
 										"central",
 										(panel) => activatePanelWidget(panel, key),
@@ -1484,7 +1515,7 @@ function LayoutShellContent() {
 								onCreateNewFile={handleCreateNewFile}
 							/>
 						</Panel>
-						<PanelResizeHandle className="relative w-1 flex items-center justify-center group">
+						<PanelResizeHandle className="group relative flex w-1.75 items-center justify-center">
 							<div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 h-full rounded-full bg-gradient-to-b from-transparent via-brand-600/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
 						</PanelResizeHandle>
 						<Panel
@@ -1511,7 +1542,14 @@ function LayoutShellContent() {
 						</Panel>
 					</PanelGroup>
 				</div>
-				<StatusBar activePath={activeStatusLabel} />
+				<StatusBar
+					left={<BranchSwitcher />}
+					right={
+						activeStatusLabel ? (
+							<span className="truncate">{activeStatusLabel}</span>
+						) : null
+					}
+				/>
 			</div>
 			<DragOverlay>
 				{activeId && activeDragView ? (

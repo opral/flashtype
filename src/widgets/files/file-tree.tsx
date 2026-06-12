@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { ChevronRight, FileText, Folder, FolderOpen } from "lucide-react";
+import { FileText, Folder, FolderOpen } from "lucide-react";
 import type { FilesystemTreeNode } from "@/widgets/files/build-filesystem-tree";
+
+/** Children indent exactly one step from their parent (design: 9px + 17px). */
+const ROW_BASE_PADDING_PX = 9;
+const ROW_INDENT_STEP_PX = 17;
+
+const rowIndentStyle = (depth: number) => ({
+	paddingLeft: ROW_BASE_PADDING_PX + depth * ROW_INDENT_STEP_PX,
+});
 
 export type FileTreeDraft = {
 	readonly kind: "file" | "directory";
@@ -67,52 +75,20 @@ export function FileTree({
 		});
 	}, []);
 
-	const selectedClasses = isPanelFocused
-		? "bg-brand-200/80 border border-brand-500 text-neutral-900"
-		: "bg-neutral-200/70 border border-neutral-300 text-neutral-900";
-
 	const isEmpty = sortedNodes.length === 0 && !draft;
 
 	if (isEmpty) {
-		return (
-			<div className="text-xs leading-relaxed text-neutral-500">
-				<p>No files yet.</p>
-				<br></br>
-				<p>
-					Create new files with{" "}
-					<span className="inline-flex items-center gap-1">
-						<kbd className="rounded border border-neutral-200 bg-neutral-50 px-1 py-0.5 font-mono text-[10px] text-neutral-600">
-							CMD
-						</kbd>
-						<kbd className="rounded border border-neutral-200 bg-neutral-50 px-1 py-0.5 font-mono text-[10px] text-neutral-600">
-							.
-						</kbd>
-					</span>
-				</p>
-				<p>
-					Create directories with{" "}
-					<span className="inline-flex items-center gap-1">
-						<kbd className="rounded border border-neutral-200 bg-neutral-50 px-1 py-0.5 font-mono text-[10px] text-neutral-600">
-							CMD
-						</kbd>
-						<kbd className="rounded border border-neutral-200 bg-neutral-50 px-1 py-0.5 font-mono text-[10px] text-neutral-600">
-							⇧
-						</kbd>
-						<kbd className="rounded border border-neutral-200 bg-neutral-50 px-1 py-0.5 font-mono text-[10px] text-neutral-600">
-							.
-						</kbd>
-					</span>
-				</p>
-			</div>
-		);
+		// The "New file" row above the tree is the affordance; no extra copy.
+		return null;
 	}
 
 	return (
-		<ul className="space-y-1 text-sm text-neutral-900">
+		<ul className="space-y-px text-[13px]">
 			{draft?.directoryPath === "/" ? (
 				<DraftRow
 					key="draft:root"
 					draft={draft}
+					depth={0}
 					isPanelFocused={isPanelFocused}
 				/>
 			) : null}
@@ -120,13 +96,13 @@ export function FileTree({
 				<FileTreeNode
 					key={node.path}
 					node={node}
+					depth={0}
 					onToggleDirectory={toggleDirectory}
 					openDirectories={openDirectories}
 					openFileView={openFileView}
 					draft={draft}
 					selectedPath={selectedPath}
 					onSelectItem={onSelectItem}
-					selectedClasses={selectedClasses}
 					isPanelFocused={isPanelFocused}
 				/>
 			))}
@@ -136,16 +112,17 @@ export function FileTree({
 
 function FileTreeNode({
 	node,
+	depth,
 	onToggleDirectory,
 	openDirectories,
 	openFileView,
 	draft,
 	selectedPath,
 	onSelectItem,
-	selectedClasses,
 	isPanelFocused,
 }: {
 	readonly node: FilesystemTreeNode;
+	readonly depth: number;
 	readonly onToggleDirectory: (path: string) => void;
 	readonly openDirectories: Set<string>;
 	readonly openFileView?: (
@@ -155,16 +132,17 @@ function FileTreeNode({
 	readonly draft?: FileTreeDraft | null;
 	readonly selectedPath?: string;
 	readonly onSelectItem?: (path: string, kind: "file" | "directory") => void;
-	readonly selectedClasses: string;
 	readonly isPanelFocused: boolean;
 }) {
 	if (node.type === "file") {
 		const displayName = formatDisplayName(node.name);
 		const isSelected = selectedPath === node.path;
+		// The selected file row carries the orange treatment (design rule).
 		const buttonClass = clsx(
-			"flex w-full min-w-0 items-center gap-2 rounded border border-transparent px-2 py-1 text-left text-sm transition-colors",
-			!isSelected && "hover:bg-neutral-100",
-			isSelected ? selectedClasses : "text-neutral-700",
+			"flex w-full min-w-0 items-center gap-2 rounded-[7px] py-1.25 pr-2.25 text-left transition-colors",
+			isSelected
+				? "bg-focus-tint font-semibold text-neutral-900 [&_svg]:text-brand-700"
+				: "text-neutral-600 hover:bg-hover-soft [&_svg]:text-neutral-400",
 		);
 		const itemTestId = `file-tree-item-${sanitizeForTestId(node.path)}`;
 		return (
@@ -174,12 +152,13 @@ function FileTreeNode({
 					data-selected={isSelected ? "true" : undefined}
 					data-testid={itemTestId}
 					className={buttonClass}
+					style={rowIndentStyle(depth)}
 					onClick={() => {
 						onSelectItem?.(node.path, "file");
 						void openFileView?.(node.id, node.path);
 					}}
 				>
-					<FileText className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
+					<FileText className="size-3.25 shrink-0" strokeWidth={2} />
 					<span className="min-w-0 flex-1 truncate" title={displayName}>
 						{displayName}
 					</span>
@@ -194,41 +173,43 @@ function FileTreeNode({
 	const Icon = isOpen ? FolderOpen : Folder;
 	const suppressSelection = Boolean(draft && draft.directoryPath === node.path);
 	const isSelected = !suppressSelection && selectedPath === node.path;
+	// Open directories read as headings; closed ones recede. No chevrons —
+	// the open-folder icon and weight carry the state. Selection stays quiet:
+	// orange is reserved for the selected file row.
 	const buttonClass = clsx(
-		"flex w-full min-w-0 items-center gap-1 rounded border border-transparent px-2 py-1 text-left text-sm font-medium transition-colors",
-		!isSelected && "hover:bg-neutral-100",
-		isSelected ? selectedClasses : "text-neutral-700",
+		"flex w-full min-w-0 items-center gap-2 rounded-[7px] py-1.25 pr-2.25 text-left transition-colors hover:bg-hover-soft",
+		isSelected && "bg-hover-soft",
+		isOpen
+			? "font-semibold text-neutral-900 [&_svg]:text-neutral-500"
+			: "text-neutral-600 [&_svg]:text-neutral-400",
 	);
 
 	return (
 		<li>
-			<div className="flex items-center">
-				<button
-					type="button"
-					aria-expanded={isOpen}
-					data-selected={isSelected ? "true" : undefined}
-					data-testid={`file-tree-directory-${sanitizeForTestId(node.path)}`}
-					className={buttonClass}
-					onClick={() => {
-						onSelectItem?.(node.path, "directory");
-						onToggleDirectory(node.path);
-					}}
-				>
-					<ChevronRight
-						className={`h-3 w-3 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
-					/>
-					<Icon className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
-					<span className="min-w-0 flex-1 truncate" title={displayName}>
-						{displayName}
-					</span>
-				</button>
-			</div>
+			<button
+				type="button"
+				aria-expanded={isOpen}
+				data-selected={isSelected ? "true" : undefined}
+				data-testid={`file-tree-directory-${sanitizeForTestId(node.path)}`}
+				className={buttonClass}
+				style={rowIndentStyle(depth)}
+				onClick={() => {
+					onSelectItem?.(node.path, "directory");
+					onToggleDirectory(node.path);
+				}}
+			>
+				<Icon className="size-3.5 shrink-0" strokeWidth={2} />
+				<span className="min-w-0 flex-1 truncate" title={displayName}>
+					{displayName}
+				</span>
+			</button>
 			{isOpen ? (
-				<ul className="ml-4 space-y-1 border-l border-neutral-200 pl-2">
+				<ul className="space-y-px">
 					{containsDraft ? (
 						<DraftRow
 							key={`draft:${node.path}`}
 							draft={draft!}
+							depth={depth + 1}
 							isPanelFocused={isPanelFocused}
 						/>
 					) : null}
@@ -236,13 +217,13 @@ function FileTreeNode({
 						<FileTreeNode
 							key={child.path}
 							node={child}
+							depth={depth + 1}
 							onToggleDirectory={onToggleDirectory}
 							openDirectories={openDirectories}
 							openFileView={openFileView}
 							draft={draft}
 							selectedPath={selectedPath}
 							onSelectItem={onSelectItem}
-							selectedClasses={selectedClasses}
 							isPanelFocused={isPanelFocused}
 						/>
 					))}
@@ -254,9 +235,11 @@ function FileTreeNode({
 
 function DraftRow({
 	draft,
+	depth,
 	isPanelFocused,
 }: {
 	readonly draft: FileTreeDraft;
+	readonly depth: number;
 	readonly isPanelFocused: boolean;
 }) {
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -269,8 +252,8 @@ function DraftRow({
 		<span className="shrink-0 text-neutral-400">.md</span>
 	) : null;
 	const ringClasses = isPanelFocused
-		? "border border-brand-500/70 shadow-[inset_0_0_0_2px_rgba(10,132,255,0.55)]"
-		: "border border-neutral-300 shadow-[inset_0_0_0_2px_rgba(120,120,120,0.35)]";
+		? "ring-1 ring-inset ring-focus-ring bg-focus-tint"
+		: "ring-1 ring-inset ring-island-border";
 
 	useEffect(() => {
 		setValue(draft.value);
@@ -308,15 +291,16 @@ function DraftRow({
 			<div
 				ref={rowRef}
 				className={clsx(
-					"flex items-center gap-2 rounded bg-neutral-0 px-2 py-1 text-left text-sm text-neutral-900 shadow-sm",
+					"flex items-center gap-2 rounded-[7px] py-1.25 pr-2.25 text-left text-[13px] text-neutral-900",
 					ringClasses,
 				)}
+				style={rowIndentStyle(depth)}
 			>
-				<Icon className="h-3.5 w-3.5 text-neutral-400" />
+				<Icon className="size-3.25 shrink-0 text-neutral-400" />
 				<input
 					ref={inputRef}
 					data-testid="files-view-draft-input"
-					className="min-w-0 flex-1 bg-transparent px-0 py-0 text-sm outline-none focus:outline-none"
+					className="min-w-0 flex-1 bg-transparent px-0 py-0 text-[13px] outline-none focus:outline-none"
 					value={value}
 					onChange={(event) => {
 						const next = event.target.value.replaceAll("/", "");

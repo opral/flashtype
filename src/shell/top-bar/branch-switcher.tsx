@@ -195,20 +195,20 @@ function BranchSwitcherContent({
 					type="button"
 					variant="ghost"
 					size="sm"
-					className="inline-flex h-7 items-center gap-1 rounded-md px-2 font-medium text-neutral-900 hover:bg-neutral-200"
+					className="inline-flex h-5.5 items-center gap-1 rounded-md px-1.5 font-normal text-chrome-icon hover:bg-hover-soft hover:text-neutral-600"
 					aria-label="Select branch"
 				>
-					<GitBranch className="h-3.5 w-3.5" />
-					<span className="text-xs">{buttonLabel}</span>
+					<GitBranch className="size-3" />
+					<span className="text-[11.5px]">{buttonLabel}</span>
 					{isBusy ? (
-						<Loader2 className="h-3 w-3 animate-spin" />
+						<Loader2 className="size-2.5 animate-spin" />
 					) : (
-						<ChevronDown className="h-3 w-3" />
+						<ChevronDown className="size-2.5" />
 					)}
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent
-				className="min-w-[180px] text-xs"
+				className="min-w-45 text-xs"
 				align="start"
 				sideOffset={6}
 			>
@@ -276,7 +276,7 @@ function BranchSwitcherContent({
 									<DropdownMenuContent
 										align="start"
 										side="right"
-										className="min-w-[160px] text-xs"
+										className="min-w-40 text-xs"
 									>
 										<DropdownMenuItem
 											className="flex items-center gap-2 text-xs"

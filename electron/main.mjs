@@ -5,7 +5,12 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { disposeLixIpc, registerLixIpc } from "./ipc-lix.mjs";
 import { disposeTerminalIpc, registerTerminalIpc } from "./ipc-terminal.mjs";
-import { setRequestedOpenPath } from "./lix.mjs";
+import {
+	applyWorkspaceWindowChrome,
+	getWorkspace,
+	registerWorkspaceIpc,
+	setWorkspaceFromPath,
+} from "./workspace.mjs";
 import { captureAppOpened } from "./telemetry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,8 +27,23 @@ let mainWindow = null;
 
 app.on("open-file", (event, filePath) => {
 	event.preventDefault();
-	setRequestedOpenPath(filePath);
+	// Opening a file from Finder adopts its folder as the workspace, but only
+	// before one is open — a window is bound to exactly one workspace.
+	if (!getWorkspace()) {
+		void setWorkspaceFromPath(filePath, mainWindow);
+	}
 });
+
+function getWorkspacePathArgument(argv) {
+	// Playwright/Electron can prepend runtime flags before app arguments.
+	const appArguments = argv.slice(1).filter((argument) => {
+		return argument !== "--" && !argument.startsWith("--");
+	});
+	if (process.defaultApp === true) {
+		appArguments.shift();
+	}
+	return appArguments[0];
+}
 
 function createMainWindow() {
 	if (mainWindow && !mainWindow.isDestroyed()) {
@@ -38,6 +58,12 @@ function createMainWindow() {
 		minHeight: 700,
 		show: false,
 		autoHideMenuBar: true,
+		...(process.platform === "darwin"
+			? {
+					titleBarStyle: "hiddenInset",
+					trafficLightPosition: { x: 16, y: 14 },
+				}
+			: {}),
 		webPreferences: {
 			preload: path.join(__dirname, "preload.mjs"),
 			contextIsolation: true,
@@ -53,6 +79,8 @@ function createMainWindow() {
 		}
 		window.show();
 	}, 3000);
+
+	applyWorkspaceWindowChrome(window);
 
 	window.once("ready-to-show", () => {
 		if (window.isDestroyed()) {
@@ -101,11 +129,16 @@ function createMainWindow() {
 	return window;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
 	registerLixIpc();
 	registerTerminalIpc();
+	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender));
 	void registerMarkdownDefaultHandler();
 	void captureAppOpened();
+	const workspaceArgument = getWorkspacePathArgument(process.argv);
+	if (workspaceArgument !== undefined && !getWorkspace()) {
+		await setWorkspaceFromPath(workspaceArgument, null);
+	}
 	createMainWindow();
 	void setupAutoUpdates();
 

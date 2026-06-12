@@ -1,11 +1,9 @@
-import { dialog } from "electron";
 import path from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
+import { getWorkspace } from "./workspace.mjs";
 
 let lixPromise = null;
-let chosenWorkspaceDir = null;
-let requestedOpenPath = undefined;
 let lifecycle = Promise.resolve();
 
 function enqueue(operation) {
@@ -13,89 +11,33 @@ function enqueue(operation) {
 	return lifecycle;
 }
 
-async function getLixWorkspaceDir(parentWindow) {
-	const workspacePath =
-		getWorkspacePathArgument(process.argv) ?? requestedOpenPath;
-	if (workspacePath !== undefined) {
-		return await resolveWorkspaceDir(workspacePath);
-	}
-	if (chosenWorkspaceDir !== null) {
-		return chosenWorkspaceDir;
-	}
-	chosenWorkspaceDir = await chooseWorkspaceDir(parentWindow);
-	return chosenWorkspaceDir;
-}
-
-function getWorkspacePathArgument(argv) {
-	// Playwright/Electron can prepend runtime flags before app arguments.
-	const appArguments = argv.slice(1).filter((argument) => {
-		return argument !== "--" && !argument.startsWith("--");
-	});
-	if (process.defaultApp === true) {
-		appArguments.shift();
-	}
-	return appArguments[0];
-}
-
-export function setRequestedOpenPath(filePath) {
-	requestedOpenPath = filePath;
-}
-
-async function resolveWorkspaceDir(workspacePath) {
-	const resolved = path.resolve(workspacePath);
-	try {
-		const stats = await stat(resolved);
-		if (stats.isFile()) {
-			return path.dirname(resolved);
-		}
-	} catch {
-		// Keep the original resolved path so the backend can report the error.
-	}
-	return resolved;
-}
-
-export async function ensureLixOpen(parentWindow) {
+export async function ensureLixOpen() {
 	let outPromise;
 	await enqueue(async () => {
 		if (!lixPromise) {
 			const openingPromise = (async () => {
-				const workspaceDir = await getLixWorkspaceDir(parentWindow);
+				const workspace = getWorkspace();
+				if (!workspace) {
+					throw new Error(
+						"No workspace is open. Open a folder before using lix.",
+					);
+				}
 				const nativeLix = await openLix({
-					backend: new FsBackend({ path: workspaceDir }),
+					backend: new FsBackend({ path: workspace.path }),
 				});
 				await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
-				return createDesktopLixHandle(nativeLix, workspaceDir);
+				return createDesktopLixHandle(nativeLix, workspace.path);
 			})();
 			lixPromise = openingPromise;
 			openingPromise.catch(() => {
 				if (lixPromise === openingPromise) {
 					lixPromise = null;
 				}
-				if (getWorkspacePathArgument(process.argv) === undefined) {
-					chosenWorkspaceDir = null;
-				}
 			});
 		}
 		outPromise = lixPromise;
 	});
 	return await outPromise;
-}
-
-async function chooseWorkspaceDir(parentWindow) {
-	const options = {
-		title: "Open Flashtype Workspace",
-		buttonLabel: "Open Workspace",
-		properties: ["openDirectory", "createDirectory"],
-	};
-	const result =
-		parentWindow && !parentWindow.isDestroyed()
-			? await dialog.showOpenDialog(parentWindow, options)
-			: await dialog.showOpenDialog(options);
-	const workspaceDir = result.filePaths[0];
-	if (result.canceled || workspaceDir === undefined) {
-		throw new Error("Workspace selection was canceled.");
-	}
-	return workspaceDir;
 }
 
 async function ensureDefaultPluginsInstalledOnCurrentBranch(lix) {

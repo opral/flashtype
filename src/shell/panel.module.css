@@ -1,6 +1,8 @@
 .tabBar {
 	position: relative;
-	padding-bottom: 4px;
+	height: 40px;
+	flex-shrink: 0;
+	border-bottom: 1px solid var(--color-island-divider);
 }
 
 .indicatorTrack {
@@ -10,6 +12,7 @@
 	right: 8px;
 	height: 2px;
 	pointer-events: none;
+	z-index: 1;
 }
 
 .indicatorThumb {
@@ -17,7 +20,7 @@
 	top: 0;
 	height: 100%;
 	border-radius: 999px;
-	background: rgba(148, 163, 184, 0.8);
+	background: rgba(168, 162, 158, 0.7);
 	opacity: 0;
 }
 
@@ -27,7 +30,8 @@
 	flex-wrap: nowrap;
 	align-items: center;
 	gap: 4px;
-	padding: 12px 8px 4px;
+	height: 100%;
+	padding: 0 8px;
 	overflow-x: auto;
 	scrollbar-width: none;
 	-ms-overflow-style: none;

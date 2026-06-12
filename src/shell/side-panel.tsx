@@ -1,28 +1,21 @@
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { useMemo } from "react";
-import { ChevronDown, PanelLeft, PanelRight, Plus } from "lucide-react";
 import type {
 	PanelSide,
 	PanelState,
 	WidgetKind,
 	WidgetContext,
-	WidgetDefinition,
+	WidgetState,
 } from "../widget-runtime/types";
-import { useWidgetRegistry } from "../widget-runtime/widget-registry";
+import { TERMINAL_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
 import { PanelV2 } from "./panel-v2";
+import { AgentInvite } from "./agent-invite";
+import { AGENT_LAUNCH_PRESETS } from "./agent-icons";
 
 interface SidePanelProps {
 	readonly side: PanelSide;
 	readonly title: string;
 	readonly panel: PanelState;
 	readonly onSelectWidget: (key: string) => void;
-	readonly onAddView: (toolId: WidgetKind) => void;
+	readonly onAddView: (toolId: WidgetKind, state?: WidgetState) => void;
 	readonly onRemoveWidget: (key: string) => void;
 	readonly viewContext: WidgetContext;
 	readonly isFocused: boolean;
@@ -35,7 +28,6 @@ interface SidePanelProps {
  * @example
  * <SidePanel side="left" title="Left" panel={panelState} ... />
  */
-
 export function SidePanel({
 	side,
 	title: _unusedTitle,
@@ -47,52 +39,24 @@ export function SidePanel({
 	isFocused,
 	onFocusPanel,
 }: SidePanelProps) {
-	const { visibleWidgets } = useWidgetRegistry();
-	const panelViewKindSignature = useMemo(() => {
-		if (panel.views.length === 0) {
-			return "";
-		}
-		const keys = panel.views.map((entry) => entry.kind).sort();
-		return keys.join("|");
-	}, [panel.views]);
-
-	const availableViews = useMemo(() => {
-		if (panelViewKindSignature === "") {
-			return visibleWidgets;
-		}
-		const activeInstances = new Set(panelViewKindSignature.split("|"));
-		return visibleWidgets.filter((view) => !activeInstances.has(view.kind));
-	}, [panelViewKindSignature, visibleWidgets]);
-	const canAddMoreViews = availableViews.length > 0;
-
-	const addViewButton = canAddMoreViews ? (
-		<DropdownMenu>
-			<DropdownMenuTrigger asChild>
-				<button
-					type="button"
-					title="Add view"
-					className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100"
-				>
-					<Plus className="h-4 w-4" />
-				</button>
-			</DropdownMenuTrigger>
-			<DropdownMenuContent
-				align={side === "left" ? "start" : "end"}
-				className="w-40 border border-neutral-100 bg-neutral-0 p-1 shadow-lg"
-			>
-				{availableViews.map((ext) => (
-					<DropdownMenuItem
-						key={ext.kind}
-						onSelect={() => onAddView(ext.kind)}
-						className="flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-900 focus:bg-neutral-100"
-					>
-						<ext.icon className="h-4 w-4" />
-						<span>{ext.label}</span>
-					</DropdownMenuItem>
-				))}
-			</DropdownMenuContent>
-		</DropdownMenu>
-	) : null;
+	// The right island is the agent's home: empty means inviting the agent in.
+	// The command lives in persisted state, so restoring the workspace
+	// relaunches the agent instead of showing a bare shell labeled after it.
+	const emptyState =
+		side === "right" ? (
+			<AgentInvite
+				onStartClaude={() =>
+					onAddView(TERMINAL_WIDGET_KIND, AGENT_LAUNCH_PRESETS[0].state)
+				}
+				onStartCodex={() =>
+					onAddView(TERMINAL_WIDGET_KIND, AGENT_LAUNCH_PRESETS[1].state)
+				}
+			/>
+		) : (
+			<div className="flex flex-1 items-center justify-center">
+				<span className="text-[12.5px] text-ink-faint">No view open</span>
+			</div>
+		);
 
 	return (
 		<PanelV2
@@ -102,77 +66,9 @@ export function SidePanel({
 			onFocusPanel={onFocusPanel}
 			onSelectWidget={onSelectWidget}
 			onRemoveWidget={onRemoveWidget}
+			onAddView={onAddView}
 			viewContext={viewContext}
-			tabLabel={(view) => view.label}
-			extraTabBarContent={addViewButton}
-			emptyStatePlaceholder={
-				<EmptyPanelState
-					side={side}
-					onAddView={onAddView}
-					availableViews={availableViews}
-				/>
-			}
+			emptyStatePlaceholder={emptyState}
 		/>
-	);
-}
-
-interface EmptyPanelStateProps {
-	side: PanelSide;
-	onAddView: (kind: WidgetKind) => void;
-	availableViews?: WidgetDefinition[];
-}
-
-/**
- * Empty state displayed when a panel has no active views.
- */
-function EmptyPanelState({
-	side,
-	onAddView,
-	availableViews,
-}: EmptyPanelStateProps) {
-	const { visibleWidgets } = useWidgetRegistry();
-	const Icon = side === "left" ? PanelLeft : PanelRight;
-	const panelName = side === "left" ? "Left" : "Right";
-	const menuViews = availableViews ?? visibleWidgets;
-
-	return (
-		<div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-			<Icon className="h-12 w-12 text-neutral-600" strokeWidth={1.5} />
-			<div className="space-y-1">
-				<div className="text-sm font-medium text-neutral-900">
-					{panelName} Panel
-				</div>
-				<div className="text-xs text-neutral-600 max-w-[200px]">
-					Add a new view or drag-n-drop a view from the other panels
-				</div>
-			</div>
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<Button
-						variant="outline"
-						size="sm"
-						className="gap-1 border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-100"
-					>
-						Open View
-						<ChevronDown className="h-3 w-3" />
-					</Button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent
-					align="center"
-					className="w-40 border border-neutral-100 bg-neutral-0 p-1 shadow-lg"
-				>
-					{menuViews.map((ext) => (
-						<DropdownMenuItem
-							key={ext.kind}
-							onSelect={() => onAddView(ext.kind)}
-							className="flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-900 focus:bg-neutral-100"
-						>
-							<ext.icon className="h-4 w-4" />
-							<span>{ext.label}</span>
-						</DropdownMenuItem>
-					))}
-				</DropdownMenuContent>
-			</DropdownMenu>
-		</div>
 	);
 }

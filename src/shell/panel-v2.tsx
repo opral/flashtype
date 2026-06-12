@@ -8,6 +8,7 @@ import {
 	useRef,
 	useState,
 	type ButtonHTMLAttributes,
+	type ComponentType,
 	type CSSProperties,
 	type HTMLAttributes,
 	type MouseEvent,
@@ -20,7 +21,16 @@ import {
 	horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { X, type LucideIcon } from "lucide-react";
+import { Plus, X } from "lucide-react";
+import { AGENT_LAUNCH_PRESETS, TAB_INSTANCE_ICONS } from "./agent-icons";
+import { TERMINAL_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type {
 	PanelSide,
 	PanelState,
@@ -28,9 +38,13 @@ import type {
 	WidgetDefinition,
 	WidgetInstance,
 	WidgetKind,
+	WidgetState,
 } from "../widget-runtime/types";
 import { useWidgetRegistry } from "../widget-runtime/widget-registry";
 import styles from "./panel.module.css";
+
+/** Lucide icons and image-based brand icons both fit this shape. */
+type TabIcon = ComponentType<{ className?: string }>;
 import { useWidgetContext } from "../widget-runtime/widget-context";
 import {
 	useWidgetHostRegistry,
@@ -61,9 +75,9 @@ export function PanelV2({
 	onFocusPanel,
 	onSelectWidget,
 	onRemoveWidget,
+	onAddView,
 	viewContext,
 	tabLabel,
-	extraTabBarContent,
 	emptyStatePlaceholder,
 	onActiveViewInteraction,
 	dropId,
@@ -156,7 +170,6 @@ export function PanelV2({
 		side === "central" ? ("section" as const) : ("aside" as const);
 	const hostTextClass =
 		side === "central" ? "text-neutral-900" : "text-neutral-600";
-	const showTabBar = hasViews || Boolean(extraTabBarContent);
 
 	const contentHandlers =
 		onActiveViewInteraction && activeInstance
@@ -174,43 +187,48 @@ export function PanelV2({
 		>
 			<div
 				className={clsx(
-					"flex min-h-0 flex-1 flex-col rounded-lg bg-neutral-0",
+					"flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-island-border bg-neutral-0",
 					isOver && "ring-2 ring-brand-600 ring-inset",
 				)}
 			>
-				{showTabBar ? (
-					<TabBar extraContent={extraTabBarContent}>
-						<SortableContext
-							id={`panel-${side}`}
-							items={panel.views.map((entry) => entry.instance)}
-							strategy={horizontalListSortingStrategy}
-						>
-							{panel.views.map((entry) => {
-								const view = resolveViewDefinition(entry.kind);
-								if (!view) return null;
-								const isActive = activeInstance === entry.instance;
-								const label = resolveLabel(view, entry, tabLabel);
-								const badgeCount = badgeCounts[entry.instance] ?? null;
-								return (
-									<SortableTab
-										key={entry.instance}
-										instance={entry.instance}
-										panelSide={side}
-										kind={entry.kind}
-										icon={view.icon}
-										label={label}
-										badgeCount={badgeCount}
-										isActive={isActive}
-										isFocused={isFocused && isActive}
-										isPending={entry.isPending}
-										onClick={() => onSelectWidget(entry.instance)}
-										onClose={() => onRemoveWidget(entry.instance)}
-									/>
-								);
-							})}
-						</SortableContext>
-					</TabBar>
-				) : null}
+				{/* Every island renders the identical 40px tab row. */}
+				<TabBar
+					extraContent={
+						onAddView ? (
+							<AddViewMenu side={side} panel={panel} onAddView={onAddView} />
+						) : null
+					}
+				>
+					<SortableContext
+						id={`panel-${side}`}
+						items={panel.views.map((entry) => entry.instance)}
+						strategy={horizontalListSortingStrategy}
+					>
+						{panel.views.map((entry) => {
+							const view = resolveViewDefinition(entry.kind);
+							if (!view) return null;
+							const isActive = activeInstance === entry.instance;
+							const label = resolveLabel(view, entry, tabLabel);
+							const badgeCount = badgeCounts[entry.instance] ?? null;
+							return (
+								<SortableTab
+									key={entry.instance}
+									instance={entry.instance}
+									panelSide={side}
+									kind={entry.kind}
+									icon={resolveTabIcon(entry) ?? view.icon}
+									label={label}
+									badgeCount={badgeCount}
+									isActive={isActive}
+									isFocused={isFocused && isActive}
+									isPending={entry.isPending}
+									onClick={() => onSelectWidget(entry.instance)}
+									onClose={() => onRemoveWidget(entry.instance)}
+								/>
+							);
+						})}
+					</SortableContext>
+				</TabBar>
 
 				{hasViews ? (
 					<PanelContent {...contentHandlers}>
@@ -249,17 +267,91 @@ export type PanelV2Props = {
 	readonly onFocusPanel: (side: PanelSide) => void;
 	readonly onSelectWidget: (instance: string) => void;
 	readonly onRemoveWidget: (instance: string) => void;
+	/** Enables the "+" add-view menu in the tab row. */
+	readonly onAddView?: (kind: WidgetKind, state?: WidgetState) => void;
 	readonly viewContext: WidgetContext;
 	readonly tabLabel?: (
 		view: WidgetDefinition,
 		instance: WidgetInstance,
 	) => string;
-	readonly extraTabBarContent?: ReactNode;
 	readonly emptyStatePlaceholder?: ReactNode;
 	readonly onActiveViewInteraction?: (instance: string) => void;
 	readonly dropId?: string;
 	readonly viewOverrides?: WidgetDefinition[];
 };
+
+/**
+ * The "+" button in every island's tab row: agent sessions first (each click
+ * opens a fresh session), then views not already open in this panel.
+ */
+function AddViewMenu({
+	side,
+	panel,
+	onAddView,
+}: {
+	readonly side: PanelSide;
+	readonly panel: PanelState;
+	readonly onAddView: (kind: WidgetKind, state?: WidgetState) => void;
+}) {
+	const { visibleWidgets, widgetMap } = useWidgetRegistry();
+	const openKinds = useMemo(
+		() => new Set(panel.views.map((entry) => entry.kind)),
+		[panel.views],
+	);
+	const availableViews = useMemo(
+		() =>
+			visibleWidgets.filter(
+				(view) => view.multiInstance || !openKinds.has(view.kind),
+			),
+		[visibleWidgets, openKinds],
+	);
+	const hasTerminal = widgetMap.has(TERMINAL_WIDGET_KIND);
+	if (availableViews.length === 0 && !hasTerminal) return null;
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<button
+					type="button"
+					title="Add view"
+					aria-label="Add view"
+					className="flex size-6 flex-none items-center justify-center rounded-md text-ink-faint hover:bg-hover-soft hover:text-neutral-600"
+				>
+					<Plus className="size-3.25" strokeWidth={2} />
+				</button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent
+				align={side === "right" ? "end" : "start"}
+				className="w-44 border border-island-border bg-neutral-0 p-1 shadow-lg"
+			>
+				{hasTerminal ? (
+					<>
+						{AGENT_LAUNCH_PRESETS.map((preset) => (
+							<DropdownMenuItem
+								key={preset.key}
+								onSelect={() => onAddView(TERMINAL_WIDGET_KIND, preset.state)}
+								className="flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-900 focus:bg-hover-soft"
+							>
+								<preset.icon className="size-4" />
+								<span>{preset.label}</span>
+							</DropdownMenuItem>
+						))}
+						<DropdownMenuSeparator />
+					</>
+				) : null}
+				{availableViews.map((ext) => (
+					<DropdownMenuItem
+						key={ext.kind}
+						onSelect={() => onAddView(ext.kind)}
+						className="flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-900 focus:bg-hover-soft"
+					>
+						<ext.icon className="h-4 w-4" />
+						<span>{ext.label}</span>
+					</DropdownMenuItem>
+				))}
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
 
 const resolveLabel = (
 	view: WidgetDefinition,
@@ -270,6 +362,12 @@ const resolveLabel = (
 		return tabLabel(view, instance);
 	}
 	return (instance.state?.flashtype?.label as string | undefined) ?? view.label;
+};
+
+/** Per-instance icon override, e.g. the Claude mark on an agent terminal. */
+const resolveTabIcon = (instance: WidgetInstance): TabIcon | null => {
+	const key = instance.state?.flashtype?.icon as string | undefined;
+	return (key && TAB_INSTANCE_ICONS[key]) || null;
 };
 
 interface TabBarProps {
@@ -485,12 +583,15 @@ function SortableTab({
 }
 
 const tabBaseClasses =
-	"group relative flex flex-none max-w-[20rem] items-center gap-0.5 rounded-md border px-1.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap";
+	"group relative flex h-7 flex-none max-w-80 items-center gap-1.5 rounded-[7px] px-2.25 text-xs font-semibold transition-colors whitespace-nowrap";
 
 const tabStateClasses = {
-	focused: "bg-brand-200 text-neutral-900 border-brand-600",
-	active: "bg-neutral-100 text-neutral-900 border-neutral-200",
-	idle: "bg-transparent text-neutral-500 border-transparent hover:bg-neutral-100 hover:border-neutral-200 hover:text-neutral-900",
+	// The focused chip is the one orange element on screen: the view
+	// receiving keyboard input.
+	focused:
+		"bg-focus-tint text-neutral-900 ring-1 ring-inset ring-focus-ring [&_[data-tab-icon]]:text-brand-700",
+	active: "bg-hover-soft text-neutral-900 [&_[data-tab-icon]]:text-neutral-500",
+	idle: "bg-transparent text-neutral-500 hover:bg-hover-soft hover:text-neutral-900",
 } as const;
 
 interface TabBaseProps extends PanelTabPreviewProps {
@@ -545,8 +646,11 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 				style={style}
 				{...restButtonProps}
 			>
-				<span className="relative flex h-3.5 w-3.5 items-center justify-center">
-					<Icon className="h-3.5 w-3.5" />
+				<span
+					data-tab-icon
+					className="relative flex size-3.25 items-center justify-center"
+				>
+					<Icon className="size-3.25" />
 					{badgeCount ? (
 						<span
 							className={clsx(
@@ -566,19 +670,17 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 				>
 					{label}
 				</span>
-				<span className="relative ml-1 flex h-3.5 w-3.5 items-center justify-center">
-					{onClose && isActive ? (
+				<span className="relative flex size-3.25 items-center justify-center">
+					{onClose ? (
 						<X
-							className="h-3 w-3 text-neutral-400 hover:text-neutral-600"
-							onClick={(event) => {
-								event.stopPropagation();
-								onClose();
-							}}
-						/>
-					) : null}
-					{onClose && !isActive ? (
-						<X
-							className="h-3 w-3 text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-neutral-600"
+							className={clsx(
+								"h-3 w-3",
+								isActive && isFocused
+									? "text-focus-close hover:text-brand-700"
+									: isActive
+										? "text-neutral-400 hover:text-neutral-600"
+										: "text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-neutral-600",
+							)}
 							onClick={(event) => {
 								event.stopPropagation();
 								onClose();
@@ -594,7 +696,7 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 TabButtonBase.displayName = "PanelTabButton";
 
 export type PanelTabPreviewProps = {
-	readonly icon: LucideIcon;
+	readonly icon: TabIcon;
 	readonly label: string;
 	readonly badgeCount?: number | null;
 	readonly isActive: boolean;

@@ -21,9 +21,15 @@ const XTERM_THEMES = {
 	},
 } as const;
 
-function TerminalView() {
+function TerminalView({
+	initialCommand,
+}: {
+	/** Typed into the shell once the session starts. */
+	readonly initialCommand?: string;
+}) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const terminalRef = useRef<Terminal | null>(null);
+	const initialCommandRef = useRef(initialCommand);
 	const [theme, setTheme] = useState<"light" | "dark">(() => {
 		if (typeof document === "undefined") {
 			return "light";
@@ -123,6 +129,11 @@ function TerminalView() {
 				}
 				terminalId = created.id;
 				handleResize();
+				const command = initialCommandRef.current;
+				initialCommandRef.current = undefined;
+				if (command) {
+					await terminalApi.write({ id: created.id, data: `${command}\r` });
+				}
 			} catch (error) {
 				if (disposed) return;
 				terminal.writeln("Failed to start terminal session.");
@@ -175,7 +186,16 @@ export const widget = createReactWidgetDefinition({
 	label: "Terminal",
 	description: "Run shell commands in a native terminal session.",
 	icon: TerminalSquare,
-	component: () => <TerminalView />,
+	multiInstance: true,
+	component: ({ instance }) => (
+		<TerminalView
+			initialCommand={
+				typeof instance.state?.command === "string"
+					? instance.state.command
+					: undefined
+			}
+		/>
+	),
 });
 
 function resolveThemeFromDocument(root: HTMLElement): "light" | "dark" {

@@ -25,6 +25,7 @@ export function createReactWidgetDefinition(args: {
 	description: string;
 	icon: LucideIcon;
 	fileExtensions?: readonly string[];
+	multiInstance?: boolean;
 	component: ReactRenderer;
 	activate?: ReactActivator;
 }): WidgetDefinition {
@@ -36,6 +37,7 @@ export function createReactWidgetDefinition(args: {
 		description: args.description,
 		icon: args.icon,
 		fileExtensions: normalizeFileExtensions(args.fileExtensions),
+		multiInstance: args.multiInstance,
 		activate: args.activate,
 		render: ({ context, instance, target }) => {
 			let root = (target as unknown as Record<symbol, Root | undefined>)[

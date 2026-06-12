@@ -22,6 +22,8 @@ export type WidgetState = {
 	 */
 	readonly flashtype?: {
 		readonly label?: string;
+		/** Key into the shell's per-instance tab icon set (e.g. "claude"). */
+		readonly icon?: string;
 	};
 	readonly [key: string]: unknown;
 };
@@ -92,6 +94,12 @@ export interface WidgetDefinition {
 	 * fileExtensions: ["md", "markdown"]
 	 */
 	readonly fileExtensions?: readonly string[];
+	/**
+	 * Allows several instances of this widget in one panel (e.g. multiple
+	 * agent terminal sessions). Single-instance kinds are hidden from the
+	 * add-view menu once open.
+	 */
+	readonly multiInstance?: boolean;
 	readonly activate?: (args: {
 		context: WidgetContext;
 		instance: WidgetInstance;

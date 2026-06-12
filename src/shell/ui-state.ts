@@ -37,10 +37,12 @@ export type FlashtypeUiState = {
  */
 export type PanelLayoutSizes = Record<PanelSide, number>;
 
+// Design flex ratios: Files 20 / Editor 50 / Agent 30 — a fresh workspace
+// opens with all three islands visible.
 const DEFAULT_LAYOUT_SIZES: PanelLayoutSizes = {
-	left: 0,
-	central: 100,
-	right: 0,
+	left: 20,
+	central: 50,
+	right: 30,
 };
 
 export const DEFAULT_FLASHTYPE_UI_STATE: FlashtypeUiState = {

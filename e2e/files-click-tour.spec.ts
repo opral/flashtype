@@ -5,10 +5,9 @@ import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
 	expectInstalledPluginArchives,
-	expectMaterializedSeedFiles,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
-	seedStarterFiles,
+	writeStarterFiles,
 } from "./electron-test-utils";
 
 const clickCount = 100;
@@ -21,16 +20,15 @@ test("left files panel survives a seeded random file click tour", async ({
 
 	let electronApp: ElectronApplication | undefined;
 	try {
+		await writeStarterFiles(workspaceDir);
 		electronApp = await launchDevElectronApp(workspaceDir);
 
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("landing-screen")).toBeVisible();
+		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await expectInstalledPluginArchives(workspaceDir);
 		await ensureFilesViewOpenInLeftPanel(page);
-		await seedStarterFiles(page);
-		await expectMaterializedSeedFiles(workspaceDir);
 
 		const fileItems = page.locator('[data-testid^="file-tree-item-"]');
 		await expect(fileItems.first()).toBeVisible();
