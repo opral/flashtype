@@ -57,6 +57,7 @@ import {
 	diffLabelFromPath,
 	fileWidgetInstance,
 	FILE_WIDGET_KIND,
+	activeMarkdownFileIdFromWidgetInstance,
 } from "../widget-runtime/widget-instance-helpers";
 import {
 	installWidgetFromFiles as installWidgetFromFilesInLix,
@@ -888,10 +889,7 @@ function LayoutShellContent() {
 		);
 	}, [centralPanel]);
 	const activeCentralFileId =
-		activeCentralEntry?.kind === FILE_WIDGET_KIND &&
-		typeof activeCentralEntry.state?.fileId === "string"
-			? activeCentralEntry.state.fileId
-			: null;
+		activeMarkdownFileIdFromWidgetInstance(activeCentralEntry);
 
 	useEffect(() => {
 		if (!activeCentralFileId) return;

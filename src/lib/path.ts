@@ -39,3 +39,7 @@ export function normalizeDirectoryPath(path: string): string {
 	}
 	return normalized;
 }
+
+export function isMarkdownFilePath(path: string): boolean {
+	return /\.(md|markdown)$/i.test(path);
+}

@@ -66,6 +66,170 @@ describe("MarkdownView", () => {
 		});
 	});
 
+	test("renders the TipTap editor for .markdown files", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_markdown",
+				path: "/docs/guide.markdown",
+				data: new TextEncoder().encode("# Guide"),
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_markdown"
+								filePath="/docs/guide.markdown"
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(await screen.findByTestId("tiptap-editor")).toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
+	test("renders the TipTap editor for uppercase markdown extensions", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_uppercase",
+				path: "/docs/README.MD",
+				data: new TextEncoder().encode("# Readme"),
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_uppercase"
+								filePath="/docs/README.MD"
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(await screen.findByTestId("tiptap-editor")).toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
+	test("shows an unsupported file prompt for non-markdown files", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_csv",
+				path: "/data.csv",
+				data: new TextEncoder().encode("name,value\nalpha,1"),
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView fileId="file_csv" filePath="/data.csv" />
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(
+			await screen.findByText(/this file type is not supported yet/i),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("link", { name: /open an issue/i }),
+		).toHaveAttribute("href", "https://github.com/opral/flashtype/issues");
+		expect(screen.queryByText(/alpha,1/)).not.toBeInTheDocument();
+		expect(screen.queryByTestId("tiptap-editor")).not.toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
+	test("does not sync unsupported files as the active markdown file", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_csv",
+				path: "/data.csv",
+				data: new TextEncoder().encode("name,value\nalpha,1"),
+			})
+			.execute();
+		await qb(lix)
+			.insertInto("lix_key_value_by_branch")
+			.values({
+				key: "flashtype_active_file_id",
+				value: "existing_markdown",
+				lixcol_branch_id: "global",
+				lixcol_global: true,
+				lixcol_untracked: true,
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_csv"
+								filePath="/data.csv"
+								isActiveView
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(
+			await screen.findByText(/this file type is not supported yet/i),
+		).toBeInTheDocument();
+
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		});
+
+		const record = await qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select(["value"])
+			.where("key", "=", "flashtype_active_file_id")
+			.executeTakeFirst();
+		expect(record?.value).toBe("existing_markdown");
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
 	test("renders the requested file even if a different active file is stored", async () => {
 		const lix = await openLix();
 		await qb(lix)

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { FileText, Loader2 } from "lucide-react";
 import { LixProvider, useLix, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
+import { isMarkdownFilePath } from "@/lib/path";
 import { EditorProvider } from "@/widgets/markdown/editor/editor-context";
 import { TipTapEditor } from "@/widgets/markdown/editor/tip-tap-editor";
 import "./style.css";
@@ -71,6 +72,8 @@ function MarkdownViewContent({
 				File not found in the workspace.
 			</div>
 		);
+	} else if (!isMarkdownFilePath(fileRow.path)) {
+		content = <UnsupportedFilePlaceholder filePath={fileRow.path} />;
 	} else {
 		content = (
 			<EditorProvider>
@@ -90,10 +93,42 @@ function MarkdownViewContent({
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col px-2 py-2">
-			{syncActiveFile ? (
+			{syncActiveFile && fileRow && isMarkdownFilePath(fileRow.path) ? (
 				<ActiveFileSync fileId={fileRow?.id} isActiveView={isActiveView} />
 			) : null}
 			{content}
+		</div>
+	);
+}
+
+function UnsupportedFilePlaceholder({
+	filePath,
+}: {
+	readonly filePath: string;
+}): ReactNode {
+	return (
+		<div className="flex h-full items-center justify-center px-6 py-8 text-center">
+			<div className="max-w-sm space-y-2 text-sm text-neutral-600">
+				<p className="font-medium text-neutral-800">
+					This file type is not supported yet.
+				</p>
+				<p>
+					Flashtype only opens markdown files in this editor, so{" "}
+					<span className="font-mono text-xs text-neutral-700">{filePath}</span>{" "}
+					was left blank to avoid damaging its formatting.
+				</p>
+				<p>
+					<a
+						href="https://github.com/opral/flashtype/issues"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700"
+					>
+						Open an issue on GitHub
+					</a>{" "}
+					for support for more file types.
+				</p>
+			</div>
 		</div>
 	);
 }

@@ -166,6 +166,53 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
+	test("opens non-markdown files as file widget tabs", async () => {
+		const lix = await openLix();
+		const openWidget = vi.fn();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_csv",
+				path: "/data.csv",
+				data: new TextEncoder().encode("name,value\nalpha,1"),
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView context={createViewContext(lix, { openWidget })} />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.getByText("data.csv")).toBeInTheDocument();
+		});
+
+		await act(async () => {
+			fireEvent.click(utils!.getByText("data.csv"));
+		});
+
+		expect(openWidget).toHaveBeenCalledWith({
+			panel: "central",
+			kind: FILE_WIDGET_KIND,
+			instance: fileWidgetInstance("file_csv"),
+			state: {
+				fileId: "file_csv",
+				filePath: "/data.csv",
+				flashtype: { label: "data.csv" },
+			},
+			focus: false,
+		});
+
+		utils!.unmount();
+		await lix.close();
+	});
+
 	test("Cmd+Backspace deletes the selected directory", async () => {
 		const lix = await openLix();
 		await qb(lix)

@@ -1,4 +1,6 @@
+import { isMarkdownFilePath } from "@/lib/path";
 import type { DiffWidgetConfig, WidgetKind } from "./types";
+import type { WidgetInstance } from "./types";
 
 export const FILES_WIDGET_KIND = "flashtype_files" as WidgetKind;
 export const SEARCH_WIDGET_KIND = "flashtype_search" as WidgetKind;
@@ -65,4 +67,14 @@ export function buildDiffWidgetProps(args: {
 		flashtype: { label },
 		...(args.diffConfig ? { diff: args.diffConfig } : {}),
 	};
+}
+
+export function activeMarkdownFileIdFromWidgetInstance(
+	entry: WidgetInstance | null | undefined,
+): string | null {
+	if (entry?.kind !== FILE_WIDGET_KIND) return null;
+	if (typeof entry.state?.fileId !== "string") return null;
+	if (typeof entry.state.filePath !== "string") return null;
+	if (!isMarkdownFilePath(entry.state.filePath)) return null;
+	return entry.state.fileId;
 }

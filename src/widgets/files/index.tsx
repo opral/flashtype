@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Files, FileUp, FilePlus } from "lucide-react";
 import { LixProvider, useLix, useQuery } from "@/lib/lix-react";
-import { normalizeDirectoryPath, normalizeFilePath } from "@/lib/path";
+import {
+	isMarkdownFilePath,
+	normalizeDirectoryPath,
+	normalizeFilePath,
+} from "@/lib/path";
 import { selectFilesystemEntries } from "@/queries";
 import { buildFilesystemTree } from "@/widgets/files/build-filesystem-tree";
 import type { WidgetContext } from "../../widget-runtime/types";
@@ -385,13 +389,13 @@ export function FilesView({ context }: FilesViewProps) {
 			if (files.length === 0) return;
 
 			// Filter for markdown files only
-			const markdownFiles = files.filter(
-				(file) => file.name.endsWith(".md") || file.name.endsWith(".markdown"),
+			const markdownFiles = files.filter((file) =>
+				isMarkdownFilePath(file.name),
 			);
 
 			if (markdownFiles.length === 0) {
 				alert(
-					"Only markdown files (.md) are supported at the moment.\n\nUpvote https://github.com/opral/flashtype/issues/81 for support for CSV, PDF, etc",
+					"Only markdown files (.md) are supported at the moment.\n\nOpen an issue on GitHub for support for CSV, PDF, etc: https://github.com/opral/flashtype/issues",
 				);
 				return;
 			}
@@ -495,14 +499,14 @@ export function FilesView({ context }: FilesViewProps) {
 						Only .md and .markdown files supported
 					</p>
 					<p className="mt-1 text-center text-xs text-muted-foreground">
-						Upvote{" "}
+						Open{" "}
 						<a
-							href="https://github.com/opral/flashtype/issues/81"
+							href="https://github.com/opral/flashtype/issues"
 							target="_blank"
 							rel="noopener noreferrer"
 							className="underline hover:text-foreground pointer-events-auto"
 						>
-							issue #81
+							an issue on GitHub
 						</a>{" "}
 						for support for CSV, PDF, etc
 					</p>
