@@ -42,10 +42,14 @@ mac:
     - target: zip
       arch:
         - arm64
+  extraResources:
+    - from: build/markdown.icns
+      to: markdown.icns
   extendInfo:
     CFBundleDocumentTypes:
       - CFBundleTypeName: Markdown Document
         CFBundleTypeRole: Editor
+        CFBundleTypeIconFile: markdown.icns
         LSHandlerRank: Owner
         LSItemContentTypes:
           - public.markdown

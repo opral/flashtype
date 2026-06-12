@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Flashtype Markdown document icon source. Export to build/markdown.icns for macOS document associations. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <path
+    d="M262 126h370l170 170v620c0 33.1-26.9 60-60 60H262c-33.1 0-60-26.9-60-60V186c0-33.1 26.9-60 60-60z"
+    fill="#0f172a"
+    opacity="0.16"
+  />
+  <path
+    d="M242 102h370l170 170v620c0 33.1-26.9 60-60 60H242c-33.1 0-60-26.9-60-60V162c0-33.1 26.9-60 60-60z"
+    fill="#f8fafc"
+    stroke="#cfd7e3"
+    stroke-width="18"
+  />
+  <path
+    d="M608 102v132c0 33.1 26.9 60 60 60h114z"
+    fill="#e8eef6"
+    stroke="#cfd7e3"
+    stroke-width="18"
+    stroke-linejoin="round"
+  />
+
+  <g fill="#cbd5e1">
+    <rect x="286" y="330" width="318" height="34" rx="17"/>
+    <rect x="286" y="416" width="396" height="34" rx="17"/>
+    <rect x="286" y="502" width="344" height="34" rx="17"/>
+  </g>
+
+  <g>
+    <rect x="276" y="650" width="472" height="164" rx="54" fill="#f59e0b"/>
+    <path
+      d="M465 731c-8 0-12.5-9.2-7.5-15.4l68.5-50.6c5.8-6.5 16.5-1 14.5 7.5L529 711.6c-2 6.8 3.1 13.6 10.2 13.6H607c8 0 12.5 9.2 7.5 15.4L546 791.2c-5.8 6.5-16.5 1-14.5-7.5l11.5-39.1c2-6.8-3.1-13.6-10.2-13.6z"
+      fill="#ffffff"
+    />
+  </g>
+</svg>
