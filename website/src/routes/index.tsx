@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 const GITHUB_URL = "https://github.com/opral/flashtype";
-const DOWNLOAD_URL = "https://flashtype.com";
+const DOWNLOAD_URL = "https://github.com/opral/flashtype/releases";
 
 export const Route = createFileRoute("/")({
 	component: LandingPage,
@@ -38,12 +38,12 @@ const FEATURE_ROWS = [
 		title: (
 			<>
 				<span className="inline-flex items-center gap-[10px]">
-					<img src="/claude-icon.png" alt="Claude" className="h-[40px] w-[40px] object-contain max-md:h-[30px] max-md:w-[30px]" />
+					<img src="/claude-icon.png" alt="" aria-hidden="true" className="h-[40px] w-[40px] object-contain max-md:h-[30px] max-md:w-[30px]" />
 					Claude
 				</span>{" "}
 				&amp;{" "}
 				<span className="inline-flex items-center gap-[10px]">
-					<img src="/codex-icon.png" alt="Codex" className="h-[42px] w-[42px] object-contain max-md:h-[31px] max-md:w-[31px]" />
+					<img src="/codex-icon.png" alt="" aria-hidden="true" className="h-[42px] w-[42px] object-contain max-md:h-[31px] max-md:w-[31px]" />
 					Codex
 				</span>
 				<br />
@@ -85,6 +85,7 @@ function LandingPage() {
 			</section>
 			<main className="relative bg-paper">
 				<Features />
+				<UseCasesAndFaq />
 				<ClosingCta />
 			</main>
 			<Footer />
@@ -127,13 +128,15 @@ function Hero() {
 				for{" "}
 				<img
 					src="/claude-icon.png"
-					alt="Claude"
+					alt=""
+					aria-hidden="true"
 					className="ml-[4px] mr-[10px] inline-block h-[52px] w-[52px] object-contain align-[-5px] max-md:h-[34px] max-md:w-[34px]"
 				/>
 				Claude &amp;{" "}
 				<img
 					src="/codex-icon.png"
-					alt="Codex"
+					alt=""
+					aria-hidden="true"
 					className="ml-[4px] mr-[10px] inline-block h-[54px] w-[54px] object-contain align-[-6px] max-md:h-[34px] max-md:w-[34px] max-md:align-[-5px]"
 				/>
 				Codex
@@ -178,6 +181,7 @@ function AppMockup() {
 function Features() {
 	return (
 		<section className="mx-auto flex max-w-[1240px] flex-col gap-[140px] px-[40px] pt-[40px] max-md:gap-[90px] max-md:px-[22px] max-md:pt-[30px]">
+			<h2 className="sr-only">Flashtype features</h2>
 			{FEATURE_ROWS.map((feature) => (
 				<article
 					className="grid grid-cols-[1fr_1.12fr] items-center gap-[84px] max-xl:grid-cols-1 max-xl:gap-[36px]"
@@ -237,7 +241,8 @@ function EditorVisual() {
 				<p>
 					One of America&apos;s most iconic cities, characterized by rolling hills
 					that meet the Pacific coastline. The{" "}
-					<a href={GITHUB_URL}>Golden Gate Bridge</a> spans the bay as a
+					<span className="text-[#C2410C] underline underline-offset-[3px]">Golden Gate Bridge</span>{" "}
+					spans the bay as a
 					rust-colored marvel.
 				</p>
 				<table className="mt-[24px] w-full max-w-[480px] border-separate border-spacing-0 overflow-hidden rounded-[10px] border border-chrome text-left text-[14px] leading-[1.35]">
@@ -315,14 +320,14 @@ function AgentsVisual() {
 					</div>
 					<div className="rounded-[8px] border border-dashed border-terminal/80 bg-white/70 px-[14px] py-[13px] text-center shadow-[0_12px_30px_rgba(226,114,91,0.08)]">
 						<div className="text-[12px] font-semibold text-terminal">
-							Claude Code <span className="text-muted">v2.0.0</span>
+							Claude Code <span className="text-muted">terminal</span>
 						</div>
 						<div className="mt-[10px] text-[12.5px] font-semibold text-ink">
-							Welcome back Alec!
+							Ready to edit
 						</div>
 						<ClaudeCodeMascot compact />
 						<div className="mt-[9px] text-[11.5px] leading-[1.45] text-faint">
-							Sonnet 4.6 · Claude API
+							Agent session · local project
 							<br />
 							~/Documents/flashtype
 						</div>
@@ -407,6 +412,49 @@ function HistoryVisual() {
 	);
 }
 
+function UseCasesAndFaq() {
+	const faqs = [
+		{
+			question: "What is Flashtype?",
+			answer:
+				"Flashtype is a free, open-source macOS markdown editor with Claude Code and Codex built in.",
+		},
+		{
+			question: "Does Flashtype work with local files?",
+			answer:
+				"Yes. Open any folder on disk and keep writing in plain .md files without a proprietary format.",
+		},
+		{
+			question: "How are AI edits reviewed?",
+			answer:
+				"Claude Code and Codex can edit the same files, and Flashtype shows their changes as inline diffs before you accept or reject them.",
+		},
+	];
+
+	return (
+		<section className="mx-auto flex max-w-[820px] flex-col items-center px-[40px] pt-[150px] text-center max-md:px-[22px] max-md:pt-[105px]">
+			<h2 className="m-0 text-[42px] font-bold leading-[1.1] tracking-normal text-ink max-md:text-[34px]">
+				FAQ
+			</h2>
+			<div className="mt-[34px] grid w-full gap-[14px] text-left">
+				{faqs.map((faq) => (
+					<article
+						className="rounded-[16px] border border-[rgba(28,25,23,0.08)] bg-white px-[24px] py-[22px] shadow-[0_20px_50px_rgba(150,70,20,0.08)]"
+						key={faq.question}
+					>
+						<h3 className="m-0 text-[18px] font-bold tracking-normal text-ink">
+							{faq.question}
+						</h3>
+						<p className="mt-[9px] mb-0 text-[16px] leading-[1.6] text-secondary">
+							{faq.answer}
+						</p>
+					</article>
+				))}
+			</div>
+		</section>
+	);
+}
+
 function ClosingCta() {
 	return (
 		<section className="mx-auto flex max-w-[1240px] flex-col items-center gap-[22px] px-[40px] pt-[160px] text-center max-md:px-[22px] max-md:pt-[110px]">
@@ -473,7 +521,10 @@ function MockWindow({
 	hero?: boolean;
 }) {
 	return (
-		<div className={`flex flex-col overflow-hidden border border-[rgba(28,25,23,0.08)] bg-white shadow-[0_30px_70px_rgba(150,70,20,0.2)] ${className ?? ""}`}>
+		<div
+			aria-hidden="true"
+			className={`flex flex-col overflow-hidden border border-[rgba(28,25,23,0.08)] bg-white shadow-[0_30px_70px_rgba(150,70,20,0.2)] ${className ?? ""}`}
+		>
 			<div className={`relative flex shrink-0 items-center border-b border-chrome ${hero ? "h-[56px] px-[22px]" : "h-[44px] px-[16px]"}`}>
 				<div className={`flex ${hero ? "gap-[10px]" : "gap-[8px]"}`} aria-hidden>
 					<span className={`${hero ? "h-[15px] w-[15px]" : "h-[11px] w-[11px]"} rounded-full bg-[#FF5F57]`} />
@@ -570,10 +621,10 @@ function TerminalPane() {
 				<span className="absolute left-[18px] top-[-12px] bg-[#FCFCFB] px-[8px] text-[16px] text-terminal">
 					Claude Code
 				</span>
-				<strong className="text-ink">Welcome back Alec!</strong>
+				<strong className="text-ink">Ready to edit</strong>
 				<ClaudeCodeMascot />
 				<small className="text-[16px] leading-[1.5] text-faint">
-					Sonnet 4.6 · Claude API
+					Agent session · local project
 					<br />
 					~/Documents/flashtype
 				</small>
