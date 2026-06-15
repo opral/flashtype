@@ -5,7 +5,7 @@ import { getWorkspace } from "./workspace.mjs";
 
 let lixPromise = null;
 let lifecycle = Promise.resolve();
-const LIX_DATABASE_FILES = [".lix", ".lix-wal", ".lix-shm", ".lix-journal"];
+const LIX_DATABASE_DIR = ".lix";
 
 function enqueue(operation) {
 	lifecycle = lifecycle.catch(() => {}).then(operation);
@@ -123,11 +123,10 @@ async function closeCurrentLix(options = {}) {
 }
 
 async function removeLixDatabaseFiles(workspacePath) {
-	await Promise.all(
-		LIX_DATABASE_FILES.map((filename) =>
-			rm(path.join(workspacePath, filename), { force: true }),
-		),
-	);
+	await rm(path.join(workspacePath, LIX_DATABASE_DIR), {
+		force: true,
+		recursive: true,
+	});
 }
 
 function createDesktopLixHandle(nativeLix, workspaceDir) {
