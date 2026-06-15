@@ -8,6 +8,7 @@ directories:
 files:
   - package.json
   - build/env-variables.mjs
+  - build/icon.png
   - dist/**/*
   - electron/**/*
   - node_modules/**/*

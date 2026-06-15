@@ -57,7 +57,7 @@ jobs:
   release-macos:
     needs: release-version
     if: needs.release-version.outputs.has_release == 'true'
-    runs-on: macos-latest
+    runs-on: blacksmith-12vcpu-macos-15
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
