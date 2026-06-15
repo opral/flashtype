@@ -1,6 +1,11 @@
 import { ipcMain } from "electron";
 import { Value } from "@lix-js/sdk";
-import { closeLix, ensureLixOpen, resetLixRepository } from "./lix.mjs";
+import {
+	closeLix,
+	ensureLixOpen,
+	exportCurrentLixImage,
+	resetLixRepository,
+} from "./lix.mjs";
 
 const observeHandles = new Map();
 const observeTraceMeta = new Map();
@@ -265,6 +270,11 @@ export function registerLixIpc() {
 	ipcMain.handle("workspace:resetLixRepository", async () => {
 		await closeAllHandles();
 		await resetLixRepository();
+	});
+
+	ipcMain.handle("workspace:exportLixFile", async () => {
+		await closeAllHandles();
+		return await exportCurrentLixImage();
 	});
 }
 

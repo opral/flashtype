@@ -2,6 +2,8 @@ import { dialog, ipcMain } from "electron";
 import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
 
+const LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
+
 /**
  * The workspace is the folder Flashtype operates on. One window has at most
  * one workspace; everything else (lix, terminal cwd, window title) derives
@@ -62,9 +64,20 @@ export async function openWorkspaceDialog(window) {
 
 export async function exportWorkspaceLixFile() {
 	if (!workspace) {
-		throw new Error("No workspace is open. Open a folder before exporting lix.");
+		throw new Error(
+			"No workspace is open. Open a folder before exporting lix.",
+		);
 	}
-	return await readFile(path.join(workspace.path, ".lix"));
+	return await readFile(getWorkspaceLixDatabasePath());
+}
+
+export function getWorkspaceLixDatabasePath() {
+	if (!workspace) {
+		throw new Error(
+			"No workspace is open. Open a folder before exporting lix.",
+		);
+	}
+	return path.join(workspace.path, LIX_DATABASE_FILE);
 }
 
 export function applyWorkspaceWindowChrome(window) {
@@ -97,9 +110,5 @@ export function registerWorkspaceIpc(getWindowForEvent) {
 			return await setWorkspaceFromPath(requestedPath, window);
 		}
 		return await openWorkspaceDialog(window);
-	});
-
-	ipcMain.handle("workspace:exportLixFile", async () => {
-		return await exportWorkspaceLixFile();
 	});
 }

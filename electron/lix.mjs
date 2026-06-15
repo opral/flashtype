@@ -1,7 +1,7 @@
 import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
 import path from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { getWorkspace } from "./workspace.mjs";
+import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
 
 let lixPromise = null;
 let lifecycle = Promise.resolve();
@@ -103,6 +103,18 @@ export async function resetLixRepository() {
 	});
 }
 
+export async function exportCurrentLixImage() {
+	await ensureLixOpen();
+
+	let bytes;
+	await enqueue(async () => {
+		await closeCurrentLix();
+		await checkpointWorkspaceLixDatabase();
+		bytes = await readFile(getWorkspaceLixDatabasePath());
+	});
+	return bytes;
+}
+
 async function closeCurrentLix(options = {}) {
 	if (!lixPromise) {
 		return;
@@ -127,6 +139,16 @@ async function removeLixDatabaseFiles(workspacePath) {
 		force: true,
 		recursive: true,
 	});
+}
+
+async function checkpointWorkspaceLixDatabase() {
+	const { DatabaseSync } = await import("node:sqlite");
+	const database = new DatabaseSync(getWorkspaceLixDatabasePath());
+	try {
+		database.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+	} finally {
+		database.close();
+	}
 }
 
 function createDesktopLixHandle(nativeLix, workspaceDir) {
