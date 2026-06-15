@@ -2,7 +2,6 @@ appId: com.flashtype.app
 productName: Flashtype
 executableName: Flashtype
 artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
-forceCodeSigning: false
 directories:
   output: release
   buildResources: build
@@ -31,8 +30,6 @@ publish:
 mac:
   category: public.app-category.productivity
   hardenedRuntime: true
-  identity: null
-  notarize: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   icon: build/icon.icns
