@@ -29,3 +29,9 @@
 ### Opening a PR
 
 1. `pnpm run ci`
+
+### Changenotes
+
+Add a `.changenotes/*.md` file for user-facing changes. Use `type: major`, `type: minor`, or `type: patch` frontmatter, followed by changelog-ready prose.
+
+See `.changenotes/README.md` for the exact format. Do not add changenotes for repo-only, documentation-only, CI-only, test-only, or chore-only changes.
