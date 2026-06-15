@@ -34,12 +34,31 @@ jobs:
           echo "has_release=true" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Close stale release PRs
+        if: steps.prepare.outputs.has_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list \
+            --state open \
+            --json number,title,headRefName \
+            --jq '.[] | select(.title | test("^Release v[0-9]+\\.[0-9]+\\.[0-9]+$")) | select(.headRefName != "release/next") | [.number, .headRefName] | @tsv' |
+          while IFS=$'\t' read -r number branch; do
+            if [ -z "$number" ]; then
+              continue
+            fi
+            gh pr close "$number" \
+              --comment "Superseded by the generated release PR on \`release/next\`." \
+              --delete-branch
+            echo "Closed stale release PR #$number from $branch."
+          done
+
       - name: Create or update release PR
         if: steps.prepare.outputs.has_release == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          branch: release/v${{ steps.prepare.outputs.version }}
+          branch: release/next
           delete-branch: true
           commit-message: Release v${{ steps.prepare.outputs.version }}
           title: Release v${{ steps.prepare.outputs.version }}
