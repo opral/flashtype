@@ -438,7 +438,11 @@ test("shares optimistic updates across hook instances", async () => {
 
 test("returns optimistic value immediately when setter is called", async () => {
 	const lix = await openLix({});
-	const TEST_KEY = "flashtype_test_optimistic" as any;
+	const TEST_KEY = nextTestKey("flashtype_test_optimistic") as any;
+	await qb(lix)
+		.insertInto("lix_key_value")
+		.values({ key: TEST_KEY, value: "initial" })
+		.execute();
 	const wrapper = ({ children }: { children: React.ReactNode }) => (
 		<LixProvider lix={lix}>
 			<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
