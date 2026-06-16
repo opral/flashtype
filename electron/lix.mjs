@@ -44,9 +44,10 @@ export async function ensureLixOpen() {
 
 async function ensureDefaultPluginsInstalledOnCurrentBranch(lix) {
 	for (const plugin of await bundledPluginArchives()) {
-		const existing = await lix.fs.readFile(pluginArchivePath(plugin));
-		if (existing === undefined) {
-			await lix.installPlugin(plugin.archiveBytes);
+		const archivePath = pluginArchivePath(plugin);
+		const existing = await readLixFileBytes(lix, archivePath);
+		if (!bytesEqual(existing, plugin.archiveBytes)) {
+			await writeLixFileBytes(lix, archivePath, plugin.archiveBytes);
 		}
 	}
 }
@@ -66,10 +67,28 @@ async function ensureBundledPluginArchivesOnDisk(workspacePath) {
 }
 
 function pluginArchivePath(plugin) {
-	if (typeof plugin.path === "string") {
-		return plugin.path;
+	return `/.lix_system/plugins/${plugin.key}.lixplugin`;
+}
+
+async function readLixFileBytes(lix, path) {
+	const result = await lix.execute("SELECT data FROM lix_file WHERE path = $1", [
+		path,
+	]);
+	return result.rows[0]?.value("data").asBytes();
+}
+
+async function writeLixFileBytes(lix, path, data) {
+	await lix.execute(
+		"INSERT INTO lix_file (path, data) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET data = excluded.data",
+		[path, data],
+	);
+}
+
+function bytesEqual(actual, expected) {
+	if (!(actual instanceof Uint8Array)) {
+		return false;
 	}
-	return `/.lix_system/plugins/${plugin.fileName}`;
+	return Buffer.compare(Buffer.from(actual), Buffer.from(expected)) === 0;
 }
 
 async function fileBytesEqual(filePath, expected) {
