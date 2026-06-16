@@ -65,12 +65,14 @@ const FEATURE_ROWS = [
 		body: "Every change is checkpointed automatically. Browse a document's full history and restore any earlier version in one click - yours or the agent's.",
 		visual: <HistoryVisual />,
 		glow: "left-[-8%] top-[-10%]",
+		badge: "Soon",
 	},
 ] satisfies Array<{
 	title: ReactNode;
 	body: string;
 	visual: ReactNode;
 	glow: string;
+	badge?: string;
 }>;
 
 function LandingPage() {
@@ -189,6 +191,11 @@ function Features() {
 					key={String(feature.body)}
 				>
 					<div className="flex flex-col gap-[22px]">
+						{feature.badge && (
+							<span className="inline-flex w-fit items-center rounded-full border border-[rgba(232,89,12,0.25)] bg-[rgba(249,115,22,0.1)] px-[13px] py-[5px] text-[12px] font-bold uppercase tracking-[0.12em] text-flash">
+								{feature.badge}
+							</span>
+						)}
 						<h3 className="m-0 text-[44px] font-bold leading-[1.1] tracking-normal text-ink max-md:text-[34px]">
 							{feature.title}
 						</h3>
@@ -520,7 +527,7 @@ function PoweredByLix() {
 			</p>
 			<a
 				href={LIX_URL}
-				className="mt-[18px] inline-flex items-center gap-[7px] text-[16px] font-bold text-[#0A8DA8] no-underline transition hover:text-[#066F86]"
+				className="mt-[18px] inline-flex items-center gap-[7px] text-[16px] font-bold text-[#066F86] no-underline transition hover:text-[#034E61]"
 			>
 				Explore Lix <span aria-hidden>↗</span>
 			</a>
