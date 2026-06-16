@@ -77,6 +77,7 @@ export function CentralPanel({
 			onActiveViewInteraction={finalizePendingIfNeeded}
 			emptyStatePlaceholder={emptyState}
 			dropId="central-panel"
+			showTabBar={false}
 		/>
 	);
 }

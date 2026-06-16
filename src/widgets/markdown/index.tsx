@@ -78,7 +78,7 @@ function MarkdownViewContent({
 		content = (
 			<EditorProvider>
 				<div className="markdown-view flex h-full flex-col bg-background">
-					<FormattingToolbar className="mb-3" />
+					<FormattingToolbar />
 					<TipTapEditor
 						className="flex-1"
 						fileId={fileRow.id}
@@ -92,7 +92,7 @@ function MarkdownViewContent({
 	}
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col px-2 py-2">
+		<div className="flex min-h-0 flex-1 flex-col">
 			{syncActiveFile && fileRow && isMarkdownFilePath(fileRow.path) ? (
 				<ActiveFileSync fileId={fileRow?.id} isActiveView={isActiveView} />
 			) : null}

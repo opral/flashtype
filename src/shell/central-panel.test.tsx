@@ -91,36 +91,8 @@ const createViewContext = (
 });
 
 describe("CentralPanel", () => {
-	test("renders the active view and wires tab selection", async () => {
-		const panelState: PanelState = {
-			views: [{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND }],
-			activeInstance: "search-1",
-		};
-		const handleSelect = vi.fn();
-
-		await renderWithProviders(
-			<DndContext>
-				<CentralPanel
-					panel={panelState}
-					onSelectWidget={handleSelect}
-					onRemoveWidget={() => {}}
-					viewContext={createViewContext({ isPanelFocused: true })}
-					isFocused={true}
-					onFocusPanel={vi.fn()}
-				/>
-			</DndContext>,
-		);
-
-		expect(await screen.findByTestId("search-view-input")).toBeInTheDocument();
-
-		const tabButton = await screen.findByRole("button", { name: "Search" });
-		fireEvent.click(tabButton);
-
-		expect(handleSelect).toHaveBeenCalledWith("search-1");
-		expect(tabButton.getAttribute("data-focused")).toBe("true");
-	});
-
-	test("active tab is not focused when panel loses focus", async () => {
+	test("renders the active view without a tab strip", async () => {
+		// The central editor hides tabs; files are switched from the left list.
 		const panelState: PanelState = {
 			views: [{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND }],
 			activeInstance: "search-1",
@@ -132,15 +104,15 @@ describe("CentralPanel", () => {
 					panel={panelState}
 					onSelectWidget={() => {}}
 					onRemoveWidget={() => {}}
-					viewContext={createViewContext()}
-					isFocused={false}
+					viewContext={createViewContext({ isPanelFocused: true })}
+					isFocused={true}
 					onFocusPanel={vi.fn()}
 				/>
 			</DndContext>,
 		);
 
-		const tabButton = await screen.findByRole("button", { name: "Search" });
-		expect(tabButton.getAttribute("data-focused")).toBeNull();
+		expect(await screen.findByTestId("search-view-input")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
 	});
 
 	test("finalizes pending view when interacting with content", async () => {

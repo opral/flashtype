@@ -82,6 +82,7 @@ export function PanelV2({
 	onActiveViewInteraction,
 	dropId,
 	viewOverrides,
+	showTabBar = true,
 }: PanelV2Props) {
 	const { widgetMap } = useWidgetRegistry();
 	const { setNodeRef, isOver } = useDroppable({
@@ -191,44 +192,47 @@ export function PanelV2({
 					isOver && "ring-2 ring-brand-600 ring-inset",
 				)}
 			>
-				{/* Every island renders the identical 40px tab row. */}
-				<TabBar
-					extraContent={
-						onAddView ? (
-							<AddViewMenu side={side} panel={panel} onAddView={onAddView} />
-						) : null
-					}
-				>
-					<SortableContext
-						id={`panel-${side}`}
-						items={panel.views.map((entry) => entry.instance)}
-						strategy={horizontalListSortingStrategy}
+				{/* Most islands render the identical 40px tab row; the central
+				    editor hides it and switches files from the left file list. */}
+				{showTabBar ? (
+					<TabBar
+						extraContent={
+							onAddView ? (
+								<AddViewMenu side={side} panel={panel} onAddView={onAddView} />
+							) : null
+						}
 					>
-						{panel.views.map((entry) => {
-							const view = resolveViewDefinition(entry.kind);
-							if (!view) return null;
-							const isActive = activeInstance === entry.instance;
-							const label = resolveLabel(view, entry, tabLabel);
-							const badgeCount = badgeCounts[entry.instance] ?? null;
-							return (
-								<SortableTab
-									key={entry.instance}
-									instance={entry.instance}
-									panelSide={side}
-									kind={entry.kind}
-									icon={resolveTabIcon(entry) ?? view.icon}
-									label={label}
-									badgeCount={badgeCount}
-									isActive={isActive}
-									isFocused={isFocused && isActive}
-									isPending={entry.isPending}
-									onClick={() => onSelectWidget(entry.instance)}
-									onClose={() => onRemoveWidget(entry.instance)}
-								/>
-							);
-						})}
-					</SortableContext>
-				</TabBar>
+						<SortableContext
+							id={`panel-${side}`}
+							items={panel.views.map((entry) => entry.instance)}
+							strategy={horizontalListSortingStrategy}
+						>
+							{panel.views.map((entry) => {
+								const view = resolveViewDefinition(entry.kind);
+								if (!view) return null;
+								const isActive = activeInstance === entry.instance;
+								const label = resolveLabel(view, entry, tabLabel);
+								const badgeCount = badgeCounts[entry.instance] ?? null;
+								return (
+									<SortableTab
+										key={entry.instance}
+										instance={entry.instance}
+										panelSide={side}
+										kind={entry.kind}
+										icon={resolveTabIcon(entry) ?? view.icon}
+										label={label}
+										badgeCount={badgeCount}
+										isActive={isActive}
+										isFocused={isFocused && isActive}
+										isPending={entry.isPending}
+										onClick={() => onSelectWidget(entry.instance)}
+										onClose={() => onRemoveWidget(entry.instance)}
+									/>
+								);
+							})}
+						</SortableContext>
+					</TabBar>
+				) : null}
 
 				{hasViews ? (
 					<PanelContent {...contentHandlers}>
@@ -247,6 +251,7 @@ export function PanelV2({
 										view={view}
 										instance={entry}
 										context={context}
+										isActive={isActive}
 									/>
 								</Activity>
 							);
@@ -278,6 +283,8 @@ export type PanelV2Props = {
 	readonly onActiveViewInteraction?: (instance: string) => void;
 	readonly dropId?: string;
 	readonly viewOverrides?: WidgetDefinition[];
+	/** Hide the tab strip (central editor switches files from the file list). */
+	readonly showTabBar?: boolean;
 };
 
 /**
@@ -474,10 +481,12 @@ function ViewRenderer({
 	view,
 	instance,
 	context,
+	isActive,
 }: {
 	view: WidgetDefinition;
 	instance: WidgetInstance;
 	context: WidgetContext;
+	isActive: boolean;
 }) {
 	const registry = useWidgetHostRegistry();
 	const [host, setHost] = useState<WidgetHostRecord | null>(null);
@@ -487,10 +496,27 @@ function ViewRenderer({
 		setHost(record);
 	}, [registry, view, instance, context]);
 
-	return <ViewHostMount host={host} />;
+	return (
+		<ViewHostMount
+			host={host}
+			instance={instance.instance}
+			kind={instance.kind}
+			isActive={isActive}
+		/>
+	);
 }
 
-function ViewHostMount({ host }: { host: WidgetHostRecord | null }) {
+function ViewHostMount({
+	host,
+	instance,
+	kind,
+	isActive,
+}: {
+	host: WidgetHostRecord | null;
+	instance: string;
+	kind: WidgetKind;
+	isActive: boolean;
+}) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 
 	useLayoutEffect(() => {
@@ -508,6 +534,9 @@ function ViewHostMount({ host }: { host: WidgetHostRecord | null }) {
 	return (
 		<div
 			ref={containerRef}
+			data-view-instance={instance}
+			data-view-key={kind}
+			data-active={isActive ? "true" : undefined}
 			className="flex min-h-0 flex-1 flex-col overflow-hidden"
 		/>
 	);

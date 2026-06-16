@@ -5,7 +5,6 @@ import {
 	useRef,
 	useState,
 	type MouseEvent,
-	type SVGProps,
 } from "react";
 import { Toolbar } from "@base-ui-components/react/toolbar";
 import { Select } from "@base-ui-components/react/select";
@@ -14,11 +13,12 @@ import clsx from "clsx";
 import {
 	Bold,
 	Check,
-	CheckSquare,
 	ChevronDown,
 	Code2,
+	Copy,
 	Italic,
 	List,
+	ListChecks,
 	ListOrdered,
 } from "lucide-react";
 import type { Editor } from "@tiptap/core";
@@ -39,11 +39,15 @@ type FormatState = {
 	isTaskList: boolean;
 };
 
-const toolbarButtonClass =
-	"inline-flex h-7 min-w-7 select-none items-center rounded-sm px-2 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40";
+/** 28px square icon button, matching the panel-header chips in the islands UI. */
+const iconButtonClass =
+	"inline-flex size-7 shrink-0 select-none items-center justify-center rounded-[7px] text-neutral-600 transition-colors hover:bg-hover-soft hover:text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-40";
+
+/** Pressed state for a formatting toggle. */
+const iconButtonActiveClass = "bg-neutral-200 text-neutral-900";
 
 const ToolbarSeparator = () => (
-	<Toolbar.Separator className="mx-1 h-4 w-px bg-border" />
+	<Toolbar.Separator className="mx-1.5 h-4 w-px bg-island-border" />
 );
 
 const initialFormatState: FormatState = {
@@ -250,12 +254,12 @@ export function FormattingToolbar({ className }: { className?: string }) {
 			</span>
 			<Toolbar.Root
 				className={clsx(
-					"flex w-full max-w-5xl items-center gap-1 rounded-md border border-border py-0.5 text-xs text-foreground mx-auto",
+					"flex h-10 w-full shrink-0 items-center gap-0.5 border-b border-island-divider bg-neutral-0 px-2 text-foreground",
 					className,
 				)}
 				aria-label="Formatting toolbar"
 			>
-				<Toolbar.Group className="flex flex-1 items-center gap-1">
+				<Toolbar.Group className="flex flex-1 items-center gap-0.5">
 					<Select.Root
 						value={formatState.block}
 						onValueChange={handleBlockChange}
@@ -265,10 +269,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 						<Toolbar.Button
 							render={<Select.Trigger />}
 							nativeButton={false}
-							className={clsx(
-								toolbarButtonClass,
-								"gap-1 text-sm font-medium text-foreground pr-0 pl-3 min-w-[7rem]",
-							)}
+							className="inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-[7px] pr-1.5 pl-2.5 text-[12.5px] font-semibold text-neutral-700 transition-colors hover:bg-hover-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"
 							onMouseDown={suppressMouseDown}
 						>
 							<Select.Value
@@ -283,8 +284,8 @@ export function FormattingToolbar({ className }: { className?: string }) {
 							>
 								{activeBlockLabel}
 							</Select.Value>
-							<Select.Icon className="text-muted-foreground">
-								<ChevronDown className="h-4 w-4" aria-hidden />
+							<Select.Icon className="text-neutral-400">
+								<ChevronDown className="size-3.5" aria-hidden />
 							</Select.Icon>
 						</Toolbar.Button>
 						<Select.Portal>
@@ -330,88 +331,82 @@ export function FormattingToolbar({ className }: { className?: string }) {
 
 					<Toolbar.Button
 						className={clsx(
-							toolbarButtonClass,
-							"text-muted-foreground hover:bg-muted hover:text-foreground",
-							formatState.isBold && "bg-neutral-100 text-neutral-900",
+							iconButtonClass,
+							formatState.isBold && iconButtonActiveClass,
 						)}
 						onClick={handleToggleBold}
 						onMouseDown={suppressMouseDown}
 						aria-pressed={formatState.isBold}
 						aria-label="Bold"
 					>
-						<Bold className="h-4 w-4" aria-hidden />
+						<Bold className="size-3.5" aria-hidden />
 					</Toolbar.Button>
 
 					<Toolbar.Button
 						className={clsx(
-							toolbarButtonClass,
-							"text-muted-foreground hover:bg-muted hover:text-foreground",
-							formatState.isItalic && "bg-neutral-100 text-neutral-900",
+							iconButtonClass,
+							formatState.isItalic && iconButtonActiveClass,
 						)}
 						onClick={handleToggleItalic}
 						onMouseDown={suppressMouseDown}
 						aria-pressed={formatState.isItalic}
 						aria-label="Italic"
 					>
-						<Italic className="h-4 w-4" aria-hidden />
+						<Italic className="size-3.5" aria-hidden />
 					</Toolbar.Button>
 
 					<Toolbar.Button
 						className={clsx(
-							toolbarButtonClass,
-							"text-muted-foreground hover:bg-muted hover:text-foreground",
-							formatState.isCode && "bg-neutral-100 text-neutral-900",
+							iconButtonClass,
+							formatState.isCode && iconButtonActiveClass,
 						)}
 						onClick={handleToggleCode}
 						onMouseDown={suppressMouseDown}
 						aria-pressed={formatState.isCode}
 						aria-label="Inline code"
 					>
-						<Code2 className="h-4 w-4" aria-hidden />
+						<Code2 className="size-3.5" aria-hidden />
 					</Toolbar.Button>
 
 					<ToolbarSeparator />
 
 					<Toolbar.Button
 						className={clsx(
-							toolbarButtonClass,
-							"text-muted-foreground hover:bg-muted hover:text-foreground",
-							formatState.isOrderedList && "bg-neutral-100 text-neutral-900",
+							iconButtonClass,
+							formatState.isOrderedList && iconButtonActiveClass,
 						)}
 						onClick={handleToggleOrderedList}
 						onMouseDown={suppressMouseDown}
 						aria-pressed={formatState.isOrderedList}
 						aria-label="Numbered list"
 					>
-						<ListOrdered className="h-4 w-4" aria-hidden />
+						<ListOrdered className="size-3.5" aria-hidden />
 					</Toolbar.Button>
 
 					<Toolbar.Button
 						className={clsx(
-							toolbarButtonClass,
-							"text-muted-foreground hover:bg-muted hover:text-foreground",
-							formatState.isBulletList && "bg-neutral-100 text-neutral-900",
+							iconButtonClass,
+							formatState.isBulletList && iconButtonActiveClass,
 						)}
 						onClick={handleToggleBulletList}
 						onMouseDown={suppressMouseDown}
 						aria-pressed={formatState.isBulletList}
 						aria-label="Bullet list"
 					>
-						<List className="h-4 w-4" aria-hidden />
+						<List className="size-3.5" aria-hidden />
 					</Toolbar.Button>
 
 					<Toolbar.Button
 						className={clsx(
-							toolbarButtonClass,
-							"text-muted-foreground hover:bg-muted hover:text-foreground",
-							formatState.isTaskList && "bg-neutral-100 text-neutral-900",
+							iconButtonClass,
+							formatState.isTaskList && iconButtonActiveClass,
 						)}
 						onClick={handleToggleTaskList}
 						onMouseDown={suppressMouseDown}
 						aria-pressed={formatState.isTaskList}
 						aria-label="Checklist"
 					>
-						<CheckSquare className="h-4 w-4" aria-hidden />
+						<ListChecks className="size-3.5" aria-hidden />
 					</Toolbar.Button>
 				</Toolbar.Group>
 
@@ -420,11 +415,9 @@ export function FormattingToolbar({ className }: { className?: string }) {
 						render={
 							<Toolbar.Button
 								className={clsx(
-									toolbarButtonClass,
-									"ml-auto px-3 text-muted-foreground hover:bg-muted hover:text-foreground",
-									copyStatus === "success" && "bg-accent/30 text-foreground",
-									copyStatus === "error" &&
-										"bg-destructive/20 text-destructive",
+									iconButtonClass,
+									"ml-auto",
+									copyStatus === "error" && "text-error-600",
 								)}
 								onClick={handleCopyMarkdown}
 								onMouseDown={suppressMouseDown}
@@ -432,10 +425,10 @@ export function FormattingToolbar({ className }: { className?: string }) {
 									copyStatus === "success" ? "Copied markdown" : "Copy markdown"
 								}
 							>
-								<span className="relative inline-flex h-4 w-4 items-center justify-center">
-									<MarkdownCopyIcon
+								<span className="relative inline-flex size-3.5 items-center justify-center">
+									<Copy
 										className={clsx(
-											"h-4 w-4 transition-all duration-150",
+											"size-3.5 transition-all duration-150",
 											copyStatus === "success"
 												? "scale-75 opacity-0"
 												: "scale-100 opacity-100",
@@ -444,7 +437,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 									/>
 									<Check
 										className={clsx(
-											"absolute h-4 w-4 text-emerald-600 transition-all duration-150",
+											"absolute size-3.5 text-success-600 transition-all duration-150",
 											copyStatus === "success"
 												? "scale-100 opacity-100"
 												: "scale-75 opacity-0",
@@ -521,19 +514,4 @@ function toggleTaskListFallback(editor: Editor) {
 	if (applied) {
 		view.dispatch(tr);
 	}
-}
-
-function MarkdownCopyIcon(props: SVGProps<SVGSVGElement>) {
-	return (
-		<svg
-			width="1em"
-			height="1em"
-			viewBox="0 -960 960 960"
-			fill="currentColor"
-			xmlns="http://www.w3.org/2000/svg"
-			{...props}
-		>
-			<path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm210-360h60v-180h40v120h60v-120h40v180h60v-200q0-17-11.5-28.5T630-680H450q-17 0-28.5 11.5T410-640v200Zm-50 120v-480 480Z" />
-		</svg>
-	);
 }

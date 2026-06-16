@@ -1018,11 +1018,12 @@ function LayoutShellContent({
 		void setActiveFileId(activeCentralFileId);
 	}, [activeCentralFileId, activeFileId, setActiveFileId]);
 
-	const activeStatusLabel = useMemo(() => {
+	const activeFileName = useMemo(() => {
 		if (!activeCentralEntry) return null;
 		const rawPath = activeCentralEntry.state?.filePath as string | undefined;
 		if (rawPath) {
-			return rawPath;
+			const segments = rawPath.split("/").filter(Boolean);
+			return segments[segments.length - 1] ?? rawPath;
 		}
 		return (
 			(activeCentralEntry.state?.flashtype?.label as string | undefined) ??
@@ -1456,6 +1457,7 @@ function LayoutShellContent({
 			>
 				<TopBar
 					workspaceName={workspaceName}
+					activeFileName={activeFileName}
 					onWorkspaceTitleClick={onOpenWorkspace}
 					menu={<FlashtypeMenu />}
 					onToggleLeftSidebar={toggleLeftSidebar}
@@ -1542,14 +1544,7 @@ function LayoutShellContent({
 						</Panel>
 					</PanelGroup>
 				</div>
-				<StatusBar
-					left={<BranchSwitcher />}
-					right={
-						activeStatusLabel ? (
-							<span className="truncate">{activeStatusLabel}</span>
-						) : null
-					}
-				/>
+				<StatusBar left={<BranchSwitcher />} />
 			</div>
 			<DragOverlay>
 				{activeId && activeDragView ? (
