@@ -85,7 +85,8 @@ function LandingPage() {
 			</section>
 			<main className="relative bg-paper">
 				<Features />
-				<UseCasesAndFaq />
+				<PoweredByLix />
+					<UseCasesAndFaq />
 				<ClosingCta />
 			</main>
 			<Footer />
@@ -495,6 +496,35 @@ function Footer() {
 				</nav>
 			</div>
 		</footer>
+	);
+}
+
+const LIX_URL = "https://lix.dev";
+
+const LIX_COPY =
+	"Flashtype's version history and diffs run on Lix. Every edit is checkpointed, so you can see what changed and go back to any version.";
+
+function PoweredByLix() {
+	return (
+		<section className="mx-auto flex max-w-[820px] flex-col items-center px-[40px] pt-[150px] text-center max-md:px-[22px] max-md:pt-[105px]">
+			<h3 className="m-0 flex items-center justify-center gap-[14px] text-[44px] font-bold leading-[1.1] tracking-normal text-ink max-md:gap-[10px] max-md:text-[34px]">
+				Powered by
+				<img
+					src="/lix-logo.svg"
+					alt="Lix"
+					className="inline-block h-[33px] w-auto translate-y-[2px] max-md:h-[26px]"
+				/>
+			</h3>
+			<p className="mt-[22px] max-w-[540px] text-[18px] leading-[1.6] text-secondary [text-wrap:pretty] max-md:text-[17px]">
+				{LIX_COPY}
+			</p>
+			<a
+				href={LIX_URL}
+				className="mt-[18px] inline-flex items-center gap-[7px] text-[16px] font-bold text-[#0A8DA8] no-underline transition hover:text-[#066F86]"
+			>
+				Explore Lix <span aria-hidden>↗</span>
+			</a>
+		</section>
 	);
 }
 
