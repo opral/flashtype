@@ -229,7 +229,7 @@ function TipTapEditorLoadedContent({
 			if (editor.isEmpty) {
 				editor.commands.focus("start");
 			} else {
-				editor.commands.focus();
+				editor.commands.focus("end");
 			}
 		},
 		[editor],
@@ -355,7 +355,7 @@ function TipTapEditorLoadedContent({
 				scrollFrameRef.current = null;
 			}
 		};
-	}, [setScrollbarVisible, syncScrollbarThumb]);
+	}, [editor, setScrollbarVisible, syncScrollbarThumb]);
 
 	// Observe markdown file rows and refresh on external changes.
 	useEffect(() => {

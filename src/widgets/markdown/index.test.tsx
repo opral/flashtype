@@ -86,6 +86,7 @@ describe("MarkdownView", () => {
 							<MarkdownView
 								fileId="file_markdown"
 								filePath="/docs/guide.markdown"
+								syncActiveFile={false}
 							/>
 						</Suspense>
 					</KeyValueProvider>
@@ -120,6 +121,7 @@ describe("MarkdownView", () => {
 							<MarkdownView
 								fileId="file_uppercase"
 								filePath="/docs/README.MD"
+								syncActiveFile={false}
 							/>
 						</Suspense>
 					</KeyValueProvider>

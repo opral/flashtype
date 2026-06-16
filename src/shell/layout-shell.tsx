@@ -288,6 +288,21 @@ export function V2LayoutShell({
 	);
 }
 
+function isPanelShortcutBlockedTarget(target: EventTarget | null): boolean {
+	if (!target || !(target instanceof HTMLElement)) {
+		return false;
+	}
+	if (target.closest(".ProseMirror")) {
+		return false;
+	}
+	if (target.isContentEditable) return true;
+	const tagName = target.tagName;
+	if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
+		return true;
+	}
+	return Boolean(target.closest("input, textarea, select, [contenteditable]"));
+}
+
 /**
  * App layout shell with independent left and right islands.
  *
@@ -1358,6 +1373,7 @@ function LayoutShellContent({
 				? event.metaKey && !event.ctrlKey
 				: event.ctrlKey && !event.metaKey;
 			if (!usesPrimaryModifier || event.altKey || event.shiftKey) return;
+			if (isPanelShortcutBlockedTarget(event.target)) return;
 
 			// CMD+1 for left panel
 			if (event.key === "1" || event.code === "Digit1") {
