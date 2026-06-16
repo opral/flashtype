@@ -175,14 +175,13 @@ function FileTreeNode({
 	const Icon = isOpen ? FolderOpen : Folder;
 	const suppressSelection = Boolean(draft && draft.directoryPath === node.path);
 	const isSelected = !suppressSelection && selectedPath === node.path;
-	// Open directories read as headings; closed ones recede. No chevrons —
-	// the open-folder icon and weight carry the state. Selection stays quiet:
+	// Open/closed icons carry directory state. Selection stays quiet:
 	// orange is reserved for the selected file row.
 	const buttonClass = clsx(
 		"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-colors hover:bg-hover-soft",
 		isSelected && "bg-hover-soft",
 		isOpen
-			? "font-semibold text-neutral-900 [&_svg]:text-neutral-500"
+			? "font-normal text-neutral-700 [&_svg]:text-neutral-500"
 			: "text-neutral-600 [&_svg]:text-neutral-400",
 	);
 
