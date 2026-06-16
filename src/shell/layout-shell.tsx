@@ -1352,20 +1352,6 @@ function LayoutShellContent({
 		return /mac|iphone|ipad|ipod/.test(combined);
 	}, []);
 
-	const isInteractiveTarget = useCallback(
-		(target: EventTarget | null): boolean => {
-			if (!target || !(target instanceof HTMLElement)) return false;
-			const tagName = target.tagName.toLowerCase();
-			const isInput =
-				tagName === "input" ||
-				tagName === "textarea" ||
-				tagName === "select" ||
-				target.isContentEditable;
-			return isInput;
-		},
-		[],
-	);
-
 	useEffect(() => {
 		const listener = (event: KeyboardEvent) => {
 			const usesPrimaryModifier = isMacPlatform
@@ -1379,11 +1365,7 @@ function LayoutShellContent({
 				event.stopPropagation();
 				event.stopImmediatePropagation?.();
 				event.returnValue = false;
-				if (
-					event.type === "keydown" &&
-					!event.repeat &&
-					!isInteractiveTarget(event.target)
-				) {
+				if (event.type === "keydown" && !event.repeat) {
 					toggleLeftSidebar();
 				}
 				return;
@@ -1395,11 +1377,7 @@ function LayoutShellContent({
 				event.stopPropagation();
 				event.stopImmediatePropagation?.();
 				event.returnValue = false;
-				if (
-					event.type === "keydown" &&
-					!event.repeat &&
-					!isInteractiveTarget(event.target)
-				) {
+				if (event.type === "keydown" && !event.repeat) {
 					toggleRightSidebar();
 				}
 				return;
@@ -1428,12 +1406,7 @@ function LayoutShellContent({
 				}
 			}
 		};
-	}, [
-		isMacPlatform,
-		toggleLeftSidebar,
-		toggleRightSidebar,
-		isInteractiveTarget,
-	]);
+	}, [isMacPlatform, toggleLeftSidebar, toggleRightSidebar]);
 
 	const animatedPanelClass = shouldAnimatePanels
 		? "transition-[flex-basis] duration-200 ease-in-out"
