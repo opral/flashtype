@@ -59,7 +59,7 @@ export function TopBar({
 
 	const modifierKey = isMacPlatform ? "⌘" : "Ctrl";
 	const leftShortcut = isMacPlatform ? `${modifierKey}1` : `${modifierKey}+1`;
-	const rightShortcut = isMacPlatform ? `${modifierKey}3` : `${modifierKey}+3`;
+	const rightShortcut = isMacPlatform ? `${modifierKey}2` : `${modifierKey}+2`;
 	const showUpdateButton = isUpdateReady && Boolean(onInstallUpdate);
 
 	const handleInstallUpdate = async () => {
@@ -79,7 +79,6 @@ export function TopBar({
 					isMacPlatform ? "pl-[68px]" : ""
 				}`}
 			>
-				{menu}
 				<Tooltip delayDuration={500}>
 					<TooltipTrigger asChild>
 						<Button
@@ -99,25 +98,7 @@ export function TopBar({
 						Toggle left panel ({leftShortcut})
 					</TooltipContent>
 				</Tooltip>
-				<Tooltip delayDuration={500}>
-					<TooltipTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="h-7 w-7 rounded-[7px] text-ink-muted hover:bg-hover-soft hover:text-neutral-900 [-webkit-app-region:no-drag]"
-							type="button"
-							onClick={onToggleRightSidebar}
-							aria-label="Toggle right panel"
-							aria-pressed={isRightSidebarVisible}
-							data-state={isRightSidebarVisible ? "on" : "off"}
-						>
-							<PanelToggleIcon side="right" isActive={isRightSidebarVisible} />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent className="bg-neutral-900 text-neutral-0 [&_[class*='bg-secondary']]:bg-neutral-900 [&_[class*='fill-secondary']]:fill-neutral-900">
-						Toggle right panel ({rightShortcut})
-					</TooltipContent>
-				</Tooltip>
+				{menu}
 			</div>
 			{workspaceName ? (
 				<div className="pointer-events-none absolute inset-x-0 flex min-w-0 items-center justify-center px-[88px]">
@@ -187,6 +168,25 @@ export function TopBar({
 						</svg>
 					</a>
 				</Button>
+				<Tooltip delayDuration={500}>
+					<TooltipTrigger asChild>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-7 w-7 rounded-[7px] text-chrome-icon hover:bg-hover-soft hover:text-neutral-900 [-webkit-app-region:no-drag]"
+							type="button"
+							onClick={onToggleRightSidebar}
+							aria-label="Toggle right panel"
+							aria-pressed={isRightSidebarVisible}
+							data-state={isRightSidebarVisible ? "on" : "off"}
+						>
+							<PanelToggleIcon side="right" isActive={isRightSidebarVisible} />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent className="bg-neutral-900 text-neutral-0 [&_[class*='bg-secondary']]:bg-neutral-900 [&_[class*='fill-secondary']]:fill-neutral-900">
+						Toggle right panel ({rightShortcut})
+					</TooltipContent>
+				</Tooltip>
 			</div>
 		</header>
 	);

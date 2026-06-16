@@ -1389,8 +1389,8 @@ function LayoutShellContent({
 				return;
 			}
 
-			// CMD+3 for right panel
-			if (event.key === "3" || event.code === "Digit3") {
+			// CMD+2 for right panel
+			if (event.key === "2" || event.code === "Digit2") {
 				event.preventDefault();
 				event.stopPropagation();
 				event.stopImmediatePropagation?.();
