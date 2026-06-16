@@ -43,14 +43,12 @@ export function CsvView({ fileId }: CsvViewProps) {
 function CsvViewContent({ fileId }: CsvViewProps) {
 	assertFileId(fileId);
 
-	const fileRow = useQueryTakeFirst(
-		(lix) =>
-			qb(lix)
-				.selectFrom("lix_file")
-				.select(["id", "path", "data"])
-				.where("id", "=", fileId)
-				.limit(1),
-		{ subscribe: false },
+	const fileRow = useQueryTakeFirst((lix) =>
+		qb(lix)
+			.selectFrom("lix_file")
+			.select(["id", "path", "data"])
+			.where("id", "=", fileId)
+			.limit(1),
 	);
 
 	const parsed = useMemo<CsvParseResult | null>(() => {
@@ -218,10 +216,7 @@ export function parseCsv(rawCsv: string): CsvParseResult {
 	const rawRows = trimTrailingEmptyRows(
 		result.data.map((row) => row.map((cell) => String(cell ?? ""))),
 	);
-	const maxColumns = rawRows.reduce(
-		(max, row) => Math.max(max, row.length),
-		0,
-	);
+	const maxColumns = rawRows.reduce((max, row) => Math.max(max, row.length), 0);
 	if (rawRows.length === 0 || maxColumns === 0) {
 		return { columns: [], rows: [], warnings: csvWarnings(result.errors) };
 	}
