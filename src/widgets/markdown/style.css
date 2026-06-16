@@ -6,22 +6,71 @@
 	outline: none;
 }
 
-/* Base markdown view container */
+/* Base markdown view container.
+   No horizontal padding: the toolbar is a full-bleed header and the document
+   gutter lives on the editor body wrapper instead. */
 .markdown-view {
 	flex: 1 1 auto;
 	min-height: 0;
-	padding-left: 0.75rem;
-	padding-right: 0.75rem;
+}
+
+/* Scroll lives here so the scrollbar sits flush to the panel's right edge.
+   The writing gutter is padding on this element, which keeps the content
+   inset while the scrollbar stays at the border edge. */
+.markdown-view .tiptap-container {
+	/* Equal top and side gutters (bottom handled by .tiptap padding-bottom). */
+	padding: 2rem 2rem 0;
+}
+
+/* Hide the native scrollbar; a lightweight overlay thumb mirrors scroll
+   position so fade behavior is reliable across Electron/Chromium repaints. */
+.markdown-view .tiptap-container {
+	scrollbar-width: none;
+}
+.markdown-view .tiptap-container::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+}
+
+.markdown-view .tiptap-scrollbar-thumb {
+	position: absolute;
+	top: 0;
+	right: 4px;
+	z-index: 10;
+	width: 6px;
+	min-height: 36px;
+	background-color: rgba(87, 83, 78, 0.58);
+	border-radius: 9999px;
+	opacity: 0;
+	pointer-events: none;
+	will-change: transform, height, opacity;
+	transition: opacity 320ms ease-in;
+}
+
+.markdown-view .tiptap-scrollbar-thumb[data-scrollable="false"] {
+	display: none;
+}
+
+.markdown-view .tiptap-scrollbar-thumb[data-visible="true"] {
+	opacity: 1;
+	transition-duration: 120ms;
+	transition-timing-function: ease-out;
 }
 
 .markdown-view .tiptap {
-	min-height: calc(100% + 1px);
+	/* Exactly fill the viewport (border-box includes padding-bottom) so a short
+	   document does not force a scrollbar; longer content overflows normally. */
+	min-height: 100%;
+	max-width: 680px;
 	padding-bottom: 4rem;
 }
 
 .markdown-view .ProseMirror {
-	font-size: 0.9rem;
-	line-height: 1.6;
+	color: var(--color-neutral-800);
+	font-family:
+		-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+	font-size: 14.5px;
+	line-height: 1.7;
 	min-height: auto;
 	cursor: auto;
 	width: 100%;
@@ -29,28 +78,36 @@
 
 /* Headings */
 .markdown-view .ProseMirror h1 {
-	font-size: 24px;
+	color: var(--color-neutral-900);
+	font-size: 27px;
 	font-weight: 700;
+	letter-spacing: -0.02em;
+	line-height: 1.2;
 	margin-top: 0;
 	margin-bottom: 1rem;
 }
 
 .markdown-view .ProseMirror h2 {
-	font-size: 20px;
+	color: var(--color-neutral-900);
+	font-size: 22px;
 	font-weight: 700;
-	margin-top: 1.5rem;
-	margin-bottom: 0.75rem;
+	letter-spacing: -0.015em;
+	line-height: 1.25;
+	margin-top: 2rem;
+	margin-bottom: 0.9rem;
 }
 
 .markdown-view .ProseMirror h3 {
+	color: var(--color-neutral-900);
 	font-size: 18px;
-	font-weight: 600;
-	line-height: 1.375;
-	margin-top: 1rem;
-	margin-bottom: 0.5rem;
+	font-weight: 700;
+	line-height: 1.35;
+	margin-top: 1.4rem;
+	margin-bottom: 0.65rem;
 }
 
 .markdown-view .ProseMirror h4 {
+	color: var(--color-neutral-900);
 	font-size: 16px;
 	font-weight: 700;
 	margin-top: 1.25rem;
@@ -59,27 +116,29 @@
 
 /* Paragraphs */
 .markdown-view .ProseMirror p {
-	margin-top: 1rem;
-	margin-bottom: 1rem;
+	margin-top: 0.85rem;
+	margin-bottom: 0.85rem;
 }
 
 /* Links */
 .markdown-view .ProseMirror a {
-	color: #2563eb;
-	text-decoration: none;
+	color: var(--color-brand-700);
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 2px;
 	cursor: pointer;
 }
 
 .markdown-view .ProseMirror a:hover {
-	text-decoration: underline;
+	color: var(--color-brand-800);
 }
 
 /* Lists */
 .markdown-view .ProseMirror ul,
 .markdown-view .ProseMirror ol {
 	padding-left: 1.5rem;
-	margin-top: 0.75rem;
-	margin-bottom: 0.75rem;
+	margin-top: 0.85rem;
+	margin-bottom: 0.85rem;
 	list-style-position: outside;
 }
 
@@ -92,8 +151,8 @@
 }
 
 .markdown-view .ProseMirror li {
-	margin-top: 0.25rem;
-	margin-bottom: 0.25rem;
+	margin-top: 0.35rem;
+	margin-bottom: 0.35rem;
 }
 
 /* Tables */

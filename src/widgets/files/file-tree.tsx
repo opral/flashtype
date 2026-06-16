@@ -83,7 +83,7 @@ export function FileTree({
 	}
 
 	return (
-		<ul className="space-y-px text-[13px]">
+		<ul className="space-y-px text-xs">
 			{draft?.directoryPath === "/" ? (
 				<DraftRow
 					key="draft:root"
@@ -137,12 +137,14 @@ function FileTreeNode({
 	if (node.type === "file") {
 		const displayName = formatDisplayName(node.name);
 		const isSelected = selectedPath === node.path;
-		// The selected file row carries the orange treatment (design rule).
+		// Orange indicates the focused panel; inactive selections stay visible but quiet.
 		const buttonClass = clsx(
-			"flex w-full min-w-0 items-center gap-2 rounded-[7px] py-1.25 pr-2.25 text-left transition-colors",
-			isSelected
-				? "bg-focus-tint font-semibold text-neutral-900 [&_svg]:text-brand-700"
-				: "text-neutral-600 hover:bg-hover-soft [&_svg]:text-neutral-400",
+			"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-[background-color,color,box-shadow] duration-100 ease-out [&_svg]:transition-colors [&_svg]:duration-100",
+			isSelected && isPanelFocused
+				? "bg-focus-tint font-semibold text-neutral-900 ring-1 ring-inset ring-focus-ring [&_svg]:text-brand-700"
+				: isSelected
+					? "bg-hover-soft font-semibold text-neutral-700 [&_svg]:text-neutral-500"
+					: "text-neutral-600 hover:bg-hover-soft [&_svg]:text-neutral-400",
 		);
 		const itemTestId = `file-tree-item-${sanitizeForTestId(node.path)}`;
 		return (
@@ -177,7 +179,7 @@ function FileTreeNode({
 	// the open-folder icon and weight carry the state. Selection stays quiet:
 	// orange is reserved for the selected file row.
 	const buttonClass = clsx(
-		"flex w-full min-w-0 items-center gap-2 rounded-[7px] py-1.25 pr-2.25 text-left transition-colors hover:bg-hover-soft",
+		"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-colors hover:bg-hover-soft",
 		isSelected && "bg-hover-soft",
 		isOpen
 			? "font-semibold text-neutral-900 [&_svg]:text-neutral-500"
@@ -291,7 +293,7 @@ function DraftRow({
 			<div
 				ref={rowRef}
 				className={clsx(
-					"flex items-center gap-2 rounded-[7px] py-1.25 pr-2.25 text-left text-[13px] text-neutral-900",
+					"flex h-7 items-center gap-2 rounded-[7px] pr-2.25 text-left text-xs text-neutral-900",
 					ringClasses,
 				)}
 				style={rowIndentStyle(depth)}
@@ -300,7 +302,7 @@ function DraftRow({
 				<input
 					ref={inputRef}
 					data-testid="files-view-draft-input"
-					className="min-w-0 flex-1 bg-transparent px-0 py-0 text-[13px] outline-none focus:outline-none"
+					className="min-w-0 flex-1 bg-transparent px-0 py-0 text-xs outline-none focus:outline-none"
 					value={value}
 					onChange={(event) => {
 						const next = event.target.value.replaceAll("/", "");

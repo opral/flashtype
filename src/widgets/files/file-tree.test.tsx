@@ -59,6 +59,39 @@ describe("FileTree", () => {
 		expect(screen.getByText("%61.md")).toBeInTheDocument();
 		expect(screen.queryByText("a.md")).toBeNull();
 	});
+
+	test("dims the selected file when the files panel is not focused", () => {
+		const nodes: FilesystemTreeNode[] = [
+			{
+				type: "file",
+				id: "file-readme",
+				name: "README.md",
+				path: "/README.md",
+			},
+		];
+
+		const { rerender } = render(
+			<FileTree
+				nodes={nodes}
+				selectedPath="/README.md"
+				isPanelFocused={true}
+			/>,
+		);
+		const selectedFile = screen.getByRole("button", { name: /README.md/i });
+		expect(selectedFile).toHaveClass("bg-focus-tint");
+		expect(selectedFile).toHaveClass("ring-focus-ring");
+
+		rerender(
+			<FileTree
+				nodes={nodes}
+				selectedPath="/README.md"
+				isPanelFocused={false}
+			/>,
+		);
+		expect(selectedFile).toHaveClass("bg-hover-soft");
+		expect(selectedFile).not.toHaveClass("bg-focus-tint");
+		expect(selectedFile).not.toHaveClass("ring-focus-ring");
+	});
 });
 
 const mockTree: FilesystemTreeNode[] = [

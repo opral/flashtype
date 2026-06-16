@@ -235,6 +235,128 @@ function TipTapEditorLoadedContent({
 		[editor],
 	);
 
+	// Custom overlay scrollbar avoids flaky native scrollbar repaint behavior.
+	const scrollIdleTimerRef = useRef<number | null>(null);
+	const scrollFrameRef = useRef<number | null>(null);
+	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+	const scrollThumbRef = useRef<HTMLDivElement | null>(null);
+	const setScrollbarVisible = useCallback((visible: boolean) => {
+		const thumb = scrollThumbRef.current;
+		if (!thumb) return;
+		const next = visible ? "true" : "false";
+		if (thumb.dataset.visible !== next) {
+			thumb.dataset.visible = next;
+		}
+	}, []);
+	const syncScrollbarThumb = useCallback(() => {
+		if (scrollFrameRef.current !== null) return;
+		scrollFrameRef.current = window.requestAnimationFrame(() => {
+			scrollFrameRef.current = null;
+			const el = scrollContainerRef.current;
+			const thumb = scrollThumbRef.current;
+			if (!el || !thumb) return;
+
+			const { clientHeight, scrollHeight, scrollTop } = el;
+			if (scrollHeight <= clientHeight) {
+				thumb.dataset.scrollable = "false";
+				setScrollbarVisible(false);
+				return;
+			}
+
+			const minThumbHeight = 36;
+			const thumbHeight = Math.max(
+				minThumbHeight,
+				(clientHeight / scrollHeight) * clientHeight,
+			);
+			const maxThumbTop = clientHeight - thumbHeight;
+			const maxScrollTop = scrollHeight - clientHeight;
+			const thumbTop =
+				maxScrollTop > 0 ? (scrollTop / maxScrollTop) * maxThumbTop : 0;
+
+			thumb.dataset.scrollable = "true";
+			thumb.style.height = `${thumbHeight}px`;
+			thumb.style.transform = `translate3d(0, ${thumbTop}px, 0)`;
+		});
+	}, [setScrollbarVisible]);
+
+	useEffect(() => {
+		const el = scrollContainerRef.current;
+		if (!el) return;
+
+		const supportsScrollEnd = "onscrollend" in window;
+		const hideScrollbar = () => {
+			if (scrollIdleTimerRef.current !== null) {
+				window.clearTimeout(scrollIdleTimerRef.current);
+				scrollIdleTimerRef.current = null;
+			}
+			setScrollbarVisible(false);
+		};
+		const scheduleFallbackHide = () => {
+			if (scrollIdleTimerRef.current !== null) {
+				window.clearTimeout(scrollIdleTimerRef.current);
+			}
+			scrollIdleTimerRef.current = window.setTimeout(hideScrollbar, 450);
+		};
+		const showScrollbar = () => {
+			syncScrollbarThumb();
+			setScrollbarVisible(true);
+		};
+		const handleNativeScroll = () => {
+			showScrollbar();
+			if (!supportsScrollEnd) {
+				scheduleFallbackHide();
+			}
+		};
+		const handlePointerEnter = () => {
+			showScrollbar();
+		};
+		const handlePointerLeave = () => {
+			if (el.scrollHeight > el.clientHeight) {
+				hideScrollbar();
+			}
+		};
+		const handleWheel = () => {
+			showScrollbar();
+			if (!supportsScrollEnd) {
+				scheduleFallbackHide();
+			}
+		};
+
+		const resizeObserver = new ResizeObserver(syncScrollbarThumb);
+		resizeObserver.observe(el);
+		if (el.firstElementChild) {
+			resizeObserver.observe(el.firstElementChild);
+		}
+		syncScrollbarThumb();
+
+		el.addEventListener("scroll", handleNativeScroll, { passive: true });
+		el.addEventListener("pointerenter", handlePointerEnter, { passive: true });
+		el.addEventListener("pointerleave", handlePointerLeave, { passive: true });
+		el.addEventListener("wheel", handleWheel, { passive: true });
+		if (supportsScrollEnd) {
+			el.addEventListener("scrollend", hideScrollbar, { passive: true });
+		}
+
+		return () => {
+			resizeObserver.disconnect();
+			el.removeEventListener("scroll", handleNativeScroll);
+			el.removeEventListener("pointerenter", handlePointerEnter);
+			el.removeEventListener("pointerleave", handlePointerLeave);
+			el.removeEventListener("wheel", handleWheel);
+			if (supportsScrollEnd) {
+				el.removeEventListener("scrollend", hideScrollbar);
+			}
+			if (scrollIdleTimerRef.current !== null) {
+				window.clearTimeout(scrollIdleTimerRef.current);
+				scrollIdleTimerRef.current = null;
+			}
+			if (scrollFrameRef.current !== null) {
+				window.cancelAnimationFrame(scrollFrameRef.current);
+				scrollFrameRef.current = null;
+			}
+		};
+	}, [setScrollbarVisible, syncScrollbarThumb]);
+
 	// Observe markdown file rows and refresh on external changes.
 	useEffect(() => {
 		if (!activeFileId || !editor) return;
@@ -362,19 +484,25 @@ function TipTapEditorLoadedContent({
 	}
 
 	return (
-		<div className={`min-h-0 ${className ?? ""}`}>
+		<div className={`relative min-h-0 ${className ?? ""}`}>
 			<div
-				className="tiptap-container w-full h-full bg-background py-0 cursor-text overflow-y-auto"
+				ref={scrollContainerRef}
+				className="tiptap-container w-full h-full bg-background cursor-text overflow-y-auto"
 				data-editor-focused={isEditorFocused ? "true" : "false"}
 				onMouseDown={handleSurfacePointerDown}
 			>
 				<EditorContent
 					editor={editor}
-					className="tiptap w-full max-w-5xl mx-auto"
+					className="tiptap w-full mx-auto"
 					data-testid="tiptap-editor"
 					key={`${activeBranchId}:${activeFileId ?? "no-file"}`}
 				/>
 			</div>
+			<div
+				ref={scrollThumbRef}
+				className="tiptap-scrollbar-thumb"
+				aria-hidden="true"
+			/>
 		</div>
 	);
 }
