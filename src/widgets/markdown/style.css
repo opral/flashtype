@@ -15,11 +15,10 @@
 }
 
 /* Scroll lives here so the scrollbar sits flush to the panel's right edge.
-   The writing gutter is padding on this element, which keeps the content
-   inset while the scrollbar stays at the border edge. */
+   The writing gutter lives inside ProseMirror so the whole canvas remains
+   editable while the scrollbar stays at the border edge. */
 .markdown-view .tiptap-container {
-	/* Equal top and side gutters (bottom handled by .tiptap padding-bottom). */
-	padding: 2rem 2rem 0;
+	padding-top: 2rem;
 }
 
 /* Hide the native scrollbar; a lightweight overlay thumb mirrors scroll
@@ -61,17 +60,18 @@
 	/* Exactly fill the viewport (border-box includes padding-bottom) so a short
 	   document does not force a scrollbar; longer content overflows normally. */
 	min-height: 100%;
-	max-width: 680px;
-	padding-bottom: 4rem;
+	max-width: none;
 }
 
 .markdown-view .ProseMirror {
+	box-sizing: border-box;
 	color: var(--color-neutral-800);
 	font-family:
 		-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 	font-size: 14.5px;
 	line-height: 1.7;
-	min-height: auto;
+	min-height: 100%;
+	padding: 0 max(2rem, calc((100% - 760px) / 2)) 4rem;
 	cursor: auto;
 	width: 100%;
 }

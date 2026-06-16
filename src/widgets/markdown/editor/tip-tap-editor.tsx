@@ -229,7 +229,7 @@ function TipTapEditorLoadedContent({
 			if (editor.isEmpty) {
 				editor.commands.focus("start");
 			} else {
-				editor.commands.focus("end");
+				editor.commands.focus();
 			}
 		},
 		[editor],
