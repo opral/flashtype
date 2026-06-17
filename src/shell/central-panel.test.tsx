@@ -3,13 +3,13 @@ import { DndContext } from "@dnd-kit/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { CentralPanel } from "./central-panel";
-import type { PanelState, WidgetContext } from "../widget-runtime/types";
+import type { PanelState, ExtensionContext } from "../extension-runtime/types";
 import { openLix } from "@/test-utils/node-lix-sdk";
-import { WidgetHostRegistryProvider } from "../widget-runtime/widget-host-registry";
+import { ExtensionHostRegistryProvider } from "../extension-runtime/extension-host-registry";
 
-const TEST_SEARCH_WIDGET_KIND = "test_search";
+const TEST_SEARCH_EXTENSION_KIND = "test_search";
 
-vi.mock("../widget-runtime/widget-registry", () => {
+vi.mock("../extension-runtime/extension-registry", () => {
 	const definitions = [
 		{
 			kind: "test_search" as const,
@@ -20,14 +20,14 @@ vi.mock("../widget-runtime/widget-registry", () => {
 				context,
 				target,
 			}: {
-				context: WidgetContext;
+				context: ExtensionContext;
 				target: HTMLElement;
 			}) => {
 				const input = document.createElement("input");
 				input.setAttribute("data-testid", "search-view-input");
 				input.setAttribute("placeholder", "Search project...");
 				input.addEventListener("pointerdown", () => {
-					context.openWidget?.({
+					context.openExtension?.({
 						panel: "central",
 						kind: "test_search",
 						instance: "search-view",
@@ -42,14 +42,14 @@ vi.mock("../widget-runtime/widget-registry", () => {
 		},
 	];
 	return {
-		WIDGET_DEFINITIONS: definitions,
-		WIDGET_MAP: new Map(definitions.map((def) => [def.kind, def])),
-		useWidgetRegistry: () => ({
-			visibleWidgets: definitions,
-			widgetMap: new Map(definitions.map((def) => [def.kind, def])),
-			installedWidgets: [],
-			replaceInstalledWidgets: () => {},
-			clearInstalledWidgets: () => {},
+		EXTENSION_DEFINITIONS: definitions,
+		EXTENSION_MAP: new Map(definitions.map((def) => [def.kind, def])),
+		useExtensionRegistry: () => ({
+			visibleExtensions: definitions,
+			extensionMap: new Map(definitions.map((def) => [def.kind, def])),
+			installedExtensions: [],
+			replaceInstalledExtensions: () => {},
+			clearInstalledExtensions: () => {},
 		}),
 	};
 });
@@ -69,17 +69,17 @@ const renderWithProviders = async (ui: ReactNode) => {
 	let result: ReturnType<typeof render> | undefined;
 	await act(async () => {
 		result = render(
-			<WidgetHostRegistryProvider>
+			<ExtensionHostRegistryProvider>
 				<Suspense fallback={<div data-testid="loading-state" />}>{ui}</Suspense>
-			</WidgetHostRegistryProvider>,
+			</ExtensionHostRegistryProvider>,
 		);
 	});
 	return result!;
 };
 
 const createViewContext = (
-	overrides: Partial<WidgetContext> = {},
-): WidgetContext => ({
+	overrides: Partial<ExtensionContext> = {},
+): ExtensionContext => ({
 	lix:
 		lix ??
 		(() => {
@@ -94,7 +94,7 @@ describe("CentralPanel", () => {
 	test("renders the active view without a tab strip", async () => {
 		// The central editor hides tabs; files are switched from the left list.
 		const panelState: PanelState = {
-			views: [{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND }],
+			views: [{ instance: "search-1", kind: TEST_SEARCH_EXTENSION_KIND }],
 			activeInstance: "search-1",
 		};
 
@@ -102,8 +102,8 @@ describe("CentralPanel", () => {
 			<DndContext>
 				<CentralPanel
 					panel={panelState}
-					onSelectWidget={() => {}}
-					onRemoveWidget={() => {}}
+					onSelectView={() => {}}
+					onRemoveView={() => {}}
 					viewContext={createViewContext({ isPanelFocused: true })}
 					isFocused={true}
 					onFocusPanel={vi.fn()}
@@ -120,7 +120,7 @@ describe("CentralPanel", () => {
 			views: [
 				{
 					instance: "search-1",
-					kind: TEST_SEARCH_WIDGET_KIND,
+					kind: TEST_SEARCH_EXTENSION_KIND,
 					isPending: true,
 				},
 			],
@@ -132,8 +132,8 @@ describe("CentralPanel", () => {
 			<DndContext>
 				<CentralPanel
 					panel={panelState}
-					onSelectWidget={() => {}}
-					onRemoveWidget={() => {}}
+					onSelectView={() => {}}
+					onRemoveView={() => {}}
 					viewContext={createViewContext({ isPanelFocused: true })}
 					isFocused={true}
 					onFocusPanel={vi.fn()}

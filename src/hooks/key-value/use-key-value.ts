@@ -12,7 +12,7 @@ import {
 	useContext,
 	createElement,
 	useCallback,
-	useMemo,
+	useRef,
 	useState,
 	useEffect,
 } from "react";
@@ -182,18 +182,6 @@ export function useKeyValue<K extends string>(
 	const defaultBranchId = opts?.defaultBranchId ?? d.defaultBranchId;
 	const untracked = opts?.untracked ?? d.untracked;
 
-	// Subscribe to live updates and suspend on first load via useQuery
-	const rows = useQuery<{ value: unknown }>((lix) =>
-		selectValue(lix, key as string, {
-			defaultBranchId: String(defaultBranchId),
-			untracked,
-		}),
-	);
-	const defVal = (providedDefs as any)[key]?.defaultValue ?? null;
-	const value = (
-		rows && rows[0]?.value !== undefined ? rows[0]?.value : defVal
-	) as ValueOf<K> | null;
-
 	const [optimistic, setOptimisticState] = useState<{
 		hasValue: boolean;
 		value: ValueOf<K> | null;
@@ -234,12 +222,26 @@ export function useKeyValue<K extends string>(
 		return subscribeOptimistic(key as string, handle);
 	}, [key]);
 
+	const latestKeyRef = useRef(key as string);
+	const latestQueryValueRef = useRef<ValueOf<K> | null>(null);
+	const latestOptimisticRef = useRef(optimistic);
+	const lastOptimisticClearRef = useRef<string | null>(null);
+	const resultRef = useRef<
+		readonly [ValueOf<K> | null, (newValue: ValueOf<K>) => Promise<void>]
+	>([null, async () => {}]);
+
 	useEffect(() => {
-		if (!optimistic.hasValue) return;
-		if (valuesEqual(value, optimistic.value)) {
-			clearOptimisticValue(key as string);
+		const latestOptimistic = latestOptimisticRef.current;
+		if (!latestOptimistic.hasValue) return;
+		if (valuesEqual(latestQueryValueRef.current, latestOptimistic.value)) {
+			const clearKey = `${latestKeyRef.current}:${JSON.stringify(latestOptimistic.value)}`;
+			if (lastOptimisticClearRef.current === clearKey) return;
+			lastOptimisticClearRef.current = clearKey;
+			clearOptimisticValue(latestKeyRef.current);
+		} else {
+			lastOptimisticClearRef.current = null;
 		}
-	}, [value, optimistic.hasValue, optimistic.value, key]);
+	});
 
 	const setValue = useCallback(
 		async (newValue: ValueOf<K>) => {
@@ -252,12 +254,32 @@ export function useKeyValue<K extends string>(
 		[lix, key, defaultBranchId, untracked],
 	);
 
+	// Subscribe to live updates and suspend on first load via useQuery. Keep this
+	// after the hook setup above so suspense retries preserve hook order.
+	const rows = useQuery<{ value: unknown }>((lix) =>
+		selectValue(lix, key as string, {
+			defaultBranchId: String(defaultBranchId),
+			untracked,
+		}),
+	);
+	const defVal = (providedDefs as any)[key]?.defaultValue ?? null;
+	const value = (
+		rows && rows[0]?.value !== undefined ? rows[0]?.value : defVal
+	) as ValueOf<K> | null;
 	const resolvedValue = optimistic.hasValue ? optimistic.value : value;
 
-	return useMemo(
-		() => [resolvedValue, setValue] as const,
-		[resolvedValue, setValue],
-	);
+	latestKeyRef.current = key as string;
+	latestQueryValueRef.current = value;
+	latestOptimisticRef.current = optimistic;
+
+	if (
+		resultRef.current[1] !== setValue ||
+		!valuesEqual(resultRef.current[0], resolvedValue)
+	) {
+		resultRef.current = [resolvedValue, setValue] as const;
+	}
+
+	return resultRef.current;
 }
 
 function selectValue(

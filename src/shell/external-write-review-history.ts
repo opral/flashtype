@@ -1,8 +1,8 @@
 import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
-import { hashFileData } from "@/widget-runtime/external-write-tracking";
-import type { ExternalWriteReview } from "@/widget-runtime/external-write-review";
+import { hashFileData } from "@/extension-runtime/external-write-tracking";
+import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
 
 type FileHistoryRow = {
 	readonly data: unknown;

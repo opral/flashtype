@@ -3,16 +3,16 @@ import { ArrowRight, FilePlus } from "lucide-react";
 import type {
 	PanelState,
 	PanelSide,
-	WidgetContext,
-	WidgetDefinition,
-} from "../widget-runtime/types";
+	ExtensionContext,
+	ExtensionDefinition,
+} from "../extension-runtime/types";
 import { PanelV2 } from "./panel-v2";
 
 type CentralPanelProps = {
 	readonly panel: PanelState;
-	readonly onSelectWidget: (key: string) => void;
-	readonly onRemoveWidget: (key: string) => void;
-	readonly viewContext: WidgetContext;
+	readonly onSelectView: (key: string) => void;
+	readonly onRemoveView: (key: string) => void;
+	readonly viewContext: ExtensionContext;
 	readonly onCreateNewFile?: () => void | Promise<void>;
 	readonly isFocused: boolean;
 	readonly onFocusPanel: (side: PanelSide) => void;
@@ -25,15 +25,15 @@ type CentralPanelProps = {
  * @example
  * <CentralPanel
  *   panel={centralPanel}
- *   onSelectWidget={handleSelect}
- *   onRemoveWidget={handleRemove}
+ *   onSelectView={handleSelect}
+ *   onRemoveView={handleRemove}
  *   onCreateNewFile={() => console.log("create")}
  * />
  */
 export function CentralPanel({
 	panel,
-	onSelectWidget,
-	onRemoveWidget,
+	onSelectView,
+	onRemoveView,
 	viewContext,
 	isFocused,
 	onFocusPanel,
@@ -59,7 +59,7 @@ export function CentralPanel({
 	);
 
 	const labelResolver = useCallback(
-		(view: WidgetDefinition, entry: (typeof panel.views)[number]) =>
+		(view: ExtensionDefinition, entry: (typeof panel.views)[number]) =>
 			(entry.state?.flashtype?.label as string | undefined) ?? view.label,
 		[],
 	);
@@ -70,8 +70,8 @@ export function CentralPanel({
 			panel={panel}
 			isFocused={isFocused}
 			onFocusPanel={onFocusPanel}
-			onSelectWidget={onSelectWidget}
-			onRemoveWidget={onRemoveWidget}
+			onSelectView={onSelectView}
+			onRemoveView={onRemoveView}
 			viewContext={viewContext}
 			tabLabel={labelResolver}
 			onActiveViewInteraction={finalizePendingIfNeeded}

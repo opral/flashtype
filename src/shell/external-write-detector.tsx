@@ -3,11 +3,11 @@ import { useLix } from "@/lib/lix-react";
 import {
 	EXTERNAL_WRITE_REVIEWABLE_FILE_EXTENSIONS,
 	isExternalWriteReviewableFilePath,
-} from "@/widget-runtime/file-handlers";
+} from "@/extension-runtime/file-handlers";
 import {
 	consumeRecentFlashtypeFileWrite,
 	hashFileData,
-} from "@/widget-runtime/external-write-tracking";
+} from "@/extension-runtime/external-write-tracking";
 
 type ReviewableFileSnapshot = {
 	id: string;

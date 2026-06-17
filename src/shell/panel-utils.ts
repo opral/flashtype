@@ -1,4 +1,4 @@
-import type { PanelState, WidgetInstance } from "../widget-runtime/types";
+import type { PanelState, ExtensionInstance } from "../extension-runtime/types";
 
 const deepCloneValue = <T>(input: T): T => {
 	if (Array.isArray(input)) {
@@ -41,12 +41,12 @@ const deepCloneValue = <T>(input: T): T => {
  * transitions immutable when moving tabs between panels.
  *
  * @example
- * const cloned = cloneWidgetInstance(panelState, "files-1");
+ * const cloned = cloneExtensionInstance(panelState, "files-1");
  */
-export const cloneWidgetInstance = (
+export const cloneExtensionInstance = (
 	panel: PanelState,
 	instance: string,
-): WidgetInstance | null => {
+): ExtensionInstance | null => {
 	const view = panel.views.find((entry) => entry.instance === instance);
 	if (!view) return null;
 	return {
@@ -56,7 +56,7 @@ export const cloneWidgetInstance = (
 	};
 };
 
-export const reorderPanelWidgetsByIndex = (
+export const reorderPanelExtensionsByIndex = (
 	panel: PanelState,
 	fromIndex: number,
 	toIndex: number,

@@ -32,6 +32,17 @@ test("left files panel survives a seeded random file click tour", async ({
 
 		const fileItems = page.locator('[data-testid^="file-tree-item-"]');
 		await expect(fileItems.first()).toBeVisible();
+		const csvFile = page.getByTestId("file-tree-item-metrics-csv");
+		await csvFile.click();
+		await expect(csvFile).toHaveAttribute("data-selected", "true");
+		await expect(
+			page.locator('[data-active="true"][data-view-key="flashtype_csv"]'),
+		).toBeVisible();
+		await expect(page.getByText("/metrics.csv")).toBeVisible();
+		await expect(page.getByText("metric", { exact: true })).toBeVisible();
+		await expect(page.getByText("value", { exact: true })).toBeVisible();
+		await expect(page.getByText("signups", { exact: true })).toBeVisible();
+		await expect(page.getByText("42", { exact: true })).toBeVisible();
 
 		for (let index = 0; index < clickCount; index += 1) {
 			const fileCount = await fileItems.count();
@@ -40,12 +51,21 @@ test("left files panel survives a seeded random file click tour", async ({
 			const fileIndex = Math.floor(rng() * fileCount);
 			const delayMs = Math.floor(rng() * 1001);
 			const file = fileItems.nth(fileIndex);
+			const testId = await file.getAttribute("data-testid");
+			const expectedViewKind =
+				testId === "file-tree-item-metrics-csv"
+					? "flashtype_csv"
+					: "flashtype_file";
 
 			await test.step(`click ${index + 1}/${clickCount}: file index ${fileIndex}, delay ${delayMs}ms`, async () => {
 				await file.click();
 				await expect(file).toHaveAttribute("data-selected", "true");
 				await expect(
-					page.locator('[data-view-key="flashtype_file"]').first(),
+					page
+						.locator(
+							`[data-active="true"][data-view-key="${expectedViewKind}"]:visible`,
+						)
+						.first(),
 				).toBeVisible();
 				await page.waitForTimeout(delayMs);
 			});

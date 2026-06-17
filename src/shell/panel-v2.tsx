@@ -23,7 +23,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, X } from "lucide-react";
 import { AGENT_LAUNCH_PRESETS, TAB_INSTANCE_ICONS } from "./agent-icons";
-import { TERMINAL_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
+import { TERMINAL_EXTENSION_KIND } from "../extension-runtime/extension-instance-helpers";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -34,22 +34,22 @@ import {
 import type {
 	PanelSide,
 	PanelState,
-	WidgetContext,
-	WidgetDefinition,
-	WidgetInstance,
-	WidgetKind,
-	WidgetState,
-} from "../widget-runtime/types";
-import { useWidgetRegistry } from "../widget-runtime/widget-registry";
+	ExtensionContext,
+	ExtensionDefinition,
+	ExtensionInstance,
+	ExtensionKind,
+	ExtensionState,
+} from "../extension-runtime/types";
+import { useExtensionRegistry } from "../extension-runtime/extension-registry";
 import styles from "./panel.module.css";
 
 /** Lucide icons and image-based brand icons both fit this shape. */
 type TabIcon = ComponentType<{ className?: string }>;
-import { useWidgetContext } from "../widget-runtime/widget-context";
+import { useExtensionContext } from "../extension-runtime/extension-context";
 import {
-	useWidgetHostRegistry,
-	type WidgetHostRecord,
-} from "../widget-runtime/widget-host-registry";
+	useExtensionHostRegistry,
+	type ExtensionHostRecord,
+} from "../extension-runtime/extension-host-registry";
 import { Activity } from "react";
 
 /**
@@ -62,8 +62,8 @@ import { Activity } from "react";
  * <PanelV2
  *   side="left"
  *   panel={panelState}
- *   onSelectWidget={selectView}
- *   onRemoveWidget={removeView}
+ *   onSelectView={selectView}
+ *   onRemoveView={removeView}
  *   emptyStatePlaceholder={<EmptyState />}
  *   extraTabBarContent={<AddViewButton />}
  * />
@@ -73,8 +73,8 @@ export function PanelV2({
 	panel,
 	isFocused,
 	onFocusPanel,
-	onSelectWidget,
-	onRemoveWidget,
+	onSelectView,
+	onRemoveView,
 	onAddView,
 	viewContext,
 	tabLabel,
@@ -84,7 +84,7 @@ export function PanelV2({
 	viewOverrides,
 	showTabBar = true,
 }: PanelV2Props) {
-	const { widgetMap } = useWidgetRegistry();
+	const { extensionMap } = useExtensionRegistry();
 	const { setNodeRef, isOver } = useDroppable({
 		id: dropId ?? `${side}-panel`,
 		data: { panel: side },
@@ -96,18 +96,18 @@ export function PanelV2({
 		: (panel.views[0] ?? null);
 
 	const resolveViewDefinition = useCallback(
-		(kind: WidgetKind): WidgetDefinition | null => {
+		(kind: ExtensionKind): ExtensionDefinition | null => {
 			const override = viewOverrides?.find(
 				(candidate) => candidate.kind === kind,
 			);
-			return override ?? widgetMap.get(kind) ?? null;
+			return override ?? extensionMap.get(kind) ?? null;
 		},
-		[viewOverrides, widgetMap],
+		[viewOverrides, extensionMap],
 	);
 
 	const hasViews = panel.views.length > 0;
 	const activeInstance = activeEntry?.instance ?? null;
-	const { badgeCounts, makeContext } = useWidgetContext({
+	const { badgeCounts, makeContext } = useExtensionContext({
 		panel,
 		isFocused,
 		parentContext: viewContext,
@@ -225,8 +225,8 @@ export function PanelV2({
 										isActive={isActive}
 										isFocused={isFocused && isActive}
 										isPending={entry.isPending}
-										onClick={() => onSelectWidget(entry.instance)}
-										onClose={() => onRemoveWidget(entry.instance)}
+										onClick={() => onSelectView(entry.instance)}
+										onClose={() => onRemoveView(entry.instance)}
 									/>
 								);
 							})}
@@ -270,19 +270,19 @@ export type PanelV2Props = {
 	readonly panel: PanelState;
 	readonly isFocused: boolean;
 	readonly onFocusPanel: (side: PanelSide) => void;
-	readonly onSelectWidget: (instance: string) => void;
-	readonly onRemoveWidget: (instance: string) => void;
+	readonly onSelectView: (instance: string) => void;
+	readonly onRemoveView: (instance: string) => void;
 	/** Enables the "+" add-view menu in the tab row. */
-	readonly onAddView?: (kind: WidgetKind, state?: WidgetState) => void;
-	readonly viewContext: WidgetContext;
+	readonly onAddView?: (kind: ExtensionKind, state?: ExtensionState) => void;
+	readonly viewContext: ExtensionContext;
 	readonly tabLabel?: (
-		view: WidgetDefinition,
-		instance: WidgetInstance,
+		view: ExtensionDefinition,
+		instance: ExtensionInstance,
 	) => string;
 	readonly emptyStatePlaceholder?: ReactNode;
 	readonly onActiveViewInteraction?: (instance: string) => void;
 	readonly dropId?: string;
-	readonly viewOverrides?: WidgetDefinition[];
+	readonly viewOverrides?: ExtensionDefinition[];
 	/** Hide the tab strip (central editor switches files from the file list). */
 	readonly showTabBar?: boolean;
 };
@@ -298,21 +298,21 @@ function AddViewMenu({
 }: {
 	readonly side: PanelSide;
 	readonly panel: PanelState;
-	readonly onAddView: (kind: WidgetKind, state?: WidgetState) => void;
+	readonly onAddView: (kind: ExtensionKind, state?: ExtensionState) => void;
 }) {
-	const { visibleWidgets, widgetMap } = useWidgetRegistry();
+	const { visibleExtensions, extensionMap } = useExtensionRegistry();
 	const openKinds = useMemo(
 		() => new Set(panel.views.map((entry) => entry.kind)),
 		[panel.views],
 	);
 	const availableViews = useMemo(
 		() =>
-			visibleWidgets.filter(
+			visibleExtensions.filter(
 				(view) => view.multiInstance || !openKinds.has(view.kind),
 			),
-		[visibleWidgets, openKinds],
+		[visibleExtensions, openKinds],
 	);
-	const hasTerminal = widgetMap.has(TERMINAL_WIDGET_KIND);
+	const hasTerminal = extensionMap.has(TERMINAL_EXTENSION_KIND);
 	if (availableViews.length === 0 && !hasTerminal) return null;
 	return (
 		<DropdownMenu>
@@ -335,7 +335,9 @@ function AddViewMenu({
 						{AGENT_LAUNCH_PRESETS.map((preset) => (
 							<DropdownMenuItem
 								key={preset.key}
-								onSelect={() => onAddView(TERMINAL_WIDGET_KIND, preset.state)}
+								onSelect={() =>
+									onAddView(TERMINAL_EXTENSION_KIND, preset.state)
+								}
 								className="flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-900 focus:bg-hover-soft"
 							>
 								<preset.icon className="size-4" />
@@ -361,8 +363,8 @@ function AddViewMenu({
 }
 
 const resolveLabel = (
-	view: WidgetDefinition,
-	instance: WidgetInstance,
+	view: ExtensionDefinition,
+	instance: ExtensionInstance,
 	tabLabel?: PanelV2Props["tabLabel"],
 ): string => {
 	if (tabLabel) {
@@ -372,7 +374,7 @@ const resolveLabel = (
 };
 
 /** Per-instance icon override, e.g. the Claude mark on an agent terminal. */
-const resolveTabIcon = (instance: WidgetInstance): TabIcon | null => {
+const resolveTabIcon = (instance: ExtensionInstance): TabIcon | null => {
 	const key = instance.state?.flashtype?.icon as string | undefined;
 	return (key && TAB_INSTANCE_ICONS[key]) || null;
 };
@@ -483,13 +485,13 @@ function ViewRenderer({
 	context,
 	isActive,
 }: {
-	view: WidgetDefinition;
-	instance: WidgetInstance;
-	context: WidgetContext;
+	view: ExtensionDefinition;
+	instance: ExtensionInstance;
+	context: ExtensionContext;
 	isActive: boolean;
 }) {
-	const registry = useWidgetHostRegistry();
-	const [host, setHost] = useState<WidgetHostRecord | null>(null);
+	const registry = useExtensionHostRegistry();
+	const [host, setHost] = useState<ExtensionHostRecord | null>(null);
 
 	useEffect(() => {
 		const record = registry.ensureHost({ view, instance, context });
@@ -512,9 +514,9 @@ function ViewHostMount({
 	kind,
 	isActive,
 }: {
-	host: WidgetHostRecord | null;
+	host: ExtensionHostRecord | null;
 	instance: string;
-	kind: WidgetKind;
+	kind: ExtensionKind;
 	isActive: boolean;
 }) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
@@ -545,7 +547,7 @@ function ViewHostMount({
 interface SortableTabProps extends PanelTabPreviewProps {
 	readonly instance: string;
 	readonly panelSide: PanelSide;
-	readonly kind: WidgetKind;
+	readonly kind: ExtensionKind;
 	readonly onClick?: () => void;
 	readonly onClose?: () => void;
 	readonly isPending?: boolean;
