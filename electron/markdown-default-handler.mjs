@@ -10,6 +10,7 @@ export const MARKDOWN_CONTENT_TYPES = [
 export const REPLACEABLE_MARKDOWN_HANDLER_BUNDLE_IDS = new Set([
 	APP_BUNDLE_ID,
 	"com.apple.dt.Xcode",
+	"com.apple.TextEdit",
 ]);
 
 export const LSREGISTER_PATH =
@@ -54,7 +55,9 @@ export function getNonCanonicalFlashtypeBundlePathsFromLsregisterDump(dump) {
 			return [];
 		}
 
-		const pathMatch = block.match(/^path:\s+(.+?)(?:\s+\(0x[0-9a-f]+\))?$/mu);
+		const pathMatch = block.match(
+			/^path:\s+(.+?)(?:\s+\(0x[0-9a-fA-F]+\))?$/mu,
+		);
 		if (!pathMatch) {
 			return [];
 		}

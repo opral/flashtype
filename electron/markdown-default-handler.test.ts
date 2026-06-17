@@ -35,9 +35,12 @@ describe("Markdown default handler registration policy", () => {
 		).toBe(false);
 	});
 
-	test("replaces no handler, Xcode, and Flashtype itself", () => {
+	test("replaces no handler, Xcode, TextEdit, and Flashtype itself", () => {
 		expect(shouldReplaceMarkdownDefaultHandler(null)).toBe(true);
 		expect(shouldReplaceMarkdownDefaultHandler("com.apple.dt.Xcode")).toBe(
+			true,
+		);
+		expect(shouldReplaceMarkdownDefaultHandler("com.apple.TextEdit")).toBe(
 			true,
 		);
 		expect(shouldReplaceMarkdownDefaultHandler(APP_BUNDLE_ID)).toBe(true);
@@ -53,7 +56,7 @@ describe("Markdown default handler registration policy", () => {
 	test("chooses only replaceable Markdown content types", () => {
 		expect(
 			getMarkdownContentTypesToRegister({
-				"public.markdown": "com.apple.dt.Xcode",
+				"public.markdown": "com.apple.TextEdit",
 				"net.daringfireball.markdown": "com.microsoft.VSCode",
 			}),
 		).toEqual(["public.markdown"]);
@@ -69,7 +72,7 @@ versionString:              0.2.0
 
 --------------------------------------------------------------------------------
 bundle id:                  Flashtype (0x3f44)
-path:                       /Volumes/Flashtype 0.1.1-arm64/Flashtype.app (0x59dc)
+path:                       /Volumes/Flashtype 0.1.1-arm64/Flashtype.app (0x59DC)
 identifier:                 com.flashtype.app
 versionString:              0.1.1
 
@@ -194,7 +197,7 @@ identifier:                 com.flashtype.app
 			.mockResolvedValueOnce({ stdout: "" })
 			.mockResolvedValueOnce({
 				stdout: JSON.stringify({
-					"public.markdown": "com.apple.dt.Xcode",
+					"public.markdown": "com.apple.TextEdit",
 					"net.daringfireball.markdown": "com.microsoft.VSCode",
 				}),
 			})
