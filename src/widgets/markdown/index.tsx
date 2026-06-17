@@ -1,7 +1,7 @@
 import { Suspense, useEffect } from "react";
 import { useMemo } from "react";
 import type { ReactNode } from "react";
-import { FileText, Loader2 } from "lucide-react";
+import { ExternalLink, FileText, Github, Loader2 } from "lucide-react";
 import { LixProvider, useLix, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
 import { isMarkdownFilePath } from "@/widget-runtime/file-handlers";
@@ -225,9 +225,11 @@ function UnsupportedFilePlaceholder({
 						href="https://github.com/opral/flashtype/issues"
 						target="_blank"
 						rel="noopener noreferrer"
-						className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700"
+						className="inline-flex items-center gap-1 font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700"
 					>
+						<Github className="size-3.5" aria-hidden="true" />
 						Open an issue on GitHub
+						<ExternalLink className="size-3" aria-hidden="true" />
 					</a>{" "}
 					for support for more file types.
 				</p>

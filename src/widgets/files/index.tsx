@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Files, FileUp, FilePlus } from "lucide-react";
+import { ExternalLink, Files, FileUp, FilePlus, Github } from "lucide-react";
 import { LixProvider, useLix, useQuery } from "@/lib/lix-react";
 import { isMarkdownFilePath } from "@/widget-runtime/file-handlers";
 import { selectFilesystemEntries } from "@/queries";
@@ -479,9 +479,11 @@ export function FilesView({ context }: FilesViewProps) {
 							href="https://github.com/opral/flashtype/issues"
 							target="_blank"
 							rel="noopener noreferrer"
-							className="underline hover:text-foreground pointer-events-auto"
+							className="inline-flex items-center gap-1 underline hover:text-foreground pointer-events-auto"
 						>
+							<Github className="size-3" aria-hidden="true" />
 							an issue on GitHub
+							<ExternalLink className="size-3" aria-hidden="true" />
 						</a>{" "}
 						for support for CSV, PDF, etc
 					</p>

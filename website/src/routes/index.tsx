@@ -129,8 +129,15 @@ function Nav() {
 				<span>Flashtype</span>
 			</a>
 			<nav className="flex items-center gap-[22px] max-sm:gap-[14px]" aria-label="Primary navigation">
-				<a href={GITHUB_URL} className="text-[15px] font-semibold text-[#44403C] no-underline max-sm:text-[14px]">
-					GitHub ↗
+				<a
+					href={GITHUB_URL}
+					target="_blank"
+					rel="noreferrer"
+					className="inline-flex items-center gap-[6px] text-[15px] font-semibold text-[#44403C] no-underline hover:text-ink max-sm:text-[14px]"
+				>
+					<GitHubIcon className="h-[17px] w-[17px]" />
+					GitHub
+					<span aria-hidden="true">↗</span>
 				</a>
 				<DownloadLink
 					className={`${primaryButton} rounded-[10px] px-[20px] py-[10px] text-[15px] shadow-[0_4px_14px_rgba(232,89,12,0.35),inset_0_1px_0_rgba(255,255,255,0.25)] max-sm:hidden`}
@@ -815,6 +822,18 @@ function DownloadIcon() {
 				strokeWidth="2.2"
 				strokeLinecap="round"
 				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
+function GitHubIcon({ className = "" }: { className?: string }) {
+	return (
+		<svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+			<path
+				fillRule="evenodd"
+				clipRule="evenodd"
+				d="M12 2C6.48 2 2 6.58 2 12.23c0 4.52 2.86 8.35 6.84 9.7.5.1.68-.22.68-.5 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.22-3.37-1.22-.46-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.05 1.53 1.05.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.36-2.22-.26-4.56-1.14-4.56-5.05 0-1.12.39-2.03 1.03-2.74-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.4 9.4 0 0 1 12 6.92c.85 0 1.71.12 2.51.35 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.71 1.03 1.62 1.03 2.74 0 3.92-2.34 4.79-4.57 5.04.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .28.18.6.69.5A10.1 10.1 0 0 0 22 12.23C22 6.58 17.52 2 12 2Z"
 			/>
 		</svg>
 	);
