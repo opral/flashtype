@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { disposeLixIpc, registerLixIpc } from "./ipc-lix.mjs";
+import { closeLixSession, disposeLixIpc, registerLixIpc } from "./ipc-lix.mjs";
 import { disposeTerminalIpc, registerTerminalIpc } from "./ipc-terminal.mjs";
 import {
 	applyWorkspaceWindowChrome,
@@ -150,7 +150,9 @@ app.whenReady().then(async () => {
 	registerLixIpc();
 	registerTerminalIpc();
 	registerAppIpc();
-	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender));
+	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender), {
+		beforeChange: () => closeLixSession({ ignoreOpenError: true }),
+	});
 	installApplicationMenu();
 	void registerMarkdownDefaultHandler();
 	void captureAppOpened();

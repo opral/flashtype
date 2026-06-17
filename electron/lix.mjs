@@ -103,9 +103,9 @@ async function fileBytesEqual(filePath, expected) {
 	}
 }
 
-export async function closeLix() {
+export async function closeLix(options = {}) {
 	await enqueue(async () => {
-		await closeCurrentLix();
+		await closeCurrentLix(options);
 	});
 }
 

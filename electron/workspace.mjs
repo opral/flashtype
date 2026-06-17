@@ -12,6 +12,7 @@ const LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
  */
 let workspace = null;
 let registered = false;
+let workspaceChangeQueue = Promise.resolve();
 
 export function getWorkspace() {
 	return workspace;
@@ -35,31 +36,39 @@ export async function resolveWorkspace(requestedPath) {
 	return { path: dir, name: path.basename(dir) };
 }
 
-export async function setWorkspaceFromPath(requestedPath, window) {
-	workspace = await resolveWorkspace(requestedPath);
-	applyWindowChrome(window);
-	return workspace;
+export async function setWorkspaceFromPath(requestedPath, window, options = {}) {
+	return await enqueueWorkspaceChange(async () => {
+		const nextWorkspace = await resolveWorkspace(requestedPath);
+		if (workspace?.path === nextWorkspace.path) {
+			applyWindowChrome(window);
+			return workspace;
+		}
+		await options.beforeChange?.(nextWorkspace);
+		workspace = nextWorkspace;
+		applyWindowChrome(window);
+		return workspace;
+	});
 }
 
 /**
  * Shows the native directory picker. Returns the new workspace, or null when
  * the user cancels (cancel keeps the current state; it is not an error).
  */
-export async function openWorkspaceDialog(window) {
-	const options = {
+export async function openWorkspaceDialog(window, options = {}) {
+	const dialogOptions = {
 		title: "Open Folder",
 		buttonLabel: "Open",
 		properties: ["openDirectory", "createDirectory"],
 	};
 	const result =
 		window && !window.isDestroyed()
-			? await dialog.showOpenDialog(window, options)
-			: await dialog.showOpenDialog(options);
+			? await dialog.showOpenDialog(window, dialogOptions)
+			: await dialog.showOpenDialog(dialogOptions);
 	const dir = result.filePaths[0];
 	if (result.canceled || dir === undefined) {
 		return null;
 	}
-	return await setWorkspaceFromPath(dir, window);
+	return await setWorkspaceFromPath(dir, window, options);
 }
 
 export async function exportWorkspaceLixFile() {
@@ -93,7 +102,13 @@ function applyWindowChrome(window) {
 	window.setRepresentedFilename(workspace.path);
 }
 
-export function registerWorkspaceIpc(getWindowForEvent) {
+function enqueueWorkspaceChange(operation) {
+	const result = workspaceChangeQueue.catch(() => {}).then(operation);
+	workspaceChangeQueue = result.catch(() => {});
+	return result;
+}
+
+export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 	if (registered) {
 		return;
 	}
@@ -107,8 +122,8 @@ export function registerWorkspaceIpc(getWindowForEvent) {
 		const window = getWindowForEvent(event);
 		const requestedPath = payload?.path;
 		if (typeof requestedPath === "string" && requestedPath.length > 0) {
-			return await setWorkspaceFromPath(requestedPath, window);
+			return await setWorkspaceFromPath(requestedPath, window, options);
 		}
-		return await openWorkspaceDialog(window);
+		return await openWorkspaceDialog(window, options);
 	});
 }

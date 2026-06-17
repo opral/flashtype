@@ -257,8 +257,7 @@ export function registerLixIpc() {
 	});
 
 	ipcMain.handle("lix:close", async () => {
-		await closeAllHandles();
-		await closeLix();
+		await closeLixSession();
 	});
 
 	ipcMain.handle("workspace:resetLixRepository", async () => {
@@ -277,8 +276,12 @@ async function ensureLixOpenForEvent(_event) {
 }
 
 export async function disposeLixIpc() {
+	await closeLixSession();
+}
+
+export async function closeLixSession(options = {}) {
 	await closeAllHandles();
-	await closeLix();
+	await closeLix(options);
 }
 
 async function closeAllHandles() {
