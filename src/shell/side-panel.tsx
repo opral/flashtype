@@ -1,11 +1,11 @@
 import type {
 	PanelSide,
 	PanelState,
-	WidgetKind,
-	WidgetContext,
-	WidgetState,
-} from "../widget-runtime/types";
-import { TERMINAL_WIDGET_KIND } from "../widget-runtime/widget-instance-helpers";
+	ExtensionKind,
+	ExtensionContext,
+	ExtensionState,
+} from "../extension-runtime/types";
+import { TERMINAL_EXTENSION_KIND } from "../extension-runtime/extension-instance-helpers";
 import { PanelV2 } from "./panel-v2";
 import { AgentInvite } from "./agent-invite";
 import { AGENT_LAUNCH_PRESETS } from "./agent-icons";
@@ -14,10 +14,10 @@ interface SidePanelProps {
 	readonly side: PanelSide;
 	readonly title: string;
 	readonly panel: PanelState;
-	readonly onSelectWidget: (key: string) => void;
-	readonly onAddView: (toolId: WidgetKind, state?: WidgetState) => void;
-	readonly onRemoveWidget: (key: string) => void;
-	readonly viewContext: WidgetContext;
+	readonly onSelectView: (key: string) => void;
+	readonly onAddView: (toolId: ExtensionKind, state?: ExtensionState) => void;
+	readonly onRemoveView: (key: string) => void;
+	readonly viewContext: ExtensionContext;
 	readonly isFocused: boolean;
 	readonly onFocusPanel: (side: PanelSide) => void;
 }
@@ -32,9 +32,9 @@ export function SidePanel({
 	side,
 	title: _unusedTitle,
 	panel,
-	onSelectWidget,
+	onSelectView,
 	onAddView,
-	onRemoveWidget,
+	onRemoveView,
 	viewContext,
 	isFocused,
 	onFocusPanel,
@@ -46,10 +46,10 @@ export function SidePanel({
 		side === "right" ? (
 			<AgentInvite
 				onStartClaude={() =>
-					onAddView(TERMINAL_WIDGET_KIND, AGENT_LAUNCH_PRESETS[0].state)
+					onAddView(TERMINAL_EXTENSION_KIND, AGENT_LAUNCH_PRESETS[0].state)
 				}
 				onStartCodex={() =>
-					onAddView(TERMINAL_WIDGET_KIND, AGENT_LAUNCH_PRESETS[1].state)
+					onAddView(TERMINAL_EXTENSION_KIND, AGENT_LAUNCH_PRESETS[1].state)
 				}
 			/>
 		) : (
@@ -64,8 +64,8 @@ export function SidePanel({
 			panel={panel}
 			isFocused={isFocused}
 			onFocusPanel={onFocusPanel}
-			onSelectWidget={onSelectWidget}
-			onRemoveWidget={onRemoveWidget}
+			onSelectView={onSelectView}
+			onRemoveView={onRemoveView}
 			onAddView={onAddView}
 			viewContext={viewContext}
 			emptyStatePlaceholder={emptyState}

@@ -34,48 +34,48 @@ import {
 	type ExternalFileWrite,
 } from "./external-write-detector";
 import { getExternalWriteReview } from "./external-write-review-history";
-import { markFlashtypeFileWrite } from "@/widget-runtime/external-write-tracking";
+import { markFlashtypeFileWrite } from "@/extension-runtime/external-write-tracking";
 import {
 	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
 	type ExternalWriteReview,
-} from "@/widget-runtime/external-write-review";
+} from "@/extension-runtime/external-write-review";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import { qb } from "@/lib/lix-kysely";
 import {
-	WidgetHostRegistryProvider,
-	useWidgetHostRegistry,
-} from "../widget-runtime/widget-host-registry";
+	ExtensionHostRegistryProvider,
+	useExtensionHostRegistry,
+} from "../extension-runtime/extension-host-registry";
 import type {
 	PanelSide,
 	PanelState,
-	DiffWidgetConfig,
-	WidgetInstance,
-	WidgetKind,
-	WidgetLaunchArgs,
-	WidgetState,
-	WidgetDefinition,
-} from "../widget-runtime/types";
+	DiffExtensionConfig,
+	ExtensionInstance,
+	ExtensionKind,
+	ExtensionLaunchArgs,
+	ExtensionState,
+	ExtensionDefinition,
+} from "../extension-runtime/types";
 import {
-	createWidgetInstanceId,
-	WidgetRegistryProvider,
-	useWidgetRegistry,
-} from "../widget-runtime/widget-registry";
-import { loadInstalledWidgetsFromLix } from "../widget-runtime/installed-widget-loader";
+	createExtensionInstanceId,
+	ExtensionRegistryProvider,
+	useExtensionRegistry,
+} from "../extension-runtime/extension-registry";
+import { loadInstalledExtensionsFromLix } from "../extension-runtime/installed-extension-loader";
 import { PanelTabPreview } from "./panel-v2";
 import {
-	buildFileWidgetProps,
-	DIFF_WIDGET_KIND,
+	buildFileExtensionProps,
+	DIFF_EXTENSION_KIND,
 	diffLabelFromPath,
-	fileWidgetInstance,
-	fileWidgetInstanceForKind,
-	FILE_WIDGET_KIND,
-	activeMarkdownFileIdFromWidgetInstance,
-} from "../widget-runtime/widget-instance-helpers";
-import { findFileHandlerWidget } from "../widget-runtime/file-handlers";
+	fileExtensionInstance,
+	fileExtensionInstanceForKind,
+	FILE_EXTENSION_KIND,
+	activeMarkdownFileIdFromExtensionInstance,
+} from "../extension-runtime/extension-instance-helpers";
+import { findFileHandlerExtension } from "../extension-runtime/file-handlers";
 import {
-	installWidgetFromFiles as installWidgetFromFilesInLix,
-	uninstallWidget as uninstallWidgetInLix,
-} from "../widget-runtime/widget-installation";
+	installExtensionFromFiles as installExtensionFromFilesInLix,
+	uninstallExtension as uninstallExtensionInLix,
+} from "../extension-runtime/extension-installation";
 import {
 	coerceFlashtypeUiState,
 	DEFAULT_FLASHTYPE_UI_STATE,
@@ -85,14 +85,17 @@ import {
 	type FlashtypeUiState,
 } from "./ui-state";
 import {
-	activatePanelWidget,
-	upsertPendingWidget,
-} from "../widget-runtime/pending-widget";
-import { cloneWidgetInstance, reorderPanelWidgetsByIndex } from "./panel-utils";
+	activatePanelExtension,
+	upsertPendingExtension,
+} from "../extension-runtime/pending-extension";
+import {
+	cloneExtensionInstance,
+	reorderPanelExtensionsByIndex,
+} from "./panel-utils";
 
-const stripLaunchArgs = (view: WidgetInstance): WidgetInstance => {
+const stripLaunchArgs = (view: ExtensionInstance): ExtensionInstance => {
 	const { launchArgs: _omitLaunch, ...rest } = view as any;
-	const state = sanitizeWidgetStateForPersistence(rest.state);
+	const state = sanitizeExtensionStateForPersistence(rest.state);
 	if (state === undefined) {
 		const { state: _omitState, ...viewWithoutState } = rest;
 		return viewWithoutState;
@@ -100,14 +103,14 @@ const stripLaunchArgs = (view: WidgetInstance): WidgetInstance => {
 	return { ...rest, state };
 };
 
-const sanitizeWidgetStateForPersistence = (
-	state: WidgetState | undefined,
-): WidgetState | undefined => {
+const sanitizeExtensionStateForPersistence = (
+	state: ExtensionState | undefined,
+): ExtensionState | undefined => {
 	if (state === undefined) return undefined;
 	const sanitized = sanitizeJsonValue(state);
 	if (!isPlainObject(sanitized)) return undefined;
 	return Object.keys(sanitized).length > 0
-		? (sanitized as WidgetState)
+		? (sanitized as ExtensionState)
 		: undefined;
 };
 
@@ -174,11 +177,14 @@ const sanitizePanels = (
 
 const hydratePanel = (
 	panel: PanelState,
-	widgetMap: Map<WidgetKind, WidgetDefinition>,
+	extensionMap: Map<ExtensionKind, ExtensionDefinition>,
+	options: { preserveUnknownKinds?: boolean } = {},
 ): PanelState => {
 	const views = panel.views
 		// Drop unknown view keys that might linger in persisted UI state.
-		.filter((view) => widgetMap.has(view.kind))
+		.filter(
+			(view) => options.preserveUnknownKinds || extensionMap.has(view.kind),
+		)
 		.map(upgradeDiffProps);
 	if (views.length === 0) {
 		return { views, activeInstance: null };
@@ -193,12 +199,14 @@ const hydratePanel = (
 	};
 };
 
-const upgradeDiffProps = (view: WidgetInstance): WidgetInstance => {
-	if (view.kind !== DIFF_WIDGET_KIND) return view;
+export const hydratePanelForExtensions = hydratePanel;
+
+const upgradeDiffProps = (view: ExtensionInstance): ExtensionInstance => {
+	if (view.kind !== DIFF_EXTENSION_KIND) return view;
 	const state = view.state ?? {};
 	const fileId = state.fileId as string | undefined;
 	if (!fileId) return view;
-	const existing = state.diff as DiffWidgetConfig | undefined;
+	const existing = state.diff as DiffExtensionConfig | undefined;
 	const nextLabel =
 		(state.flashtype?.label as string | undefined) ??
 		diffLabelFromPath(state.filePath as string | undefined) ??
@@ -223,10 +231,11 @@ const DEFAULT_PANEL_FALLBACK_SIZES = {
 };
 const MIN_UNCOLLAPSED_RIGHT_SIZE = 35;
 const MIN_VISIBLE_PANEL_SIZE = 1;
-const INSTALLED_WIDGET_PATH_PREFIX = "/.lix_system/app_data/flashtype/widgets/";
-const INSTALLED_WIDGET_PATH_PREFIX_UPPER_BOUND =
-	"/.lix_system/app_data/flashtype/widgets0";
-const INSTALLED_WIDGET_OBSERVE_SQL =
+const INSTALLED_EXTENSION_PATH_PREFIX =
+	"/.lix_system/app_data/flashtype/extensions/";
+const INSTALLED_EXTENSION_PATH_PREFIX_UPPER_BOUND =
+	"/.lix_system/app_data/flashtype/extensions0";
+const INSTALLED_EXTENSION_OBSERVE_SQL =
 	"SELECT path, data FROM lix_file_by_branch WHERE lixcol_branch_id = ? AND path >= ? AND path < ?";
 const PANEL_TRANSITION_STYLE: CSSProperties = {
 	transitionProperty: "flex-grow, flex-basis",
@@ -286,16 +295,16 @@ export function V2LayoutShell({
 	readonly onInstallUpdate?: () => void | Promise<void>;
 }) {
 	return (
-		<WidgetRegistryProvider>
-			<WidgetHostRegistryProvider>
+		<ExtensionRegistryProvider>
+			<ExtensionHostRegistryProvider>
 				<LayoutShellContent
 					workspaceName={workspaceName}
 					onOpenWorkspace={onOpenWorkspace}
 					isUpdateReady={isUpdateReady}
 					onInstallUpdate={onInstallUpdate}
 				/>
-			</WidgetHostRegistryProvider>
-		</WidgetRegistryProvider>
+			</ExtensionHostRegistryProvider>
+		</ExtensionRegistryProvider>
 	);
 }
 
@@ -351,8 +360,10 @@ function LayoutShellContent({
 	readonly isUpdateReady?: boolean;
 	readonly onInstallUpdate?: () => void | Promise<void>;
 }) {
-	const { widgetMap, replaceInstalledWidgets, clearInstalledWidgets } =
-		useWidgetRegistry();
+	const [hasLoadedInstalledExtensions, setHasLoadedInstalledExtensions] =
+		useState(false);
+	const { extensionMap, replaceInstalledExtensions, clearInstalledExtensions } =
+		useExtensionRegistry();
 	const [uiStateKV, setUiStateKV] = useKeyValue(FLASHTYPE_UI_STATE_KEY);
 	const [activeFileId, setActiveFileId] = useKeyValue(
 		"flashtype_active_file_id",
@@ -370,13 +381,19 @@ function LayoutShellContent({
 	);
 
 	const [leftPanel, setLeftPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.left, widgetMap),
+		hydratePanel(sanitizedPersistedPanels.left, extensionMap, {
+			preserveUnknownKinds: true,
+		}),
 	);
 	const [centralPanel, setCentralPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.central, widgetMap),
+		hydratePanel(sanitizedPersistedPanels.central, extensionMap, {
+			preserveUnknownKinds: true,
+		}),
 	);
 	const [rightPanel, setRightPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.right, widgetMap),
+		hydratePanel(sanitizedPersistedPanels.right, extensionMap, {
+			preserveUnknownKinds: true,
+		}),
 	);
 	const [focusedPanel, setFocusedPanel] = useState<PanelSide>(
 		() => uiState.focusedPanel,
@@ -405,7 +422,7 @@ function LayoutShellContent({
 	const leftPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const rightPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const ignoredExternalWriteReviewFileIdsRef = useRef(new Set<string>());
-	const viewHostRegistry = useWidgetHostRegistry();
+	const viewHostRegistry = useExtensionHostRegistry();
 
 	const activeInstances = useMemo(() => {
 		const keys = new Set<string>();
@@ -424,24 +441,26 @@ function LayoutShellContent({
 		let debounceId: number | null = null;
 		let reloadPromise: Promise<void> | null = null;
 
-		const reloadInstalledWidgets = async () => {
+		const reloadInstalledExtensions = async () => {
 			if (reloadPromise) {
 				await reloadPromise;
 				return;
 			}
 			reloadPromise = (async () => {
 				try {
-					const installed = await loadInstalledWidgetsFromLix(lix);
+					const installed = await loadInstalledExtensionsFromLix(lix);
 					if (!cancelled) {
-						replaceInstalledWidgets(installed);
+						replaceInstalledExtensions(installed);
+						setHasLoadedInstalledExtensions(true);
 					}
 				} catch (error) {
 					console.warn(
-						"[widget-loader] failed to load installed widgets",
+						"[extension-loader] failed to load installed extensions",
 						error,
 					);
 					if (!cancelled) {
-						clearInstalledWidgets();
+						clearInstalledExtensions();
+						setHasLoadedInstalledExtensions(true);
 					}
 				}
 			})();
@@ -459,16 +478,16 @@ function LayoutShellContent({
 			}
 			debounceId = window.setTimeout(() => {
 				debounceId = null;
-				void reloadInstalledWidgets();
+				void reloadInstalledExtensions();
 			}, 150);
 		};
 
-		void reloadInstalledWidgets();
+		void reloadInstalledExtensions();
 
-		const observeEvents = lix.observe(INSTALLED_WIDGET_OBSERVE_SQL, [
+		const observeEvents = lix.observe(INSTALLED_EXTENSION_OBSERVE_SQL, [
 			"global",
-			INSTALLED_WIDGET_PATH_PREFIX,
-			INSTALLED_WIDGET_PATH_PREFIX_UPPER_BOUND,
+			INSTALLED_EXTENSION_PATH_PREFIX,
+			INSTALLED_EXTENSION_PATH_PREFIX_UPPER_BOUND,
 		]);
 
 		void (async () => {
@@ -480,7 +499,7 @@ function LayoutShellContent({
 				}
 			} catch (error) {
 				if (!cancelled) {
-					console.warn("[widget-loader] observe failed", error);
+					console.warn("[extension-loader] observe failed", error);
 				}
 			}
 		})();
@@ -493,7 +512,7 @@ function LayoutShellContent({
 			}
 			observeEvents.close();
 		};
-	}, [lix, replaceInstalledWidgets, clearInstalledWidgets]);
+	}, [lix, replaceInstalledExtensions, clearInstalledExtensions]);
 
 	const lastPersistedRef = useRef<string>(
 		JSON.stringify({
@@ -520,6 +539,9 @@ function LayoutShellContent({
 	);
 
 	useEffect(() => {
+		const hydrateOptions = {
+			preserveUnknownKinds: !hasLoadedInstalledExtensions,
+		};
 		if (!uiStateKV) return;
 		const serialized = JSON.stringify(uiStateKV);
 		if (
@@ -537,17 +559,29 @@ function LayoutShellContent({
 		setLeftPanel((prev) =>
 			prev === sanitizedPersistedPanels.left
 				? prev
-				: hydratePanel(sanitizedPersistedPanels.left, widgetMap),
+				: hydratePanel(
+						sanitizedPersistedPanels.left,
+						extensionMap,
+						hydrateOptions,
+					),
 		);
 		setCentralPanel((prev) =>
 			prev === sanitizedPersistedPanels.central
 				? prev
-				: hydratePanel(sanitizedPersistedPanels.central, widgetMap),
+				: hydratePanel(
+						sanitizedPersistedPanels.central,
+						extensionMap,
+						hydrateOptions,
+					),
 		);
 		setRightPanel((prev) =>
 			prev === sanitizedPersistedPanels.right
 				? prev
-				: hydratePanel(sanitizedPersistedPanels.right, widgetMap),
+				: hydratePanel(
+						sanitizedPersistedPanels.right,
+						extensionMap,
+						hydrateOptions,
+					),
 		);
 		setFocusedPanel((prev) =>
 			prev === uiStateKV.focusedPanel ? prev : uiStateKV.focusedPanel,
@@ -570,13 +604,28 @@ function LayoutShellContent({
 				pendingPersistRef.current = null;
 			}
 		});
-	}, [uiStateKV, sanitizedPersistedPanels, updateDerivedPanelState, widgetMap]);
+	}, [
+		uiStateKV,
+		sanitizedPersistedPanels,
+		updateDerivedPanelState,
+		extensionMap,
+		hasLoadedInstalledExtensions,
+	]);
 
 	useEffect(() => {
-		setLeftPanel((current) => hydratePanel(current, widgetMap));
-		setCentralPanel((current) => hydratePanel(current, widgetMap));
-		setRightPanel((current) => hydratePanel(current, widgetMap));
-	}, [widgetMap]);
+		const hydrateOptions = {
+			preserveUnknownKinds: !hasLoadedInstalledExtensions,
+		};
+		setLeftPanel((current) =>
+			hydratePanel(current, extensionMap, hydrateOptions),
+		);
+		setCentralPanel((current) =>
+			hydratePanel(current, extensionMap, hydrateOptions),
+		);
+		setRightPanel((current) =>
+			hydratePanel(current, extensionMap, hydrateOptions),
+		);
+	}, [extensionMap, hasLoadedInstalledExtensions]);
 
 	useEffect(() => {
 		if (hydratingRef.current) return;
@@ -622,7 +671,15 @@ function LayoutShellContent({
 			options: { focus?: boolean } = {},
 		) => {
 			const applyReducer = (prev: PanelState) =>
-				hydratePanel(reducer(hydratePanel(prev, widgetMap)), widgetMap);
+				hydratePanel(
+					reducer(
+						hydratePanel(prev, extensionMap, {
+							preserveUnknownKinds: !hasLoadedInstalledExtensions,
+						}),
+					),
+					extensionMap,
+					{ preserveUnknownKinds: !hasLoadedInstalledExtensions },
+				);
 			if (side === "left") {
 				setLeftPanel(applyReducer);
 			} else if (side === "central") {
@@ -634,7 +691,14 @@ function LayoutShellContent({
 				setFocusedPanel((prev) => (prev === side ? prev : side));
 			}
 		},
-		[setLeftPanel, setCentralPanel, setRightPanel, setFocusedPanel, widgetMap],
+		[
+			setLeftPanel,
+			setCentralPanel,
+			setRightPanel,
+			setFocusedPanel,
+			extensionMap,
+			hasLoadedInstalledExtensions,
+		],
 	);
 
 	const schedulePanelAnimation = useCallback(() => {
@@ -700,9 +764,9 @@ function LayoutShellContent({
 			pending = false,
 		}: {
 			panel: PanelSide;
-			kind: WidgetKind;
-			state?: WidgetState;
-			launchArgs?: WidgetLaunchArgs;
+			kind: ExtensionKind;
+			state?: ExtensionState;
+			launchArgs?: ExtensionLaunchArgs;
 			focus?: boolean;
 			instance?: string;
 			pending?: boolean;
@@ -712,15 +776,17 @@ function LayoutShellContent({
 				panel,
 				(current) => {
 					if (pending) {
-						const targetInstance = instance ?? createWidgetInstanceId(kind);
-						const nextView: WidgetInstance = {
+						const targetInstance = instance ?? createExtensionInstanceId(kind);
+						const nextView: ExtensionInstance = {
 							instance: targetInstance,
 							kind,
 							state,
 							launchArgs,
 							isPending: true,
 						};
-						return upsertPendingWidget(current, nextView, { activate: true });
+						return upsertPendingExtension(current, nextView, {
+							activate: true,
+						});
 					}
 					if (!instance) {
 						const existing = current.views.find((entry) => entry.kind === kind);
@@ -743,7 +809,7 @@ function LayoutShellContent({
 							};
 						}
 					}
-					const targetInstance = instance ?? createWidgetInstanceId(kind);
+					const targetInstance = instance ?? createExtensionInstanceId(kind);
 					const existingByInstance = instance
 						? current.views.find((entry) => entry.instance === instance)
 						: null;
@@ -763,7 +829,7 @@ function LayoutShellContent({
 							activeInstance: targetInstance,
 						};
 					}
-					const nextView: WidgetInstance = {
+					const nextView: ExtensionInstance = {
 						instance: targetInstance,
 						kind,
 						state,
@@ -793,21 +859,21 @@ function LayoutShellContent({
 			panel: PanelSide;
 			fileId: string;
 			filePath: string;
-			state?: WidgetState;
-			launchArgs?: WidgetLaunchArgs;
+			state?: ExtensionState;
+			launchArgs?: ExtensionLaunchArgs;
 			focus?: boolean;
 			pending?: boolean;
 		}) => {
 			const handler =
-				findFileHandlerWidget(widgetMap.values(), filePath) ??
-				widgetMap.get(FILE_WIDGET_KIND);
-			const kind = handler?.kind ?? FILE_WIDGET_KIND;
+				findFileHandlerExtension(extensionMap.values(), filePath) ??
+				extensionMap.get(FILE_EXTENSION_KIND);
+			const kind = handler?.kind ?? FILE_EXTENSION_KIND;
 			handleOpenView({
 				panel,
 				kind,
-				instance: fileWidgetInstanceForKind(kind, fileId),
+				instance: fileExtensionInstanceForKind(kind, fileId),
 				state: {
-					...buildFileWidgetProps({ fileId, filePath }),
+					...buildFileExtensionProps({ fileId, filePath }),
 					...(state ?? {}),
 				},
 				launchArgs,
@@ -815,7 +881,7 @@ function LayoutShellContent({
 				pending,
 			});
 		},
-		[handleOpenView, widgetMap],
+		[handleOpenView, extensionMap],
 	);
 
 	const clearExternalWriteReview = useCallback(
@@ -998,10 +1064,10 @@ function LayoutShellContent({
 		}: {
 			panel?: PanelSide;
 			instance?: string;
-			kind?: WidgetKind;
+			kind?: ExtensionKind;
 		}) => {
 			if (!instance && !kind) return;
-			const predicate = (entry: WidgetInstance) => {
+			const predicate = (entry: ExtensionInstance) => {
 				if (instance) return entry.instance === instance;
 				if (kind) return entry.kind === kind;
 				return false;
@@ -1030,15 +1096,15 @@ function LayoutShellContent({
 	);
 
 	const handleAddView = useCallback(
-		(side: PanelSide, kind: WidgetKind, state?: WidgetState) => {
+		(side: PanelSide, kind: ExtensionKind, state?: ExtensionState) => {
 			// Multi-instance kinds (agent terminals) get a fresh instance per
 			// add; single-instance kinds reuse the existing view.
-			const instance = widgetMap.get(kind)?.multiInstance
-				? createWidgetInstanceId(kind)
+			const instance = extensionMap.get(kind)?.multiInstance
+				? createExtensionInstanceId(kind)
 				: undefined;
 			handleOpenView({ panel: side, kind, state, instance });
 		},
-		[handleOpenView, widgetMap],
+		[handleOpenView, extensionMap],
 	);
 
 	const focusPanel = useCallback((side: PanelSide) => {
@@ -1092,7 +1158,7 @@ function LayoutShellContent({
 			if (!over) return;
 
 			const dragData = active.data.current as
-				| { instance: string; kind: WidgetKind; fromPanel: PanelSide }
+				| { instance: string; kind: ExtensionKind; fromPanel: PanelSide }
 				| undefined;
 			const dropData = over.data.current as
 				| {
@@ -1132,7 +1198,7 @@ function LayoutShellContent({
 						if (toIndex == null || toIndex === -1) {
 							return panel;
 						}
-						return reorderPanelWidgetsByIndex(panel, fromIndex, toIndex);
+						return reorderPanelExtensionsByIndex(panel, fromIndex, toIndex);
 					},
 					{ focus: true },
 				);
@@ -1145,7 +1211,7 @@ function LayoutShellContent({
 					: fromPanel === "central"
 						? centralPanel
 						: rightPanel;
-			const movedView = cloneWidgetInstance(sourcePanel, instance);
+			const movedView = cloneExtensionInstance(sourcePanel, instance);
 
 			if (!movedView) return;
 
@@ -1195,7 +1261,7 @@ function LayoutShellContent({
 			].find((view) => view.instance === activeId)
 		: null;
 	const activeDragView = activeDragData
-		? widgetMap.get(activeDragData.kind)
+		? extensionMap.get(activeDragData.kind)
 		: null;
 
 	const handleCreateNewFile = useCallback(async () => {
@@ -1232,7 +1298,7 @@ function LayoutShellContent({
 		);
 	}, [centralPanel]);
 	const activeCentralFileId =
-		activeMarkdownFileIdFromWidgetInstance(activeCentralEntry);
+		activeMarkdownFileIdFromExtensionInstance(activeCentralEntry);
 
 	useEffect(() => {
 		if (!activeCentralFileId) return;
@@ -1249,23 +1315,23 @@ function LayoutShellContent({
 		}
 		return (
 			(activeCentralEntry.state?.flashtype?.label as string | undefined) ??
-			widgetMap.get(activeCentralEntry.kind)?.label ??
+			extensionMap.get(activeCentralEntry.kind)?.label ??
 			null
 		);
-	}, [activeCentralEntry, widgetMap]);
+	}, [activeCentralEntry, extensionMap]);
 
 	const isLeftFocused = focusedPanel === "left";
 	const isCentralFocused = focusedPanel === "central";
 	const isRightFocused = focusedPanel === "right";
 
 	const addViewOnLeft = useCallback(
-		(type: WidgetKind, state?: WidgetState) =>
+		(type: ExtensionKind, state?: ExtensionState) =>
 			handleAddView("left", type, state),
 		[handleAddView],
 	);
 
 	const addViewOnRight = useCallback(
-		(type: WidgetKind, state?: WidgetState) =>
+		(type: ExtensionKind, state?: ExtensionState) =>
 			handleAddView("right", type, state),
 		[handleAddView],
 	);
@@ -1285,7 +1351,7 @@ function LayoutShellContent({
 
 	const handleSelectCentralView = useCallback(
 		(key: string) =>
-			setPanelState("central", (panel) => activatePanelWidget(panel, key), {
+			setPanelState("central", (panel) => activatePanelExtension(panel, key), {
 				focus: true,
 			}),
 		[setPanelState],
@@ -1320,7 +1386,7 @@ function LayoutShellContent({
 					);
 					if (
 						side === "central" &&
-						targetView.kind === DIFF_WIDGET_KIND &&
+						targetView.kind === DIFF_EXTENSION_KIND &&
 						views.length === 0
 					) {
 						const fileId = targetView.state?.fileId
@@ -1331,11 +1397,11 @@ function LayoutShellContent({
 								typeof targetView.state?.filePath === "string"
 									? (targetView.state.filePath as string)
 									: undefined;
-							const fallbackView: WidgetInstance = {
-								instance: fileWidgetInstance(fileId),
-								kind: FILE_WIDGET_KIND,
+							const fallbackView: ExtensionInstance = {
+								instance: fileExtensionInstance(fileId),
+								kind: FILE_EXTENSION_KIND,
 								isPending: true,
-								state: buildFileWidgetProps({ fileId, filePath }),
+								state: buildFileExtensionProps({ fileId, filePath }),
 							};
 							views = [fallbackView];
 							return {
@@ -1439,35 +1505,35 @@ function LayoutShellContent({
 		[schedulePanelAnimation],
 	);
 
-	const handleInstallWidgetFromFiles = useCallback(
+	const handleInstallExtensionFromFiles = useCallback(
 		async (args: {
-			readonly widgetId: string;
+			readonly extensionId: string;
 			readonly files: ReadonlyArray<{
 				readonly path: string;
 				readonly data: string | Uint8Array;
 			}>;
 		}) => {
-			await installWidgetFromFilesInLix(lix, args);
+			await installExtensionFromFilesInLix(lix, args);
 		},
 		[lix],
 	);
 
-	const handleUninstallWidget = useCallback(
-		async (widgetId: string) => {
-			await uninstallWidgetInLix(lix, widgetId);
+	const handleUninstallExtension = useCallback(
+		async (extensionId: string) => {
+			await uninstallExtensionInLix(lix, extensionId);
 		},
 		[lix],
 	);
 
 	const sharedViewContext = useMemo(
 		() => ({
-			openWidget: handleOpenView,
+			openExtension: handleOpenView,
 			openFile: handleOpenFile,
-			closeWidget: handleCloseView,
+			closeExtension: handleCloseView,
 			setTabBadgeCount: () => {},
-			moveWidgetToPanel: handleMoveViewToPanel,
-			installWidgetFromFiles: handleInstallWidgetFromFiles,
-			uninstallWidget: handleUninstallWidget,
+			moveExtensionToPanel: handleMoveViewToPanel,
+			installExtensionFromFiles: handleInstallExtensionFromFiles,
+			uninstallExtension: handleUninstallExtension,
 			resizePanel: handleResizePanel,
 			focusPanel: focusPanel,
 			acceptExternalWriteReview: handleAcceptExternalWriteReview,
@@ -1479,8 +1545,8 @@ function LayoutShellContent({
 			handleOpenFile,
 			handleCloseView,
 			handleMoveViewToPanel,
-			handleInstallWidgetFromFiles,
-			handleUninstallWidget,
+			handleInstallExtensionFromFiles,
+			handleUninstallExtension,
 			handleResizePanel,
 			handleAcceptExternalWriteReview,
 			handleRejectExternalWriteReview,
@@ -1686,9 +1752,9 @@ function LayoutShellContent({
 								panel={leftPanel}
 								isFocused={focusedPanel === "left"}
 								onFocusPanel={focusPanel}
-								onSelectWidget={handleSelectLeftView}
+								onSelectView={handleSelectLeftView}
 								onAddView={addViewOnLeft}
-								onRemoveWidget={(key) => handleRemoveView("left", key)}
+								onRemoveView={(key) => handleRemoveView("left", key)}
 								viewContext={leftViewContext}
 							/>
 						</Panel>
@@ -1705,12 +1771,12 @@ function LayoutShellContent({
 								panel={centralPanel}
 								isFocused={focusedPanel === "central"}
 								onFocusPanel={focusPanel}
-								onSelectWidget={handleSelectCentralView}
-								onRemoveWidget={(key) => handleRemoveView("central", key)}
+								onSelectView={handleSelectCentralView}
+								onRemoveView={(key) => handleRemoveView("central", key)}
 								onFinalizePendingView={(key) =>
 									setPanelState(
 										"central",
-										(panel) => activatePanelWidget(panel, key),
+										(panel) => activatePanelExtension(panel, key),
 										{ focus: true },
 									)
 								}
@@ -1737,9 +1803,9 @@ function LayoutShellContent({
 								panel={rightPanel}
 								isFocused={focusedPanel === "right"}
 								onFocusPanel={focusPanel}
-								onSelectWidget={handleSelectRightView}
+								onSelectView={handleSelectRightView}
 								onAddView={addViewOnRight}
-								onRemoveWidget={(key) => handleRemoveView("right", key)}
+								onRemoveView={(key) => handleRemoveView("right", key)}
 								viewContext={rightViewContext}
 							/>
 						</Panel>

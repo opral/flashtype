@@ -1,4 +1,4 @@
-import type { RenderableDiff } from "@/widget-runtime/types";
+import type { RenderableDiff } from "@/extension-runtime/types";
 
 export function Diff(props: {
 	diffs: RenderableDiff[];

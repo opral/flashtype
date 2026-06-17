@@ -81,6 +81,10 @@ export async function writeStarterFiles(workspaceDir: string): Promise<void> {
 		"# Changelog\n\n- initial entry\n",
 	);
 	await writeFile(
+		path.join(workspaceDir, "metrics.csv"),
+		"metric,value\nsignups,42\n",
+	);
+	await writeFile(
 		path.join(workspaceDir, "notes", "meeting-notes.md"),
 		"# Team Meeting\n\n- agenda item\n",
 	);

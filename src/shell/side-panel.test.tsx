@@ -3,13 +3,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import type { FilesystemEntryRow } from "@/queries";
 import { SidePanel } from "./side-panel";
-import { WidgetHostRegistryProvider } from "../widget-runtime/widget-host-registry";
-import type { PanelState, WidgetContext } from "../widget-runtime/types";
+import { ExtensionHostRegistryProvider } from "../extension-runtime/extension-host-registry";
+import type { PanelState, ExtensionContext } from "../extension-runtime/types";
 import {
-	FILES_WIDGET_KIND,
-	FILE_WIDGET_KIND,
-	fileWidgetInstance,
-} from "../widget-runtime/widget-instance-helpers";
+	FILES_EXTENSION_KIND,
+	FILE_EXTENSION_KIND,
+	fileExtensionInstance,
+} from "../extension-runtime/extension-instance-helpers";
 import type { Lix } from "@/lib/lix-types";
 
 const mockEntries: FilesystemEntryRow[] = [
@@ -60,7 +60,7 @@ vi.mock("@/lib/lix-react", async () => {
 	};
 });
 
-vi.mock("../widget-runtime/widget-registry", async () => {
+vi.mock("../extension-runtime/extension-registry", async () => {
 	const definitions = [
 		{
 			kind: "flashtype_files" as const,
@@ -71,14 +71,14 @@ vi.mock("../widget-runtime/widget-registry", async () => {
 				context,
 				target,
 			}: {
-				context: WidgetContext;
+				context: ExtensionContext;
 				target: HTMLElement;
 			}) => {
 				const button = document.createElement("button");
 				button.type = "button";
 				button.textContent = "writing-style.md";
 				button.addEventListener("click", () => {
-					context.openWidget?.({
+					context.openExtension?.({
 						panel: "central",
 						kind: "flashtype_file",
 						instance: "flashtype_file:file-writing",
@@ -98,14 +98,14 @@ vi.mock("../widget-runtime/widget-registry", async () => {
 		},
 	];
 	return {
-		WIDGET_DEFINITIONS: definitions,
-		WIDGET_MAP: new Map(definitions.map((def) => [def.kind, def])),
-		useWidgetRegistry: () => ({
-			visibleWidgets: definitions,
-			widgetMap: new Map(definitions.map((def) => [def.kind, def])),
-			installedWidgets: [],
-			replaceInstalledWidgets: () => {},
-			clearInstalledWidgets: () => {},
+		EXTENSION_DEFINITIONS: definitions,
+		EXTENSION_MAP: new Map(definitions.map((def) => [def.kind, def])),
+		useExtensionRegistry: () => ({
+			visibleExtensions: definitions,
+			extensionMap: new Map(definitions.map((def) => [def.kind, def])),
+			installedExtensions: [],
+			replaceInstalledExtensions: () => {},
+			clearInstalledExtensions: () => {},
 		}),
 	};
 });
@@ -113,8 +113,8 @@ vi.mock("../widget-runtime/widget-registry", async () => {
 const mockLix = {} as Lix;
 
 const createViewContext = (
-	overrides: Partial<WidgetContext> = {},
-): WidgetContext => ({
+	overrides: Partial<ExtensionContext> = {},
+): ExtensionContext => ({
 	lix: mockLix,
 	isPanelFocused: false,
 	setTabBadgeCount: () => {},
@@ -126,21 +126,21 @@ describe("SidePanel", () => {
 		const emptyPanel: PanelState = { views: [], activeInstance: null };
 
 		render(
-			<WidgetHostRegistryProvider>
+			<ExtensionHostRegistryProvider>
 				<DndContext>
 					<SidePanel
 						side="left"
 						title="Navigator"
 						panel={emptyPanel}
-						onSelectWidget={() => {}}
+						onSelectView={() => {}}
 						onAddView={() => {}}
-						onRemoveWidget={() => {}}
+						onRemoveView={() => {}}
 						viewContext={createViewContext()}
 						isFocused={false}
 						onFocusPanel={vi.fn()}
 					/>
 				</DndContext>
-			</WidgetHostRegistryProvider>,
+			</ExtensionHostRegistryProvider>,
 		);
 
 		expect(screen.getByText("No view open")).toBeInTheDocument();
@@ -149,7 +149,7 @@ describe("SidePanel", () => {
 
 	test("renders the active view and forwards interactions", async () => {
 		const panelState: PanelState = {
-			views: [{ instance: "files-1", kind: FILES_WIDGET_KIND }],
+			views: [{ instance: "files-1", kind: FILES_EXTENSION_KIND }],
 			activeInstance: "files-1",
 		};
 		const handleSelect = vi.fn();
@@ -157,26 +157,26 @@ describe("SidePanel", () => {
 		const handleRemove = vi.fn();
 		const handleOpenFile = vi.fn();
 		const viewContext = createViewContext({
-			openWidget: handleOpenFile,
+			openExtension: handleOpenFile,
 			isPanelFocused: true,
 		});
 
 		render(
-			<WidgetHostRegistryProvider>
+			<ExtensionHostRegistryProvider>
 				<DndContext>
 					<SidePanel
 						side="left"
 						title="Navigator"
 						panel={panelState}
-						onSelectWidget={handleSelect}
+						onSelectView={handleSelect}
 						onAddView={handleAdd}
-						onRemoveWidget={handleRemove}
+						onRemoveView={handleRemove}
 						viewContext={viewContext}
 						isFocused={true}
 						onFocusPanel={vi.fn()}
 					/>
 				</DndContext>
-			</WidgetHostRegistryProvider>,
+			</ExtensionHostRegistryProvider>,
 		);
 
 		const filesTab = await screen.findByRole("button", { name: "Files" });
@@ -194,8 +194,8 @@ describe("SidePanel", () => {
 		fireEvent.click(fileRow);
 		expect(handleOpenFile).toHaveBeenCalledWith({
 			panel: "central",
-			kind: FILE_WIDGET_KIND,
-			instance: fileWidgetInstance("file-writing"),
+			kind: FILE_EXTENSION_KIND,
+			instance: fileExtensionInstance("file-writing"),
 			state: {
 				fileId: "file-writing",
 				filePath: "/docs/guides/writing-style.md",
@@ -207,26 +207,26 @@ describe("SidePanel", () => {
 
 	test("removes focus flag when panel not focused", async () => {
 		const panelState: PanelState = {
-			views: [{ instance: "files-1", kind: FILES_WIDGET_KIND }],
+			views: [{ instance: "files-1", kind: FILES_EXTENSION_KIND }],
 			activeInstance: "files-1",
 		};
 
 		render(
-			<WidgetHostRegistryProvider>
+			<ExtensionHostRegistryProvider>
 				<DndContext>
 					<SidePanel
 						side="left"
 						title="Navigator"
 						panel={panelState}
-						onSelectWidget={() => {}}
+						onSelectView={() => {}}
 						onAddView={() => {}}
-						onRemoveWidget={() => {}}
+						onRemoveView={() => {}}
 						viewContext={createViewContext()}
 						isFocused={false}
 						onFocusPanel={vi.fn()}
 					/>
 				</DndContext>
-			</WidgetHostRegistryProvider>,
+			</ExtensionHostRegistryProvider>,
 		);
 
 		const filesTab = await screen.findByRole("button", { name: "Files" });

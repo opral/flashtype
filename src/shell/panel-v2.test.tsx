@@ -39,29 +39,29 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { PanelV2 } from "./panel-v2";
-import { WidgetHostRegistryProvider } from "../widget-runtime/widget-host-registry";
+import { ExtensionHostRegistryProvider } from "../extension-runtime/extension-host-registry";
 import type {
 	PanelState,
-	WidgetContext,
-	WidgetDefinition,
-} from "../widget-runtime/types";
+	ExtensionContext,
+	ExtensionDefinition,
+} from "../extension-runtime/types";
 import type { Lix } from "@/lib/lix-types";
 import { Flag, Search } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 
-const TEST_SEARCH_WIDGET_KIND = "test_search";
+const TEST_SEARCH_EXTENSION_KIND = "test_search";
 
 const emptyPanel: PanelState = { views: [], activeInstance: null };
 
 const singleSearchPanel: PanelState = {
-	views: [{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND }],
+	views: [{ instance: "search-1", kind: TEST_SEARCH_EXTENSION_KIND }],
 	activeInstance: "search-1",
 };
 
 const pendingSearchPanel: PanelState = {
 	views: [
-		{ instance: "search-1", kind: TEST_SEARCH_WIDGET_KIND, isPending: true },
+		{ instance: "search-1", kind: TEST_SEARCH_EXTENSION_KIND, isPending: true },
 	],
 	activeInstance: "search-1",
 };
@@ -69,16 +69,16 @@ const pendingSearchPanel: PanelState = {
 const mockLix = {} as Lix;
 
 const createViewContext = (
-	overrides: Partial<WidgetContext> = {},
-): WidgetContext => ({
+	overrides: Partial<ExtensionContext> = {},
+): ExtensionContext => ({
 	lix: mockLix,
 	isPanelFocused: false,
 	setTabBadgeCount: () => {},
 	...overrides,
 });
 
-const searchViewOverride: WidgetDefinition = {
-	kind: TEST_SEARCH_WIDGET_KIND,
+const searchViewOverride: ExtensionDefinition = {
+	kind: TEST_SEARCH_EXTENSION_KIND,
 	label: "Search",
 	description: "Test search view",
 	icon: Search,
@@ -94,7 +94,7 @@ const searchViewOverride: WidgetDefinition = {
 };
 
 const renderWithinProvider = (ui: React.ReactNode) =>
-	render(<WidgetHostRegistryProvider>{ui}</WidgetHostRegistryProvider>);
+	render(<ExtensionHostRegistryProvider>{ui}</ExtensionHostRegistryProvider>);
 
 describe("PanelV2", () => {
 	test("renders content container without padding or margin utilities", () => {
@@ -104,8 +104,8 @@ describe("PanelV2", () => {
 				panel={emptyPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				viewContext={createViewContext()}
 				emptyStatePlaceholder={<div data-testid="empty-placeholder">Empty</div>}
 			/>,
@@ -145,8 +145,8 @@ describe("PanelV2", () => {
 				panel={singleSearchPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				viewContext={createViewContext()}
 				viewOverrides={[searchViewOverride]}
 			/>,
@@ -165,8 +165,8 @@ describe("PanelV2", () => {
 				panel={singleSearchPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				viewContext={createViewContext()}
 				viewOverrides={[searchViewOverride]}
 			/>,
@@ -185,8 +185,8 @@ describe("PanelV2", () => {
 				panel={singleSearchPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				tabLabel={() => "Custom Search"}
 				viewContext={createViewContext()}
 				viewOverrides={[searchViewOverride]}
@@ -207,8 +207,8 @@ describe("PanelV2", () => {
 				panel={singleSearchPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				viewContext={createViewContext()}
 				viewOverrides={[searchViewOverride]}
 			/>,
@@ -233,8 +233,8 @@ describe("PanelV2", () => {
 				panel={singleSearchPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				onAddView={vi.fn()}
 				viewContext={createViewContext()}
 				viewOverrides={[searchViewOverride]}
@@ -252,8 +252,8 @@ describe("PanelV2", () => {
 				panel={pendingSearchPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				onActiveViewInteraction={finalize}
 				viewContext={createViewContext()}
 				viewOverrides={[searchViewOverride]}
@@ -272,8 +272,8 @@ describe("PanelV2", () => {
 				panel={emptyPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				viewContext={createViewContext()}
 				emptyStatePlaceholder={<div>No tabs</div>}
 			/>,
@@ -292,8 +292,8 @@ describe("PanelV2", () => {
 				panel={emptyPanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				emptyStatePlaceholder={<div />}
 				viewContext={createViewContext()}
 				dropId="custom-drop"
@@ -314,7 +314,7 @@ describe("PanelV2", () => {
 			activeInstance: "badge-1",
 		};
 
-		const badgeView: WidgetDefinition = {
+		const badgeView: ExtensionDefinition = {
 			kind: "badge-view",
 			label: "Badge",
 			description: "Test badge view",
@@ -342,8 +342,8 @@ describe("PanelV2", () => {
 				panel={badgePanel}
 				isFocused={false}
 				onFocusPanel={vi.fn()}
-				onSelectWidget={vi.fn()}
-				onRemoveWidget={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
 				viewContext={createViewContext()}
 				viewOverrides={[badgeView]}
 			/>,
