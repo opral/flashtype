@@ -56,9 +56,23 @@ export function FileTree({
 	const [openDirectories, setOpenDirectories] = useState(
 		() => new Set(directoryPaths),
 	);
+	const knownDirectoryPathsRef = useRef(new Set(directoryPaths));
 
 	useEffect(() => {
-		setOpenDirectories(new Set(directoryPaths));
+		const knownDirectoryPaths = knownDirectoryPathsRef.current;
+		const nextDirectoryPaths = new Set(directoryPaths);
+		const newDirectoryPaths = directoryPaths.filter(
+			(path) => !knownDirectoryPaths.has(path),
+		);
+		knownDirectoryPathsRef.current = nextDirectoryPaths;
+		if (newDirectoryPaths.length === 0) return;
+		setOpenDirectories((prev) => {
+			const next = new Set(prev);
+			for (const path of newDirectoryPaths) {
+				next.add(path);
+			}
+			return next;
+		});
 	}, [directoryPaths]);
 
 	const sortedNodes = useMemo(() => sortNodes(nodes), [nodes]);

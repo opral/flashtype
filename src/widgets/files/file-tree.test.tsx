@@ -24,6 +24,22 @@ describe("FileTree", () => {
 		expect(screen.getByText("guides")).toBeInTheDocument();
 	});
 
+	test("preserves collapsed directories when the tree data refreshes", () => {
+		const { rerender } = render(<FileTree nodes={mockTree} />);
+
+		fireEvent.click(screen.getByRole("button", { name: /docs/i }));
+		expect(screen.queryByText("guides")).toBeNull();
+
+		rerender(<FileTree nodes={mockTreeWithExternalFile} />);
+
+		expect(screen.queryByText("guides")).toBeNull();
+		expect(screen.queryByText("external.md")).toBeNull();
+		expect(screen.getByRole("button", { name: /docs/i })).toHaveAttribute(
+			"aria-expanded",
+			"false",
+		);
+	});
+
 	test("invokes openFileView when a file is selected", () => {
 		const nodes: FilesystemTreeNode[] = [
 			{
@@ -107,6 +123,43 @@ const mockTree: FilesystemTreeNode[] = [
 				name: "guides",
 				path: "/docs/guides",
 				children: [
+					{
+						type: "file",
+						id: "file-writing",
+						name: "writing-style.md",
+						path: "/docs/guides/writing-style.md",
+					},
+				],
+			},
+			{
+				type: "file",
+				id: "file-readme",
+				name: "README.md",
+				path: "/docs/README.md",
+			},
+		],
+	},
+];
+
+const mockTreeWithExternalFile: FilesystemTreeNode[] = [
+	{
+		type: "directory",
+		id: "dir-docs",
+		name: "docs",
+		path: "/docs",
+		children: [
+			{
+				type: "directory",
+				id: "dir-guides",
+				name: "guides",
+				path: "/docs/guides",
+				children: [
+					{
+						type: "file",
+						id: "file-external",
+						name: "external.md",
+						path: "/docs/guides/external.md",
+					},
 					{
 						type: "file",
 						id: "file-writing",
