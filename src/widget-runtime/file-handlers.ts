@@ -1,5 +1,11 @@
 import type { WidgetDefinition } from "./types";
 
+export const EXTERNAL_WRITE_REVIEWABLE_FILE_EXTENSIONS = [
+	"md",
+	"markdown",
+	"csv",
+] as const;
+
 export function normalizeFileExtension(extension: string): string | undefined {
 	const normalized = extension.trim().replace(/^\./, "").toLowerCase();
 	return normalized.length > 0 ? normalized : undefined;
@@ -25,6 +31,20 @@ export function fileExtensionFromPath(filePath: string): string | undefined {
 export function isMarkdownFilePath(filePath: string): boolean {
 	const extension = fileExtensionFromPath(filePath);
 	return extension === "md" || extension === "markdown";
+}
+
+export function isCsvFilePath(filePath: string): boolean {
+	return fileExtensionFromPath(filePath) === "csv";
+}
+
+export function isExternalWriteReviewableFilePath(filePath: string): boolean {
+	const extension = fileExtensionFromPath(filePath);
+	return (
+		extension !== undefined &&
+		EXTERNAL_WRITE_REVIEWABLE_FILE_EXTENSIONS.includes(
+			extension as (typeof EXTERNAL_WRITE_REVIEWABLE_FILE_EXTENSIONS)[number],
+		)
+	);
 }
 
 export function findFileHandlerWidget(

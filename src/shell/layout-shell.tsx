@@ -29,6 +29,17 @@ import { TopBar } from "./top-bar";
 import { FlashtypeMenu } from "./top-bar/flashtype-menu";
 import { BranchSwitcher } from "./top-bar/branch-switcher";
 import { StatusBar } from "./status-bar";
+import {
+	ExternalWriteDetector,
+	type ExternalFileWrite,
+} from "./external-write-detector";
+import { getExternalWriteReview } from "./external-write-review-history";
+import { markFlashtypeFileWrite } from "@/widget-runtime/external-write-tracking";
+import {
+	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
+	type ExternalWriteReview,
+} from "@/widget-runtime/external-write-review";
+import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import { qb } from "@/lib/lix-kysely";
 import {
 	WidgetHostRegistryProvider,
@@ -288,6 +299,26 @@ export function V2LayoutShell({
 	);
 }
 
+function isExternalWriteReview(value: unknown): value is ExternalWriteReview {
+	if (!value || typeof value !== "object") return false;
+	const review = value as Partial<ExternalWriteReview>;
+	return (
+		typeof review.fileId === "string" &&
+		typeof review.path === "string" &&
+		typeof review.reviewId === "string" &&
+		review.beforeData instanceof Uint8Array &&
+		review.afterData instanceof Uint8Array
+	);
+}
+
+function fileBytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+	if (left.byteLength !== right.byteLength) return false;
+	for (let index = 0; index < left.byteLength; index += 1) {
+		if (left[index] !== right[index]) return false;
+	}
+	return true;
+}
+
 function isPanelShortcutBlockedTarget(target: EventTarget | null): boolean {
 	if (!target || !(target instanceof HTMLElement)) {
 		return false;
@@ -373,6 +404,7 @@ function LayoutShellContent({
 	});
 	const leftPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const rightPanelRef = useRef<ImperativePanelHandle | null>(null);
+	const ignoredExternalWriteReviewFileIdsRef = useRef(new Set<string>());
 	const viewHostRegistry = useWidgetHostRegistry();
 
 	const activeInstances = useMemo(() => {
@@ -754,6 +786,7 @@ function LayoutShellContent({
 			fileId,
 			filePath,
 			state,
+			launchArgs,
 			focus = true,
 			pending = false,
 		}: {
@@ -761,6 +794,7 @@ function LayoutShellContent({
 			fileId: string;
 			filePath: string;
 			state?: WidgetState;
+			launchArgs?: WidgetLaunchArgs;
 			focus?: boolean;
 			pending?: boolean;
 		}) => {
@@ -776,11 +810,184 @@ function LayoutShellContent({
 					...buildFileWidgetProps({ fileId, filePath }),
 					...(state ?? {}),
 				},
+				launchArgs,
 				focus,
 				pending,
 			});
 		},
 		[handleOpenView, widgetMap],
+	);
+
+	const clearExternalWriteReview = useCallback(
+		({
+			fileId,
+			reviewId,
+		}: {
+			readonly fileId: string;
+			readonly reviewId?: string;
+		}) => {
+			const clearPanel = (panel: PanelState): PanelState => {
+				let changed = false;
+				const views = panel.views.map((view) => {
+					if (view.state?.fileId !== fileId) return view;
+					if (
+						!view.launchArgs ||
+						!(EXTERNAL_WRITE_REVIEW_LAUNCH_ARG in view.launchArgs)
+					) {
+						return view;
+					}
+					const review = view.launchArgs[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
+					if (
+						reviewId &&
+						(!isExternalWriteReview(review) || review.reviewId !== reviewId)
+					) {
+						return view;
+					}
+					const {
+						[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG]: _review,
+						...restLaunchArgs
+					} = view.launchArgs as Record<string, unknown>;
+					changed = true;
+					return {
+						...view,
+						launchArgs:
+							Object.keys(restLaunchArgs).length > 0
+								? restLaunchArgs
+								: undefined,
+					};
+				});
+				return changed ? { ...panel, views } : panel;
+			};
+			setPanelState("left", clearPanel);
+			setPanelState("central", clearPanel);
+			setPanelState("right", clearPanel);
+		},
+		[setPanelState],
+	);
+
+	const getExternalWriteReviewForFile = useCallback(
+		({
+			fileId,
+			reviewId,
+		}: {
+			readonly fileId: string;
+			readonly reviewId: string;
+		}): ExternalWriteReview | null => {
+			const findInPanel = (panel: PanelState): ExternalWriteReview | null => {
+				for (const view of panel.views) {
+					if (view.state?.fileId !== fileId) continue;
+					const review = view.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
+					if (isExternalWriteReview(review) && review.reviewId === reviewId) {
+						return review;
+					}
+				}
+				return null;
+			};
+			return (
+				findInPanel(leftPanel) ??
+				findInPanel(centralPanel) ??
+				findInPanel(rightPanel)
+			);
+		},
+		[leftPanel, centralPanel, rightPanel],
+	);
+
+	const isExternalWriteReviewCurrent = useCallback(
+		async (review: ExternalWriteReview): Promise<boolean> => {
+			const current = await qb(lix)
+				.selectFrom("lix_file")
+				.select(["data"])
+				.where("id", "=", review.fileId)
+				.limit(1)
+				.executeTakeFirst();
+			return (
+				!!current &&
+				fileBytesEqual(decodeFileDataToBytes(current.data), review.afterData)
+			);
+		},
+		[lix],
+	);
+
+	const handleAcceptExternalWriteReview = useCallback(
+		(args: { readonly fileId: string; readonly reviewId: string }) => {
+			const review = getExternalWriteReviewForFile(args);
+			if (!review) {
+				clearExternalWriteReview(args);
+				return;
+			}
+			void (async () => {
+				if (await isExternalWriteReviewCurrent(review)) {
+					clearExternalWriteReview(args);
+				} else {
+					clearExternalWriteReview(args);
+				}
+			})();
+		},
+		[
+			getExternalWriteReviewForFile,
+			isExternalWriteReviewCurrent,
+			clearExternalWriteReview,
+		],
+	);
+
+	const handleRejectExternalWriteReview = useCallback(
+		async (args: { readonly fileId: string; readonly reviewId: string }) => {
+			const review = getExternalWriteReviewForFile(args);
+			if (!review) {
+				clearExternalWriteReview(args);
+				return;
+			}
+			if (!(await isExternalWriteReviewCurrent(review))) {
+				clearExternalWriteReview(args);
+				return;
+			}
+			const { fileId } = args;
+			ignoredExternalWriteReviewFileIdsRef.current.add(fileId);
+			markFlashtypeFileWrite(fileId, review.beforeData);
+			await qb(lix)
+				.updateTable("lix_file")
+				.set({ data: review.beforeData })
+				.where("id", "=", fileId)
+				.execute();
+			clearExternalWriteReview(args);
+			window.setTimeout(() => {
+				ignoredExternalWriteReviewFileIdsRef.current.delete(fileId);
+				clearExternalWriteReview(args);
+			}, 1500);
+		},
+		[
+			lix,
+			getExternalWriteReviewForFile,
+			isExternalWriteReviewCurrent,
+			clearExternalWriteReview,
+		],
+	);
+
+	const handleExternalFileWrites = useCallback(
+		(writes: ExternalFileWrite[]) => {
+			void (async () => {
+				for (const write of writes) {
+					if (ignoredExternalWriteReviewFileIdsRef.current.has(write.fileId)) {
+						clearExternalWriteReview({ fileId: write.fileId });
+						continue;
+					}
+					const review = await getExternalWriteReview(
+						lix,
+						write.fileId,
+						write.path,
+					);
+					if (!review) continue;
+					handleOpenFile({
+						panel: "central",
+						fileId: write.fileId,
+						filePath: write.path,
+						launchArgs: { [EXTERNAL_WRITE_REVIEW_LAUNCH_ARG]: review },
+						focus: true,
+					});
+				}
+			})();
+		},
+		[lix, handleOpenFile, clearExternalWriteReview],
 	);
 
 	const handleCloseView = useCallback(
@@ -1263,6 +1470,8 @@ function LayoutShellContent({
 			uninstallWidget: handleUninstallWidget,
 			resizePanel: handleResizePanel,
 			focusPanel: focusPanel,
+			acceptExternalWriteReview: handleAcceptExternalWriteReview,
+			rejectExternalWriteReview: handleRejectExternalWriteReview,
 			lix,
 		}),
 		[
@@ -1273,6 +1482,8 @@ function LayoutShellContent({
 			handleInstallWidgetFromFiles,
 			handleUninstallWidget,
 			handleResizePanel,
+			handleAcceptExternalWriteReview,
+			handleRejectExternalWriteReview,
 			focusPanel,
 			lix,
 		],
@@ -1437,6 +1648,7 @@ function LayoutShellContent({
 			onDragStart={handleDragStart}
 			onDragEnd={handleDragEnd}
 		>
+			<ExternalWriteDetector onExternalWrites={handleExternalFileWrites} />
 			<div
 				className="relative flex flex-col bg-shell text-neutral-900"
 				style={{

@@ -21,6 +21,13 @@ export default defineConfig({
 		setupFiles: ["setup-tests.ts"],
 		testTimeout: 60_000,
 		hookTimeout: 60_000,
-		exclude: [...configDefaults.exclude, "e2e/**", "submodule/**"],
+		exclude: [
+			...configDefaults.exclude,
+			"e2e/**",
+			"submodule/**",
+			".claude/**",
+			"website/dist/**",
+			"**/target/**",
+		],
 	},
 });

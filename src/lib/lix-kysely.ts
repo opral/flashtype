@@ -18,19 +18,12 @@ export { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/sqlite";
 
 export type LixDatabaseSchema = Record<string, Record<string, any>>;
 
-export type LixExecuteOptions = {
-	writerKey?: string | null;
-};
-
-export type CreateLixKyselyOptions = LixExecuteOptions;
-
 type LixQueryResult = ExecuteResult;
 
 type LixExecuteLike = {
 	execute(
 		sql: string,
 		params?: ReadonlyArray<unknown>,
-		options?: LixExecuteOptions,
 	): Promise<LixQueryResult>;
 };
 
@@ -104,10 +97,7 @@ class LixDriver implements Driver {
 	private transaction: LixTransactionLike | undefined;
 	private waiters: Array<() => void> = [];
 
-	constructor(
-		private readonly lix: LixExecuteLike,
-		private readonly options?: LixExecuteOptions,
-	) {
+	constructor(private readonly lix: LixExecuteLike) {
 		this.connection = new LixConnection((sql, params) =>
 			this.executeSql(sql, params),
 		);
@@ -191,7 +181,7 @@ class LixDriver implements Driver {
 		if (this.transaction) {
 			return this.transaction.execute(sql, params);
 		}
-		return this.lix.execute(sql, params, this.options);
+		return this.lix.execute(sql, params);
 	}
 
 	private async acquireTransactionSlot(): Promise<void> {
@@ -219,17 +209,8 @@ class LixQueryCompiler extends SqliteQueryCompiler {
 
 const cache = new WeakMap<object, Map<string, Kysely<LixDatabaseSchema>>>();
 
-export function createLixKysely(
-	lix: LixLike,
-	options: CreateLixKyselyOptions = {},
-): Kysely<LixDatabaseSchema> {
-	const writerKey = normalizeWriterKey(options.writerKey);
+export function createLixKysely(lix: LixLike): Kysely<LixDatabaseSchema> {
 	if (isLixDbLike(lix)) {
-		if (writerKey !== undefined) {
-			throw new TypeError(
-				"createLixKysely writerKey option requires lix.execute(sql, params, options)",
-			);
-		}
 		return lix.db as Kysely<LixDatabaseSchema>;
 	}
 	if (!isLixExecuteLike(lix)) {
@@ -238,7 +219,7 @@ export function createLixKysely(
 		);
 	}
 
-	const cacheKey = writerKeyCacheKey(writerKey);
+	const cacheKey = "__default__";
 	const cached = cache.get(lix as object)?.get(cacheKey);
 	if (cached) {
 		return cached;
@@ -246,7 +227,7 @@ export function createLixKysely(
 
 	const dialect = {
 		createAdapter: () => new SqliteAdapter(),
-		createDriver: () => new LixDriver(lix, { writerKey }),
+		createDriver: () => new LixDriver(lix),
 		createIntrospector: (db: Kysely<any>) => new SqliteIntrospector(db),
 		createQueryCompiler: () => new LixQueryCompiler(),
 	};
@@ -261,8 +242,7 @@ export function createLixKysely(
 	return db;
 }
 
-export const qb = (lix: LixLike, options?: CreateLixKyselyOptions) =>
-	createLixKysely(lix, options);
+export const qb = (lix: LixLike) => createLixKysely(lix);
 
 export function rawLixQuery<TRow>(
 	lix: LixExecuteLike,
@@ -451,19 +431,6 @@ function isLixDbLike(value: unknown): value is LixDbLike {
 		"db" in value &&
 		Boolean((value as { db?: unknown }).db)
 	);
-}
-
-function normalizeWriterKey(value: unknown): string | null | undefined {
-	if (value === undefined || value === null || typeof value === "string") {
-		return value;
-	}
-	throw new TypeError("createLixKysely writerKey must be a string or null");
-}
-
-function writerKeyCacheKey(writerKey: string | null | undefined): string {
-	if (writerKey === undefined) return "__default__";
-	if (writerKey === null) return "__null__";
-	return `writer:${writerKey}`;
 }
 
 function decodeRows(

@@ -7,7 +7,6 @@ import type {
 	SqlParam,
 } from "../../submodule/lix/packages/js-sdk/dist/index.js";
 import type {
-	ExecuteOptions,
 	Lix,
 	ObserveEvents,
 	OpenLixKeyValueEntry,
@@ -86,14 +85,10 @@ async function seedKeyValues(
 
 function createTestLixAdapter(sdkLix: SdkLix): Lix {
 	return {
-		async execute(
-			sql: string,
-			params: ReadonlyArray<unknown> = [],
-			_options?: ExecuteOptions,
-		) {
+		async execute(sql: string, params: ReadonlyArray<unknown> = []) {
 			return await sdkLix.execute(sql, toSqlParams(params));
 		},
-		async beginTransaction(_options?: ExecuteOptions) {
+		async beginTransaction() {
 			const transaction = await sdkLix.beginTransaction();
 			return {
 				async execute(sql: string, params: ReadonlyArray<unknown> = []) {
@@ -108,16 +103,12 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			};
 		},
 		async transaction<T>(
-			first: ExecuteOptions | ((tx: SqlTransaction) => Promise<T>),
-			second?: (tx: SqlTransaction) => Promise<T>,
+			callback: (tx: SqlTransaction) => Promise<T>,
 		): Promise<T> {
-			const callback = typeof first === "function" ? first : second;
 			if (typeof callback !== "function") {
 				throw new TypeError("transaction requires a callback");
 			}
-			const tx = await this.beginTransaction(
-				typeof first === "function" ? undefined : first,
-			);
+			const tx = await this.beginTransaction();
 			try {
 				const result = await callback(tx);
 				await tx.commit();
@@ -127,11 +118,8 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 				throw error;
 			}
 		},
-		async executeTransaction(
-			statements: ReadonlyArray<TransactionStatement>,
-			options?: ExecuteOptions,
-		) {
-			const transaction = await this.beginTransaction(options);
+		async executeTransaction(statements: ReadonlyArray<TransactionStatement>) {
+			const transaction = await this.beginTransaction();
 			let result: ExecuteResult = emptyExecuteResult();
 			try {
 				for (const statement of statements) {

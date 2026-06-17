@@ -30,18 +30,18 @@ test("updates when CSV file data changes in Lix", async () => {
 		);
 	});
 
-	expect(await screen.findByText(/1 rows/)).toBeInTheDocument();
+	expect(await screen.findByText("name")).toBeInTheDocument();
 
 	await act(async () => {
 		await qb(lix)
 			.updateTable("lix_file")
-			.set({ data: new TextEncoder().encode("name,value\nbeta,2\ngamma,3") })
+			.set({ data: new TextEncoder().encode("person,score\nbeta,2\ngamma,3") })
 			.where("id", "=", fileId)
 			.execute();
 	});
 
 	await waitFor(() => {
-		expect(screen.getByText(/2 rows/)).toBeInTheDocument();
+		expect(screen.getByText("person")).toBeInTheDocument();
 	});
 
 	await act(async () => {

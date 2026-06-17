@@ -1,0 +1,74 @@
+.external-write-review-actions {
+	position: absolute;
+	left: 50%;
+	bottom: 1.5rem;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.38rem;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 0.85rem;
+	background: rgb(38, 34, 31);
+	box-shadow:
+		0 26px 70px rgba(38, 34, 31, 0.28),
+		0 10px 30px rgba(38, 34, 31, 0.18),
+		0 1px 0 rgba(255, 255, 255, 0.08) inset;
+	transform: translateX(-50%);
+	backdrop-filter: blur(16px);
+}
+
+.external-write-review-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.42rem;
+	height: 2.05rem;
+	min-width: 4.9rem;
+	padding: 0 0.85rem;
+	border: 1px solid transparent;
+	border-radius: 0.68rem;
+	font-size: 0.86rem;
+	font-weight: 720;
+	line-height: 1;
+	white-space: nowrap;
+	transition:
+		background-color 120ms ease,
+		border-color 120ms ease,
+		color 120ms ease;
+}
+
+.external-write-review-button-accept {
+	background: var(--color-brand-600);
+	color: white;
+	box-shadow:
+		0 1px 0 rgba(255, 255, 255, 0.18) inset,
+		0 8px 18px rgba(0, 0, 0, 0.14);
+}
+
+.external-write-review-button-accept:hover {
+	background: var(--color-brand-700);
+}
+
+.external-write-review-button-reject {
+	background: transparent;
+	color: rgba(255, 255, 255, 0.88);
+}
+
+.external-write-review-button-reject:hover {
+	background: rgba(255, 255, 255, 0.09);
+	color: rgb(255, 255, 255);
+}
+
+.external-write-review-shortcut {
+	color: rgba(255, 255, 255, 0.72);
+	font-family:
+		-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+	font-size: 0.68rem;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.external-write-review-shortcut-dark {
+	color: rgba(255, 255, 255, 0.58);
+}

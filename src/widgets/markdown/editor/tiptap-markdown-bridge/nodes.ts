@@ -10,6 +10,16 @@ declare module "@tiptap/core" {
 }
 
 // Minimal schema-only nodes and marks for MarkdownWc
+function diffAttrs(node: any, mode: "words" | "element" = "words"): any {
+	const id = node?.attrs?.data?.id;
+	if (typeof id !== "string" || id.length === 0) return {};
+	return {
+		"data-diff-key": id,
+		"data-diff-mode": mode,
+		"data-diff-show-when-removed": "true",
+	};
+}
+
 export function markdownWcNodes(): Extensions {
 	return [
 		// doc
@@ -24,8 +34,8 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { data: { default: null } };
 			},
-			renderHTML() {
-				return ["p", 0];
+			renderHTML({ node }) {
+				return ["p", diffAttrs(node), 0];
 			},
 		}),
 		// heading
@@ -38,7 +48,7 @@ export function markdownWcNodes(): Extensions {
 			},
 			renderHTML({ node }) {
 				const level = (node as any).attrs?.level || 1;
-				return ["h" + level, 0];
+				return ["h" + level, diffAttrs(node), 0];
 			},
 		}),
 		// lists
@@ -49,9 +59,9 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { isTaskList: { default: false }, data: { default: null } };
 			},
-			renderHTML() {
+			renderHTML({ node }) {
 				// Match serializeToHtml default: plain <ul>
-				return ["ul", 0];
+				return ["ul", diffAttrs(node, "element"), 0];
 			},
 		}),
 		Node.create({
@@ -65,7 +75,7 @@ export function markdownWcNodes(): Extensions {
 				const attrs: any = {};
 				const start = (node as any).attrs?.start;
 				if (start && start !== 1) attrs.start = start;
-				return ["ol", attrs, 0];
+				return ["ol", { ...attrs, ...diffAttrs(node, "element") }, 0];
 			},
 		}),
 		// table
@@ -76,8 +86,8 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { align: { default: [] }, data: { default: null } };
 			},
-			renderHTML() {
-				return ["table", ["tbody", 0]];
+			renderHTML({ node }) {
+				return ["table", diffAttrs(node, "element"), ["tbody", 0]];
 			},
 		}),
 		Node.create({
@@ -86,8 +96,8 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { data: { default: null } };
 			},
-			renderHTML() {
-				return ["tr", 0];
+			renderHTML({ node }) {
+				return ["tr", diffAttrs(node, "element"), 0];
 			},
 		}),
 		Node.create({
@@ -96,8 +106,8 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { data: { default: null } };
 			},
-			renderHTML() {
-				return ["td", 0];
+			renderHTML({ node }) {
+				return ["td", diffAttrs(node), 0];
 			},
 		}),
 		Node.create({
@@ -108,9 +118,9 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { checked: { default: null }, data: { default: null } };
 			},
-			renderHTML() {
+			renderHTML({ node }) {
 				// Match serializeToHtml default: plain <li>
-				return ["li", 0];
+				return ["li", diffAttrs(node, "element"), 0];
 			},
 			addNodeView() {
 				return ({ node, editor, getPos }) => {
@@ -139,6 +149,11 @@ export function markdownWcNodes(): Extensions {
 							editor.view.dispatch(tr);
 						});
 						dom.appendChild(input);
+					}
+					for (const [key, value] of Object.entries(
+						diffAttrs(node, "element"),
+					)) {
+						dom.setAttribute(key, String(value));
 					}
 					dom.appendChild(content);
 					return {
@@ -177,8 +192,8 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { data: { default: null } };
 			},
-			renderHTML() {
-				return ["blockquote", 0];
+			renderHTML({ node }) {
+				return ["blockquote", diffAttrs(node, "element"), 0];
 			},
 		}),
 		// code block
@@ -194,7 +209,7 @@ export function markdownWcNodes(): Extensions {
 			},
 			renderHTML({ node }) {
 				const lang = (node as any).attrs?.language ?? null;
-				const codeAttrs: any = {};
+				const codeAttrs: any = diffAttrs(node);
 				if (lang) codeAttrs.class = `language-${lang}`;
 				return ["pre", ["code", codeAttrs, 0]];
 			},
@@ -206,8 +221,8 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { data: { default: null } };
 			},
-			renderHTML() {
-				return ["hr"];
+			renderHTML({ node }) {
+				return ["hr", diffAttrs(node, "element")];
 			},
 			addCommands() {
 				const nodeName = this.name;
@@ -246,6 +261,7 @@ export function markdownWcNodes(): Extensions {
 					{
 						"data-markdown-wc-unsupported": kind,
 						class: "markdown-wc-unsupported-block",
+						...diffAttrs(node, "element"),
 					},
 					["strong", label],
 					["pre", ["code", value]],
@@ -271,6 +287,7 @@ export function markdownWcNodes(): Extensions {
 					{
 						"data-markdown-inline-html": "true",
 						class: "markdown-wc-inline-html",
+						...diffAttrs(node, "element"),
 					},
 					["code", (node as any).attrs?.value ?? ""],
 				];
@@ -285,8 +302,8 @@ export function markdownWcNodes(): Extensions {
 			addAttributes() {
 				return { data: { default: null } };
 			},
-			renderHTML() {
-				return ["br"];
+			renderHTML({ node }) {
+				return ["br", diffAttrs(node, "element")];
 			},
 		}),
 		// marks
@@ -354,7 +371,7 @@ export function markdownWcNodes(): Extensions {
 				if (alt) attrs.alt = alt;
 				const title = (node as any).attrs?.title;
 				if (title) attrs.title = title;
-				return ["img", attrs];
+				return ["img", { ...attrs, ...diffAttrs(node, "element") }];
 			},
 		}),
 	];

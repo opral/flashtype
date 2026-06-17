@@ -244,3 +244,59 @@
 	margin-top: 0;
 	margin-bottom: 0;
 }
+
+.markdown-review {
+	position: relative;
+}
+
+.markdown-review-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 15;
+	display: flex;
+	min-height: 0;
+	flex-direction: column;
+	background: var(--background);
+}
+
+.markdown-review .markdown-review-surface {
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.markdown-review .ProseMirror {
+	cursor: default;
+	user-select: text;
+}
+
+.markdown-review .ProseMirror [data-diff-status="added"] {
+	background-color: color-mix(in srgb, var(--color-green-500) 8%, transparent);
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
+	border-radius: 0.25rem;
+	color: color-mix(
+		in srgb,
+		var(--color-green-700) 88%,
+		var(--color-neutral-900)
+	);
+	text-decoration: none;
+}
+
+.markdown-review .ProseMirror [data-diff-status="removed"] {
+	background-color: color-mix(in srgb, var(--color-red-500) 7%, transparent);
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
+	border-radius: 0.25rem;
+	color: color-mix(in srgb, var(--color-red-700) 82%, var(--color-neutral-900));
+	text-decoration: line-through;
+	text-decoration-color: color-mix(
+		in srgb,
+		var(--color-red-700) 68%,
+		transparent
+	);
+}
+
+.markdown-review .ProseMirror [data-diff-status="modified"] {
+	background-color: color-mix(in srgb, var(--color-amber-400) 9%, transparent);
+	border-radius: 0.25rem;
+}

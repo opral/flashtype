@@ -20,10 +20,10 @@ type CreateEditorArgs = {
 	onCreate?: (args: { editor: Editor }) => void;
 	onUpdate?: (args: { editor: Editor }) => void | false;
 	editorProps?: any;
+	editable?: boolean;
 	fileId?: string;
 	persistDebounceMs?: number;
 	persistState?: boolean;
-	writerKey?: string | null;
 };
 
 const createNodeId = (): string => {
@@ -73,10 +73,10 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		onCreate,
 		onUpdate,
 		editorProps,
+		editable = true,
 		fileId,
 		persistDebounceMs,
 		persistState = true,
-		writerKey,
 	} = args;
 
 	const ast = contentAst ?? (parseMarkdown(initialMarkdown ?? "") as any);
@@ -89,7 +89,6 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		initialMarkdown ?? serializeAst(ast as any),
 	);
 	const persistDebounceMsResolved = persistDebounceMs ?? 0;
-	const resolvedWriterKey = writerKey ?? undefined;
 
 	const placeholderConfig: any = {
 		placeholder: ({ node }: { node: any }) =>
@@ -119,6 +118,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 			}),
 			TableNavigationExtension,
 		],
+		editable,
 		content: astToTiptapDoc(ast) as any,
 		onCreate: ({ editor }) => {
 			currentEditor = editor as Editor;
@@ -156,7 +156,6 @@ export function createEditor(args: CreateEditorArgs): Editor {
 						lix,
 						fileId,
 						markdown,
-						writerKey: resolvedWriterKey,
 					});
 					lastPersistedMarkdown = markdown;
 				} finally {

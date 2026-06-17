@@ -5,7 +5,6 @@ import type {
 	SwitchBranchReceipt,
 } from "@lix-js/sdk";
 import type {
-	ExecuteOptions,
 	Lix,
 	LixRow,
 	LixRuntimeQueryResult,
@@ -58,23 +57,20 @@ export async function openDesktopLix(): Promise<Lix> {
 	const execute = async (
 		sql: string,
 		params: ReadonlyArray<unknown> = [],
-		options?: ExecuteOptions,
 	): Promise<LixRuntimeQueryResult> => {
 		ensureOpen("execute");
 		return toRuntimeQueryResult(
-			await runQueued(() => desktop.lix.execute({ sql, params, options })),
+			await runQueued(() => desktop.lix.execute({ sql, params })),
 		);
 	};
 
-	const beginTransaction = async (
-		options?: ExecuteOptions,
-	): Promise<SqlTransaction> => {
+	const beginTransaction = async (): Promise<SqlTransaction> => {
 		ensureOpen("beginTransaction");
 		const releaseSlot = await acquireTransactionSlot();
 		let transactionClosed = false;
 		let transactionId = "";
 		try {
-			const handle = await desktop.lix.transactionBegin({ options });
+			const handle = await desktop.lix.transactionBegin();
 			transactionId = handle.transactionId;
 		} catch (error) {
 			releaseSlot();
@@ -139,25 +135,13 @@ export async function openDesktopLix(): Promise<Lix> {
 	};
 
 	async function transaction<T>(
-		options: ExecuteOptions,
-		f: (tx: SqlTransaction) => Promise<T>,
-	): Promise<T>;
-	async function transaction<T>(
-		f: (tx: SqlTransaction) => Promise<T>,
-	): Promise<T>;
-	async function transaction<T>(
-		first: ExecuteOptions | ((tx: SqlTransaction) => Promise<T>),
-		second?: (tx: SqlTransaction) => Promise<T>,
+		callback: (tx: SqlTransaction) => Promise<T>,
 	): Promise<T> {
 		ensureOpen("transaction");
-		const options = typeof first === "function" ? undefined : first;
-		const callback = (typeof first === "function" ? first : second) as
-			| ((tx: SqlTransaction) => Promise<T>)
-			| undefined;
 		if (typeof callback !== "function") {
 			throw new Error("transaction requires an async callback");
 		}
-		const tx = await beginTransaction(options);
+		const tx = await beginTransaction();
 		try {
 			const value = await callback(tx);
 			await tx.commit();
@@ -174,14 +158,12 @@ export async function openDesktopLix(): Promise<Lix> {
 
 	const executeTransaction = async (
 		statements: ReadonlyArray<TransactionStatement>,
-		options?: ExecuteOptions,
 	): Promise<LixRuntimeQueryResult> => {
 		ensureOpen("executeTransaction");
 		return toRuntimeQueryResult(
 			await runQueued(() =>
 				desktop.lix.executeTransaction({
 					statements,
-					options,
 				}),
 			),
 		);

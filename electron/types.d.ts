@@ -22,10 +22,6 @@ export type SerializedQueryResult = {
 	}>;
 };
 
-export type DesktopExecuteOptions = {
-	writerKey?: string | null;
-};
-
 export type DesktopCreateBranchOptions = {
 	id?: string;
 	name: string;
@@ -55,18 +51,14 @@ export type DesktopLixApi = {
 	execute(payload: {
 		sql: string;
 		params?: ReadonlyArray<unknown>;
-		options?: DesktopExecuteOptions;
 	}): Promise<SerializedQueryResult>;
 	executeTransaction(payload: {
 		statements: ReadonlyArray<{
 			sql: string;
 			params?: ReadonlyArray<unknown>;
 		}>;
-		options?: DesktopExecuteOptions;
 	}): Promise<SerializedQueryResult>;
-	transactionBegin(payload?: {
-		options?: DesktopExecuteOptions;
-	}): Promise<{ transactionId: string }>;
+	transactionBegin(): Promise<{ transactionId: string }>;
 	transactionExecute(payload: {
 		transactionId: string;
 		sql: string;

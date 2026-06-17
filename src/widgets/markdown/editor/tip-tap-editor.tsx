@@ -158,7 +158,6 @@ function TipTapEditorLoadedContent({
 	const lix = useLix();
 	const { setEditor } = useEditorCtx();
 	const PERSIST_DEBOUNCE_MS = persistDebounceMs ?? 500;
-	const writerKey = "flashtype_tiptap_editor";
 	const normalizePersistedMarkdown = (markdown: string): string =>
 		markdown.endsWith("\n") ? markdown : `${markdown}\n`;
 
@@ -179,13 +178,11 @@ function TipTapEditorLoadedContent({
 			contentAst: hasAstSnapshot ? initialAst : undefined,
 			fileId: activeFileId,
 			persistDebounceMs: PERSIST_DEBOUNCE_MS,
-			writerKey,
 		});
 	}, [
 		lix,
 		activeFileId,
 		PERSIST_DEBOUNCE_MS,
-		writerKey,
 		hasInitialFile,
 		initialAst,
 		initialAstLoaded,
@@ -417,7 +414,7 @@ function TipTapEditorLoadedContent({
 			closed = true;
 			events.close();
 		};
-	}, [lix, editor, activeFileId, activeBranchId, writerKey, initialMarkdown]);
+	}, [lix, editor, activeFileId, activeBranchId, initialMarkdown]);
 
 	useEffect(() => {
 		hasAutoFocusedRef.current = false;

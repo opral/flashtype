@@ -37,16 +37,14 @@ export function registerLixIpc() {
 		const lix = await ensureLixOpenForEvent(event);
 		const sql = String(payload?.sql ?? "");
 		const params = normalizeParams(payload?.params);
-		const options = normalizeExecuteOptions(payload?.options);
 		const started = performance.now();
 		try {
-			const result = await lix.execute(sql, params, options);
+			const result = await lix.execute(sql, params);
 			const serialized = serializeExecuteResult(result, "lix.execute");
 			logSlowOperation("execute", started, {
 				sqlHash: hashString(sql),
 				sql: summarizeSql(sql),
 				paramShapes: params.map((param) => sqlParamShape(param)),
-				writerKey: options?.writerKey ?? null,
 				rowCount: serialized.rows.length,
 				columnCount: serialized.columns.length,
 			});
@@ -56,7 +54,6 @@ export function registerLixIpc() {
 				sqlHash: hashString(sql),
 				sql: summarizeSql(sql),
 				paramShapes: params.map((param) => sqlParamShape(param)),
-				writerKey: options?.writerKey ?? null,
 				error: formatError(error),
 			});
 			throw error;
@@ -71,10 +68,9 @@ export function registerLixIpc() {
 					params: normalizeParams(statement?.params),
 				}))
 			: [];
-		const options = normalizeExecuteOptions(payload?.options);
 		const started = performance.now();
 		try {
-			const result = await lix.executeTransaction(statements, options);
+			const result = await lix.executeTransaction(statements);
 			const serialized = serializeExecuteResult(
 				result,
 				"lix.executeTransaction",
@@ -86,7 +82,6 @@ export function registerLixIpc() {
 					sql: summarizeSql(statement.sql),
 					paramShapes: statement.params.map((param) => sqlParamShape(param)),
 				})),
-				writerKey: options?.writerKey ?? null,
 				rowCount: serialized.rows.length,
 				columnCount: serialized.columns.length,
 			});
@@ -99,18 +94,15 @@ export function registerLixIpc() {
 					sql: summarizeSql(statement.sql),
 					paramShapes: statement.params.map((param) => sqlParamShape(param)),
 				})),
-				writerKey: options?.writerKey ?? null,
 				error: formatError(error),
 			});
 			throw error;
 		}
 	});
 
-	ipcMain.handle("lix:transaction:begin", async (event, payload) => {
+	ipcMain.handle("lix:transaction:begin", async (event) => {
 		const lix = await ensureLixOpenForEvent(event);
-		const transaction = await lix.beginTransaction(
-			normalizeExecuteOptions(payload?.options),
-		);
+		const transaction = await lix.beginTransaction();
 		const transactionId = createId("transaction");
 		transactionHandles.set(transactionId, transaction);
 		return { transactionId };
@@ -586,22 +578,6 @@ function isPlainObject(value) {
 
 function base64ToBytes(base64) {
 	return new Uint8Array(Buffer.from(base64, "base64"));
-}
-
-function normalizeExecuteOptions(options) {
-	if (!options || typeof options !== "object") {
-		return undefined;
-	}
-	const writerKey = options.writerKey;
-	if (writerKey === undefined) {
-		return undefined;
-	}
-	if (writerKey !== null && typeof writerKey !== "string") {
-		return undefined;
-	}
-	return {
-		writerKey,
-	};
 }
 
 function serializeQueryResult(result) {

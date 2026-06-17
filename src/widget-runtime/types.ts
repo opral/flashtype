@@ -141,9 +141,18 @@ export interface WidgetContext {
 		readonly fileId: string;
 		readonly filePath: string;
 		readonly state?: WidgetState;
+		readonly launchArgs?: WidgetLaunchArgs;
 		readonly focus?: boolean;
 		readonly pending?: boolean;
 	}) => void;
+	readonly acceptExternalWriteReview?: (args: {
+		readonly fileId: string;
+		readonly reviewId: string;
+	}) => void;
+	readonly rejectExternalWriteReview?: (args: {
+		readonly fileId: string;
+		readonly reviewId: string;
+	}) => Promise<void>;
 	readonly closeWidget?: (args: {
 		readonly panel?: PanelSide;
 		readonly instance?: string;

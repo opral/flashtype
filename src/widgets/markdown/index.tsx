@@ -1,4 +1,5 @@
 import { Suspense, useEffect } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { FileText, Loader2 } from "lucide-react";
 import { LixProvider, useLix, useQueryTakeFirst } from "@/lib/lix-react";
@@ -6,18 +7,36 @@ import { qb } from "@/lib/lix-kysely";
 import { isMarkdownFilePath } from "@/widget-runtime/file-handlers";
 import { EditorProvider } from "@/widgets/markdown/editor/editor-context";
 import { TipTapEditor } from "@/widgets/markdown/editor/tip-tap-editor";
+import { renderMarkdownReviewDiffHtml } from "./render-review-diff-html";
 import "./style.css";
 import { createReactWidgetDefinition } from "../../widget-runtime/react-widget";
 import { FILE_WIDGET_KIND } from "../../widget-runtime/widget-instance-helpers";
 import { FormattingToolbar } from "./components/formatting-toolbar";
 import { SlashCommandMenu } from "./components/slash-command-menu";
+import type { MarkdownReviewDiff } from "./review-diff";
+import { decodeFileDataToText } from "@/lib/decode-file-data";
+import { ExternalWriteReviewControls } from "@/widget-runtime/external-write-review-controls";
+import {
+	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
+	type ExternalWriteReview,
+} from "@/widget-runtime/external-write-review";
 
 type MarkdownViewProps = {
 	readonly fileId: string;
 	readonly filePath?: string;
 	readonly isActiveView?: boolean;
+	readonly isPanelFocused?: boolean;
 	readonly focusOnLoad?: boolean;
 	readonly syncActiveFile?: boolean;
+	readonly externalWriteReview?: ExternalWriteReview | null;
+	readonly onAcceptReviewDiff?: (args: {
+		readonly fileId: string;
+		readonly reviewId: string;
+	}) => void;
+	readonly onRejectReviewDiff?: (args: {
+		readonly fileId: string;
+		readonly reviewId: string;
+	}) => Promise<void>;
 };
 
 /**
@@ -30,8 +49,12 @@ export function MarkdownView({
 	fileId,
 	filePath,
 	isActiveView = true,
+	isPanelFocused = true,
 	focusOnLoad = false,
 	syncActiveFile = true,
+	externalWriteReview = null,
+	onAcceptReviewDiff,
+	onRejectReviewDiff,
 }: MarkdownViewProps) {
 	return (
 		<Suspense fallback={<MarkdownLoadingSpinner />}>
@@ -39,8 +62,12 @@ export function MarkdownView({
 				fileId={fileId}
 				filePath={filePath}
 				isActiveView={isActiveView}
+				isPanelFocused={isPanelFocused}
 				focusOnLoad={focusOnLoad}
 				syncActiveFile={syncActiveFile}
+				externalWriteReview={externalWriteReview}
+				onAcceptReviewDiff={onAcceptReviewDiff}
+				onRejectReviewDiff={onRejectReviewDiff}
 			/>
 		</Suspense>
 	);
@@ -49,8 +76,12 @@ export function MarkdownView({
 function MarkdownViewContent({
 	fileId,
 	isActiveView = true,
+	isPanelFocused = true,
 	focusOnLoad = false,
 	syncActiveFile = true,
+	externalWriteReview = null,
+	onAcceptReviewDiff,
+	onRejectReviewDiff,
 }: MarkdownViewProps) {
 	assertFileId(fileId);
 
@@ -63,6 +94,15 @@ function MarkdownViewContent({
 				.limit(1),
 		{ subscribe: false },
 	);
+	const reviewDiff = useMemo<MarkdownReviewDiff | null>(() => {
+		if (!externalWriteReview) return null;
+		return {
+			beforeMarkdown: decodeFileDataToText(externalWriteReview.beforeData),
+			afterMarkdown: decodeFileDataToText(externalWriteReview.afterData),
+			beforeDepth: externalWriteReview.beforeDepth,
+			afterDepth: externalWriteReview.afterDepth,
+		};
+	}, [externalWriteReview]);
 
 	let content: ReactNode;
 
@@ -77,15 +117,33 @@ function MarkdownViewContent({
 	} else {
 		content = (
 			<EditorProvider>
-				<div className="markdown-view flex h-full flex-col bg-background">
-					<FormattingToolbar />
-					<TipTapEditor
-						className="flex-1"
-						fileId={fileRow.id}
-						isActiveView={isActiveView}
-						focusOnLoad={focusOnLoad}
-					/>
-					<SlashCommandMenu />
+				<div
+					className={`markdown-view flex h-full flex-col bg-background ${
+						reviewDiff ? "markdown-review" : ""
+					}`}
+				>
+					<div className={reviewDiff ? "pointer-events-none" : undefined}>
+						<FormattingToolbar />
+					</div>
+					<div className="relative min-h-0 flex-1">
+						<TipTapEditor
+							className="h-full"
+							fileId={fileRow.id}
+							isActiveView={isActiveView}
+							focusOnLoad={focusOnLoad}
+						/>
+						{reviewDiff && externalWriteReview ? (
+							<MarkdownReviewOverlay
+								fileId={fileRow.id}
+								reviewDiff={reviewDiff}
+								reviewId={externalWriteReview.reviewId}
+								isActive={isActiveView && isPanelFocused}
+								onAccept={onAcceptReviewDiff}
+								onReject={onRejectReviewDiff}
+							/>
+						) : null}
+					</div>
+					{reviewDiff ? null : <SlashCommandMenu />}
 				</div>
 			</EditorProvider>
 		);
@@ -97,6 +155,51 @@ function MarkdownViewContent({
 				<ActiveFileSync fileId={fileRow?.id} isActiveView={isActiveView} />
 			) : null}
 			{content}
+		</div>
+	);
+}
+
+function MarkdownReviewOverlay({
+	fileId,
+	reviewDiff,
+	reviewId,
+	isActive,
+	onAccept,
+	onReject,
+}: {
+	readonly fileId: string;
+	readonly reviewDiff: MarkdownReviewDiff;
+	readonly reviewId: string;
+	readonly isActive: boolean;
+	readonly onAccept?: (args: {
+		readonly fileId: string;
+		readonly reviewId: string;
+	}) => void;
+	readonly onReject?: (args: {
+		readonly fileId: string;
+		readonly reviewId: string;
+	}) => Promise<void>;
+}) {
+	const diffHtml = useMemo(() => {
+		return renderMarkdownReviewDiffHtml(reviewDiff);
+	}, [reviewDiff]);
+	const rejectReview = () => void onReject?.({ fileId, reviewId });
+
+	return (
+		<div className="markdown-review-overlay">
+			<div className="markdown-review-surface">
+				<div className="tiptap-container w-full h-full overflow-y-auto bg-background">
+					<div
+						className="ProseMirror tiptap w-full mx-auto"
+						dangerouslySetInnerHTML={{ __html: diffHtml }}
+					/>
+				</div>
+			</div>
+			<ExternalWriteReviewControls
+				isActive={isActive}
+				onAccept={() => onAccept?.({ fileId, reviewId })}
+				onReject={rejectReview}
+			/>
 		</div>
 	);
 }
@@ -227,8 +330,16 @@ export const widget = createReactWidgetDefinition({
 				fileId={instance.state?.fileId as string}
 				filePath={instance.state?.filePath as string | undefined}
 				isActiveView={context.isActiveView ?? false}
+				isPanelFocused={context.isPanelFocused ?? false}
 				focusOnLoad={Boolean(instance.state?.focusOnLoad)}
 				syncActiveFile={false}
+				externalWriteReview={
+					(instance.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG] as
+						| ExternalWriteReview
+						| undefined) ?? null
+				}
+				onAcceptReviewDiff={context.acceptExternalWriteReview}
+				onRejectReviewDiff={context.rejectExternalWriteReview}
 			/>
 		</LixProvider>
 	),

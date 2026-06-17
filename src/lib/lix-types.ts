@@ -18,10 +18,6 @@ export type {
 
 export type LixRow = ExecuteResult["rows"][number];
 
-export type ExecuteOptions = {
-	writerKey?: string | null;
-};
-
 export type TransactionStatement = {
 	sql: string;
 	params?: ReadonlyArray<unknown>;
@@ -68,20 +64,11 @@ type SdkLixBase = Pick<
 >;
 
 export interface FlashtypeLix extends SdkLixBase {
-	execute(
-		sql: string,
-		params?: ReadonlyArray<unknown>,
-		options?: ExecuteOptions,
-	): Promise<ExecuteResult>;
-	beginTransaction(options?: ExecuteOptions): Promise<SqlTransaction>;
-	transaction<T>(
-		options: ExecuteOptions,
-		callback: (tx: SqlTransaction) => Promise<T>,
-	): Promise<T>;
+	execute(sql: string, params?: ReadonlyArray<unknown>): Promise<ExecuteResult>;
+	beginTransaction(): Promise<SqlTransaction>;
 	transaction<T>(callback: (tx: SqlTransaction) => Promise<T>): Promise<T>;
 	executeTransaction(
 		statements: ReadonlyArray<TransactionStatement>,
-		options?: ExecuteOptions,
 	): Promise<ExecuteResult>;
 	observe(sql: string, params?: ReadonlyArray<unknown>): ObserveEvents;
 	mergeBranchPreview?: SdkLix["mergeBranchPreview"];
