@@ -50,7 +50,7 @@ mac:
       - CFBundleTypeName: Markdown Document
         CFBundleTypeRole: Editor
         CFBundleTypeIconFile: markdown.icns
-        LSHandlerRank: Owner
+        LSHandlerRank: Alternate
         LSItemContentTypes:
           - public.markdown
           - net.daringfireball.markdown
