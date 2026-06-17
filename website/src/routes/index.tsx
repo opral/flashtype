@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { ReactNode } from "react";
-
-const GITHUB_URL = "https://github.com/opral/flashtype";
-const DOWNLOAD_URL = "https://github.com/opral/flashtype/releases";
+import type { MouseEvent, ReactNode } from "react";
+import {
+	GITHUB_LATEST_RELEASE_URL,
+	GITHUB_URL,
+	latestMacDmgDownloadUrl,
+} from "../download";
 
 export const Route = createFileRoute("/")({
 	component: LandingPage,
@@ -75,6 +77,25 @@ const FEATURE_ROWS = [
 	badge?: string;
 }>;
 
+async function handleDownloadClick(event: MouseEvent<HTMLAnchorElement>) {
+	event.preventDefault();
+
+	try {
+		window.location.href = await latestMacDmgDownloadUrl();
+	} catch (error) {
+		console.error(error);
+		window.location.href = GITHUB_LATEST_RELEASE_URL;
+	}
+}
+
+function DownloadLink({ children, className }: { children: ReactNode; className: string }) {
+	return (
+		<a href={GITHUB_LATEST_RELEASE_URL} onClick={handleDownloadClick} className={className}>
+			{children}
+		</a>
+	);
+}
+
 function LandingPage() {
 	return (
 		<div className="min-h-screen overflow-x-clip bg-paper text-ink">
@@ -111,12 +132,11 @@ function Nav() {
 				<a href={GITHUB_URL} className="text-[15px] font-semibold text-[#44403C] no-underline max-sm:text-[14px]">
 					GitHub ↗
 				</a>
-				<a
-					href={DOWNLOAD_URL}
+				<DownloadLink
 					className={`${primaryButton} rounded-[10px] px-[20px] py-[10px] text-[15px] shadow-[0_4px_14px_rgba(232,89,12,0.35),inset_0_1px_0_rgba(255,255,255,0.25)] max-sm:hidden`}
 				>
 					Download
-				</a>
+				</DownloadLink>
 			</nav>
 		</header>
 	);
@@ -149,10 +169,10 @@ function Hero() {
 				Code and Codex built in. Write like a doc, review agent edits as diffs.
 			</p>
 			<div className="mt-[8px] flex flex-wrap items-center justify-center gap-[14px]">
-				<a href={DOWNLOAD_URL} className={`${primaryButton} px-[34px] py-[18px] text-[18px] max-md:w-[min(100%,320px)] max-md:px-[24px] max-md:py-[16px] max-md:text-[16px]`}>
+				<DownloadLink className={`${primaryButton} px-[34px] py-[18px] text-[18px] max-md:w-[min(100%,320px)] max-md:px-[24px] max-md:py-[16px] max-md:text-[16px]`}>
 					Download for Mac
 					<DownloadIcon />
-				</a>
+				</DownloadLink>
 				<a href={GITHUB_URL} className={`${secondaryButton} px-[34px] py-[18px] text-[18px] max-md:w-[min(100%,320px)] max-md:px-[24px] max-md:py-[16px] max-md:text-[16px]`}>
 					<span className="text-flash-bright">★</span>
 					Star on GitHub
@@ -474,10 +494,10 @@ function ClosingCta() {
 				Built in the open. Issues, pull requests and stars welcome.
 			</p>
 			<div className="mt-[8px] flex flex-wrap items-center justify-center gap-[14px]">
-				<a href={DOWNLOAD_URL} className={`${primaryButton} px-[34px] py-[18px] text-[18px] max-md:w-[min(100%,320px)] max-md:px-[24px] max-md:py-[16px] max-md:text-[16px]`}>
+				<DownloadLink className={`${primaryButton} px-[34px] py-[18px] text-[18px] max-md:w-[min(100%,320px)] max-md:px-[24px] max-md:py-[16px] max-md:text-[16px]`}>
 					Download for Mac
 					<DownloadIcon />
-				</a>
+				</DownloadLink>
 				<a href={GITHUB_URL} className={`${secondaryButton} px-[34px] py-[18px] text-[18px] max-md:w-[min(100%,320px)] max-md:px-[24px] max-md:py-[16px] max-md:text-[16px]`}>
 					<span className="text-flash-bright">★</span>
 					Star on GitHub
@@ -498,7 +518,7 @@ function Footer() {
 				</a>
 				<nav className="flex items-center gap-[24px] text-[14px] text-muted max-md:flex-wrap max-md:gap-x-[20px] max-md:gap-y-[14px]" aria-label="Footer navigation">
 					<a href={GITHUB_URL} className="no-underline hover:text-ink">GitHub</a>
-					<a href={DOWNLOAD_URL} className="no-underline hover:text-ink">Download for Mac</a>
+					<DownloadLink className="no-underline hover:text-ink">Download for Mac</DownloadLink>
 					<span>© 2026 Opral</span>
 				</nav>
 			</div>

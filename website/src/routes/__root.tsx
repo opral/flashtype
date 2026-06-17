@@ -4,11 +4,10 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { GITHUB_LATEST_RELEASE_URL, GITHUB_URL } from "../download";
 import appCss from "../styles.css?url";
 
 const siteUrl = "https://flashtype.com/";
-const githubUrl = "https://github.com/opral/flashtype";
-const downloadUrl = "https://github.com/opral/flashtype/releases";
 const title = "Flashtype | The markdown editor for Claude & Codex";
 const description =
 	"A WYSIWYG markdown editor with Claude Code and Codex built in. Agents edit, you review diffs. Accept or reject every change. Free and open source.";
@@ -29,11 +28,11 @@ const structuredData = {
 			operatingSystem: "macOS",
 			softwareRequirements: "macOS",
 			isAccessibleForFree: true,
-			license: "https://github.com/opral/flashtype/blob/main/LICENSE",
-			codeRepository: githubUrl,
-			downloadUrl,
-			installUrl: downloadUrl,
-			sameAs: [githubUrl],
+			license: `${GITHUB_URL}/blob/main/LICENSE`,
+			codeRepository: GITHUB_URL,
+			downloadUrl: GITHUB_LATEST_RELEASE_URL,
+			installUrl: GITHUB_LATEST_RELEASE_URL,
+			sameAs: [GITHUB_URL],
 			offers: {
 				"@type": "Offer",
 				price: "0",
