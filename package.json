@@ -31,7 +31,7 @@
 		"lint:fix": "oxlint --tsconfig ./tsconfig.json --ignore-path .gitignore --ignore-pattern \"submodule/**\" --fix .",
 		"pretest": "pnpm run build:markdown-wc",
 		"test": "vitest run",
-		"pretest:e2e": "pnpm run build:markdown-wc",
+		"pretest:e2e": "pnpm run build:markdown-wc && pnpm run rebuild:electron-native",
 		"test:e2e": "playwright test",
 		"test:e2e:packaged-macos": "playwright test --config playwright.packaged.config.ts",
 		"ci": "pnpm run build && pnpm test"
