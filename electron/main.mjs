@@ -13,16 +13,14 @@ import {
 	setWorkspaceFromPath,
 } from "./workspace.mjs";
 import { captureAppOpened } from "./telemetry.mjs";
+import {
+	APP_NAME,
+	registerMarkdownDefaultHandler,
+} from "./markdown-default-handler.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
-const APP_NAME = "Flashtype";
-const APP_BUNDLE_ID = "com.flashtype.app";
 const AUTO_UPDATE_CHECK_DELAY_MS = 10_000;
-const MARKDOWN_CONTENT_TYPES = [
-	"public.markdown",
-	"net.daringfireball.markdown",
-];
 const DEV_SERVER_URL =
 	process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:4173";
 let mainWindow = null;
@@ -152,7 +150,14 @@ app.whenReady().then(async () => {
 	registerAppIpc();
 	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender));
 	installApplicationMenu();
-	void registerMarkdownDefaultHandler();
+	void registerMarkdownDefaultHandler({
+		execFileAsync,
+		executablePath: process.execPath,
+		isPackaged: app.isPackaged,
+		platform: process.platform,
+	}).catch((error) => {
+		console.warn("Failed to register Flashtype as the Markdown editor", error);
+	});
 	void captureAppOpened();
 	const workspaceArgument = getWorkspacePathArgument(process.argv);
 	if (workspaceArgument !== undefined && !getWorkspace()) {
@@ -759,38 +764,4 @@ function installApplicationMenu() {
 			},
 		]),
 	);
-}
-
-async function registerMarkdownDefaultHandler() {
-	if (process.platform !== "darwin" || !app.isPackaged) {
-		return;
-	}
-
-	const script = `
-ObjC.import("CoreServices");
-const bundleId = ${JSON.stringify(APP_BUNDLE_ID)};
-const contentTypes = ${JSON.stringify(MARKDOWN_CONTENT_TYPES)};
-for (const contentType of contentTypes) {
-	const status = $.LSSetDefaultRoleHandlerForContentType(
-		$(contentType),
-		$.kLSRolesEditor,
-		$(bundleId)
-	);
-	if (status !== 0) {
-		throw new Error("LSSetDefaultRoleHandlerForContentType failed for " + contentType + ": " + status);
-	}
-}
-`;
-
-	try {
-		await execFileAsync(
-			"/usr/bin/osascript",
-			["-l", "JavaScript", "-e", script],
-			{
-				timeout: 5000,
-			},
-		);
-	} catch (error) {
-		console.warn("Failed to register Flashtype as the Markdown editor", error);
-	}
 }
