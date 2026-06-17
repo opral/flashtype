@@ -1,5 +1,10 @@
 import { ipcMain } from "electron";
 import pty from "node-pty";
+import {
+	buildTerminalEnv,
+	resolveShell,
+	resolveShellArgs,
+} from "./terminal-shell.mjs";
 
 const terminals = new Map();
 const ownerHooks = new Set();
@@ -14,19 +19,17 @@ export function registerTerminalIpc() {
 	ipcMain.handle("terminal:create", async (event, payload) => {
 		const id = `terminal:${crypto.randomUUID()}`;
 		const shell = resolveShell(payload?.shell);
+		const shellArgs = resolveShellArgs(shell);
 		const cwd = payload?.cwd;
 		const cols = clampInteger(payload?.cols, 80, 20, 500);
 		const rows = clampInteger(payload?.rows, 24, 5, 200);
 
-		const terminal = pty.spawn(shell, [], {
+		const terminal = pty.spawn(shell, shellArgs, {
 			name: "xterm-256color",
 			cwd,
 			cols,
 			rows,
-			env: {
-				...process.env,
-				TERM: "xterm-256color",
-			},
+			env: buildTerminalEnv(),
 		});
 
 		const ownerId = event.sender.id;
@@ -123,16 +126,6 @@ function getOwnedTerminal(ownerId, rawId) {
 		throw new Error(`Unknown terminal id: ${id}`);
 	}
 	return handle.terminal;
-}
-
-function resolveShell(rawShell) {
-	if (typeof rawShell === "string" && rawShell.trim().length > 0) {
-		return rawShell.trim();
-	}
-	if (process.platform === "win32") {
-		return process.env.COMSPEC ?? "powershell.exe";
-	}
-	return process.env.SHELL ?? "/bin/zsh";
 }
 
 function clampInteger(value, fallback, min, max) {
