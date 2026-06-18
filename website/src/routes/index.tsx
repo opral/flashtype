@@ -15,7 +15,7 @@ const primaryButton =
 const secondaryButton =
 	"inline-flex items-center justify-center gap-[9px] rounded-[14px] border border-[rgba(28,25,23,0.14)] bg-white/75 font-bold leading-none text-ink no-underline transition hover:-translate-y-px hover:border-[rgba(28,25,23,0.22)] hover:bg-white";
 const miniDocument =
-	"min-w-0 p-[30px_34px] leading-[1.7] text-body [&_a]:text-[#C2410C] [&_a]:underline [&_a]:underline-offset-[3px] [&_code]:mt-[18px] [&_code]:block [&_code]:font-mono [&_code]:text-[12px] [&_code]:text-muted [&_h4]:m-0 [&_h4]:mb-[14px] [&_h4]:text-[24px] [&_h4]:font-bold [&_h4]:leading-[1.16] [&_h4]:tracking-normal [&_h4]:text-ink [&_h5]:m-0 [&_h5]:mt-[26px] [&_h5]:mb-[12px] [&_h5]:text-[21px] [&_h5]:font-bold [&_h5]:tracking-normal [&_h5]:text-ink [&_p]:m-0 [&_p]:text-[15.5px] [&_p]:leading-[1.7]";
+	"min-w-0 p-[30px_34px] leading-[1.7] text-body [&_a]:text-[#C2410C] [&_a]:underline [&_a]:underline-offset-[3px] [&_code]:mt-[18px] [&_code]:block [&_code]:font-mono [&_code]:text-[12px] [&_code]:text-muted [&_[data-sample-heading='4']]:m-0 [&_[data-sample-heading='4']]:mb-[14px] [&_[data-sample-heading='4']]:text-[24px] [&_[data-sample-heading='4']]:font-bold [&_[data-sample-heading='4']]:leading-[1.16] [&_[data-sample-heading='4']]:tracking-normal [&_[data-sample-heading='4']]:text-ink [&_[data-sample-heading='5']]:m-0 [&_[data-sample-heading='5']]:mt-[26px] [&_[data-sample-heading='5']]:mb-[12px] [&_[data-sample-heading='5']]:text-[21px] [&_[data-sample-heading='5']]:font-bold [&_[data-sample-heading='5']]:tracking-normal [&_[data-sample-heading='5']]:text-ink [&_p]:m-0 [&_p]:text-[15.5px] [&_p]:leading-[1.7]";
 
 const FEATURE_ROWS = [
 	{
@@ -40,12 +40,12 @@ const FEATURE_ROWS = [
 		title: (
 			<>
 				<span className="inline-flex items-center gap-[10px]">
-					<img src="/claude-icon.png" alt="" aria-hidden="true" className="h-[40px] w-[40px] object-contain max-md:h-[30px] max-md:w-[30px]" />
+					<img src="/claude-icon.png" alt="Claude logo" className="h-[40px] w-[40px] object-contain max-md:h-[30px] max-md:w-[30px]" />
 					Claude
 				</span>{" "}
 				&amp;{" "}
 				<span className="inline-flex items-center gap-[10px]">
-					<img src="/codex-icon.png" alt="" aria-hidden="true" className="h-[42px] w-[42px] object-contain max-md:h-[31px] max-md:w-[31px]" />
+					<img src="/codex-icon.png" alt="Codex logo" className="h-[42px] w-[42px] object-contain max-md:h-[31px] max-md:w-[31px]" />
 					Codex
 				</span>
 				<br />
@@ -93,6 +93,18 @@ function DownloadLink({ children, className }: { children: ReactNode; className:
 		<a href={GITHUB_LATEST_RELEASE_URL} onClick={handleDownloadClick} className={className}>
 			{children}
 		</a>
+	);
+}
+
+function SamplePreview({ children, className }: { children: ReactNode; className: string }) {
+	return (
+		<div
+			className={className}
+			aria-hidden="true"
+			data-nosnippet=""
+		>
+			{children}
+		</div>
 	);
 }
 
@@ -158,15 +170,13 @@ function Hero() {
 				for{" "}
 				<img
 					src="/claude-icon.png"
-					alt=""
-					aria-hidden="true"
+					alt="Claude logo"
 					className="ml-[4px] mr-[10px] inline-block h-[52px] w-[52px] object-contain align-[-5px] max-md:h-[34px] max-md:w-[34px]"
 				/>
 				Claude &amp;{" "}
 				<img
 					src="/codex-icon.png"
-					alt=""
-					aria-hidden="true"
+					alt="Codex logo"
 					className="ml-[4px] mr-[10px] inline-block h-[54px] w-[54px] object-contain align-[-6px] max-md:h-[34px] max-md:w-[34px] max-md:align-[-5px]"
 				/>
 				Codex
@@ -245,7 +255,11 @@ function FilesVisual() {
 	return (
 		<FeatureWindow title="blog">
 			<div className="grid min-h-0 flex-1 grid-cols-[250px_minmax(0,1fr)]">
-				<aside className="min-w-0 border-r border-chrome bg-soft-surface p-[14px_10px]">
+				<aside
+					className="min-w-0 border-r border-chrome bg-soft-surface p-[14px_10px]"
+					aria-hidden="true"
+					data-nosnippet=""
+				>
 					<FileLine kind="folder">drafts</FileLine>
 					<FileLine kind="file" active nested>
 						san-francisco.md
@@ -254,14 +268,14 @@ function FilesVisual() {
 					<FileLine kind="file">AGENTS.md</FileLine>
 					<FileLine kind="file">writing-style.md</FileLine>
 				</aside>
-				<div className={miniDocument}>
-					<h4>San Francisco: City by the Bay</h4>
+				<SamplePreview className={miniDocument}>
+					<div data-sample-heading="4">San Francisco: City by the Bay</div>
 					<p>
 						One of America&apos;s most iconic cities, characterized by rolling
 						hills that meet the Pacific coastline.
 					</p>
 					<code>~/Documents/blog/drafts</code>
-				</div>
+				</SamplePreview>
 			</div>
 		</FeatureWindow>
 	);
@@ -271,8 +285,10 @@ function EditorVisual() {
 	return (
 		<FeatureWindow title="san-francisco.md">
 			<FormattingToolbar />
-			<div className={`${miniDocument} p-[26px_40px_34px] [&_h4]:mb-[18px] [&_h4]:text-[30px] [&_p]:text-[17px]`}>
-				<h4>San Francisco: City by the Bay</h4>
+			<SamplePreview
+				className={`${miniDocument} p-[26px_40px_34px] [&_[data-sample-heading='4']]:mb-[18px] [&_[data-sample-heading='4']]:text-[30px] [&_p]:text-[17px]`}
+			>
+				<div data-sample-heading="4">San Francisco: City by the Bay</div>
 				<p>
 					One of America&apos;s most iconic cities, characterized by rolling hills
 					that meet the Pacific coastline. The{" "}
@@ -303,7 +319,7 @@ function EditorVisual() {
 						</tr>
 					</tbody>
 				</table>
-			</div>
+			</SamplePreview>
 		</FeatureWindow>
 	);
 }
@@ -348,9 +364,13 @@ function AgentsVisual() {
 	return (
 		<FeatureWindow title="san-francisco.md">
 			<div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)]">
-				<aside className="flex min-w-0 flex-col border-r border-chrome bg-soft-surface p-[22px] font-mono text-[13px] leading-[1.7] text-secondary [&_p]:mt-[12px] [&_strong]:text-ink">
+				<aside
+					className="flex min-w-0 flex-col border-r border-chrome bg-soft-surface p-[22px] font-mono text-[13px] leading-[1.7] text-secondary [&_p]:mt-[12px] [&_strong]:text-ink"
+					aria-hidden="true"
+					data-nosnippet=""
+				>
 					<div className="mb-[14px] flex items-center gap-[7px] font-semibold text-[#44403C]">
-						<img src="/claude-icon.png" alt="" className="h-[15px] w-[15px]" />
+						<img src="/claude-icon.png" alt="Claude logo" className="h-[15px] w-[15px]" />
 						Claude Code
 					</div>
 					<div className="rounded-[8px] border border-dashed border-terminal/80 bg-white/70 px-[14px] py-[13px] text-center shadow-[0_12px_30px_rgba(226,114,91,0.08)]">
@@ -380,13 +400,13 @@ function AgentsVisual() {
 						<span className="text-terminal">&gt;</span> Type a task...
 					</div>
 				</aside>
-				<div className={`${miniDocument} p-[28px_30px]`}>
-					<h4>City by the Bay</h4>
+				<SamplePreview className={`${miniDocument} p-[28px_30px]`}>
+					<div data-sample-heading="4">City by the Bay</div>
 					<p>
 						Rolling hills meet the Pacific coastline, and the Golden Gate Bridge
 						spans the bay.
 					</p>
-				</div>
+				</SamplePreview>
 			</div>
 		</FeatureWindow>
 	);
@@ -395,7 +415,9 @@ function AgentsVisual() {
 function DiffsVisual() {
 	return (
 		<FeatureWindow title="san-francisco.md">
-			<div className={`${miniDocument} p-[34px_40px] [&_p]:text-[17px] [&_p]:leading-[1.85]`}>
+			<SamplePreview
+				className={`${miniDocument} p-[34px_40px] [&_p]:text-[17px] [&_p]:leading-[1.85]`}
+			>
 				<p>
 					San Francisco <Del>stands</Del> <Ins>is distinguished</Ins> as one of
 					America&apos;s most iconic <Del>cities,</Del>{" "}
@@ -403,15 +425,15 @@ function DiffsVisual() {
 					converge with the Pacific coastline.
 				</p>
 				<div className="mt-[24px] flex items-center gap-[9px]">
-					<button type="button" className="rounded-[8px] border-0 bg-flash-bright px-[16px] py-[8px] text-[13px] font-bold text-white">
+					<button type="button" tabIndex={-1} className="rounded-[8px] border-0 bg-flash-bright px-[16px] py-[8px] text-[13px] font-bold text-white">
 						Accept all
 					</button>
-					<button type="button" className="rounded-[8px] border border-[#E5E0D8] bg-white px-[16px] py-[8px] text-[13px] font-bold text-[#44403C]">
+					<button type="button" tabIndex={-1} className="rounded-[8px] border border-[#E5E0D8] bg-white px-[16px] py-[8px] text-[13px] font-bold text-[#44403C]">
 						Reject
 					</button>
 					<span className="ml-[4px] text-[12.5px] text-muted">3 edits from Claude</span>
 				</div>
-			</div>
+			</SamplePreview>
 		</FeatureWindow>
 	);
 }
@@ -420,7 +442,11 @@ function HistoryVisual() {
 	return (
 		<FeatureWindow title="san-francisco.md">
 			<div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)]">
-				<aside className="min-w-0 border-r border-chrome bg-soft-surface p-[18px_16px]">
+				<aside
+					className="min-w-0 border-r border-chrome bg-soft-surface p-[18px_16px]"
+					aria-hidden="true"
+					data-nosnippet=""
+				>
 					<div className="mb-[16px] font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-faint">
 						Version History
 					</div>
@@ -435,13 +461,13 @@ function HistoryVisual() {
 						<HistoryItem title="Created" meta="yesterday" />
 					</div>
 				</aside>
-				<div className={`${miniDocument} p-[28px_30px]`}>
-					<h4>City by the Bay</h4>
+				<SamplePreview className={`${miniDocument} p-[28px_30px]`}>
+					<div data-sample-heading="4">City by the Bay</div>
 					<p>
 						Rolling hills meet the Pacific coastline, and the Golden Gate Bridge
 						spans the bay.
 					</p>
-				</div>
+				</SamplePreview>
 			</div>
 		</FeatureWindow>
 	);
@@ -613,7 +639,11 @@ function MockWindow({
 
 function FileSidebar() {
 	return (
-		<aside className="border-r border-chrome bg-[#FCFCFB] p-[22px_14px]">
+		<aside
+			className="border-r border-chrome bg-[#FCFCFB] p-[22px_14px]"
+			aria-hidden="true"
+			data-nosnippet=""
+		>
 			<div className="px-[12px] pb-[10px] font-mono text-[14.5px] font-bold uppercase tracking-[0.12em] text-faint">
 				Files
 			</div>
@@ -629,10 +659,13 @@ function FileSidebar() {
 
 function DocumentPane() {
 	return (
-		<div className="min-w-0 border-r border-chrome p-[44px_48px] leading-[1.7] text-body">
-			<h2 className="m-0 mb-[20px] text-[36px] font-bold leading-[1.12] tracking-normal text-ink">
+		<SamplePreview className="min-w-0 border-r border-chrome p-[44px_48px] leading-[1.7] text-body">
+			<div
+				className="m-0 mb-[20px] text-[36px] font-bold leading-[1.12] tracking-normal text-ink"
+				data-sample-heading="2"
+			>
 				San Francisco: City by the Bay
-			</h2>
+			</div>
 			<p className="m-0 text-[24px] leading-[1.7]">
 				San Francisco <Del>stands</Del> <Ins>is distinguished</Ins> as one of
 				America&apos;s most iconic <Del>cities,</Del>{" "}
@@ -644,9 +677,12 @@ function DocumentPane() {
 				Cable cars still climb toward Nob Hill while afternoon fog rolls through
 				the Golden Gate, softening the skyline into watercolor.
 			</p>
-			<h3 className="mt-[32px] mb-[12px] text-[28px] font-bold tracking-normal text-ink">
+			<div
+				className="mt-[32px] mb-[12px] text-[28px] font-bold tracking-normal text-ink"
+				data-sample-heading="3"
+			>
 				A city of microclimates
-			</h3>
+			</div>
 			<table className="mt-[18px] w-full max-w-[620px] border-separate border-spacing-0 overflow-hidden rounded-[12px] border border-chrome text-left text-[18px] leading-[1.35]">
 				<thead className="bg-[#F4EEE6] text-[13px] uppercase tracking-[0.08em] text-[#7C2D12]">
 					<tr>
@@ -673,13 +709,17 @@ function DocumentPane() {
 					</tr>
 				</tbody>
 			</table>
-		</div>
+		</SamplePreview>
 	);
 }
 
 function TerminalPane() {
 	return (
-		<aside className="flex min-w-0 flex-col bg-[#FCFCFB] p-[30px_36px_34px] font-mono text-[18px] leading-[1.6] text-[#44403C]">
+		<aside
+			className="flex min-w-0 flex-col bg-[#FCFCFB] p-[30px_36px_34px] font-mono text-[18px] leading-[1.6] text-[#44403C]"
+			aria-hidden="true"
+			data-nosnippet=""
+		>
 			<p className="m-0 text-muted">% claude</p>
 			<div className="relative mt-[16px] flex flex-col items-center gap-[12px] rounded-[5px] border border-terminal p-[22px_24px_20px] text-center">
 				<span className="absolute left-[18px] top-[-12px] bg-[#FCFCFB] px-[8px] text-[16px] text-terminal">

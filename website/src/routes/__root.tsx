@@ -88,6 +88,7 @@ export const Route = createRootRoute({
 			{ name: "viewport", content: "width=device-width, initial-scale=1" },
 			{ title },
 			{ name: "description", content: description },
+			{ name: "robots", content: "index, follow" },
 			{ property: "og:title", content: title },
 			{ property: "og:description", content: description },
 			{ property: "og:type", content: "website" },
@@ -107,6 +108,7 @@ export const Route = createRootRoute({
 		links: [
 			{ rel: "stylesheet", href: appCss },
 			{ rel: "canonical", href: siteUrl },
+			{ rel: "sitemap", type: "application/xml", href: "/sitemap.xml" },
 			{ rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
 			{ rel: "preconnect", href: "https://fonts.googleapis.com" },
 			{
