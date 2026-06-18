@@ -42,6 +42,10 @@ jobs:
           node-version: ${{ matrix.version }}
           cache: "pnpm"
 
+      - name: Validate submodule branches
+        run: >-
+          git submodule foreach 'branch=$(git config -f "$toplevel/.gitmodules" "submodule.$name.branch" || :); test -z "$branch" && exit 0; git fetch --no-tags origin "refs/heads/$branch"; git merge-base --is-ancestor "$sha1" FETCH_HEAD || { echo "$sm_path: $sha1 is not reachable from origin/$branch"; exit 1; }'
+
       - name: Install Rust wasm target
         run: |
           rustup target add wasm32-unknown-unknown
