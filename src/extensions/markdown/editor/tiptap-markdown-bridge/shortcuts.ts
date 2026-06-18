@@ -154,6 +154,31 @@ export const MarkdownWcShortcuts = Extension.create({
 			"Shift-Mod-s": () =>
 				this.editor.chain().focus().toggleMark("strike").run(),
 
+			Backspace: () => {
+				const { state } = this.editor;
+				const { selection } = state;
+				if (!selection.empty) return false;
+				const $from: any = selection.$from;
+				const para: any = $from.parent;
+				const isEmptyPara =
+					para?.type?.name === "paragraph" &&
+					(para.textContent || "").length === 0;
+				if (!isEmptyPara || $from.parentOffset !== 0) return false;
+
+				let listItemDepth = -1;
+				for (let d = $from.depth; d > 0; d--) {
+					const n = $from.node(d);
+					if (n?.type?.name === "listItem") {
+						listItemDepth = d;
+						break;
+					}
+				}
+				if (listItemDepth < 0) return false;
+				if ($from.node(listItemDepth).firstChild !== para) return false;
+
+				return this.editor.chain().focus().liftListItem("listItem").run();
+			},
+
 			// Enter in list: create a new list item; for tasks, make it unchecked
 			Enter: () => {
 				const { state } = this.editor;

@@ -159,9 +159,9 @@ function FileTreeNode({
 			"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-[background-color,color,box-shadow] duration-100 ease-out [&_svg]:transition-colors [&_svg]:duration-100",
 			rowInteractionClass,
 			isSelected && isPanelFocused
-				? "bg-focus-tint font-semibold text-neutral-900 ring-1 ring-inset ring-focus-ring [&_svg]:text-brand-700"
+				? "bg-focus-tint text-neutral-900 ring-1 ring-inset ring-focus-ring [&_svg]:text-brand-700"
 				: isSelected
-					? "bg-hover-soft font-semibold text-neutral-700 [&_svg]:text-neutral-500"
+					? "bg-hover-soft text-neutral-700 [&_svg]:text-neutral-500"
 					: "text-neutral-600 hover:bg-hover-soft [&_svg]:text-neutral-400",
 		);
 		const itemTestId = `file-tree-item-${sanitizeForTestId(node.path)}`;

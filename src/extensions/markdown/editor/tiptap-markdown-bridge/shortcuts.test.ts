@@ -292,6 +292,19 @@ describe("Keyboard shortcuts (keymap)", () => {
 		expect(root.child(1).type.name).toBe("paragraph");
 	});
 
+	test("Backspace on empty bullet list item exits the list", () => {
+		const editor = createEditor();
+		typeText(editor, "- ");
+		typeText(editor, "abc");
+		sendKey(editor, "Enter"); // create empty next item
+		sendKey(editor, "Backspace");
+		const root: any = editor.state.doc;
+		expect(root.childCount).toBe(2);
+		expect(root.child(0).type.name).toBe("bulletList");
+		expect(root.child(0).childCount).toBe(1);
+		expect(root.child(1).type.name).toBe("paragraph");
+	});
+
 	test("Enter on empty ordered list item exits the list", () => {
 		const editor = createEditor();
 		typeText(editor, "1. ");
@@ -306,6 +319,18 @@ describe("Keyboard shortcuts (keymap)", () => {
 		expect(root.child(1).type.name).toBe("paragraph");
 	});
 
+	test("Backspace on empty ordered list item exits the list", () => {
+		const editor = createEditor();
+		typeText(editor, "1. ");
+		typeText(editor, "abc");
+		sendKey(editor, "Enter"); // create empty next item
+		sendKey(editor, "Backspace");
+		const root: any = editor.state.doc;
+		expect(root.child(0).type.name).toBe("orderedList");
+		expect(root.child(0).childCount).toBe(1);
+		expect(root.child(1).type.name).toBe("paragraph");
+	});
+
 	test("Enter on empty todo item exits the list", () => {
 		const editor = createEditor();
 		typeText(editor, "[] ");
@@ -317,6 +342,18 @@ describe("Keyboard shortcuts (keymap)", () => {
 		sendKey(editor, "Enter");
 		const root: any = editor.state.doc;
 		expect(root.child(0).type.name).toBe("bulletList");
+		expect(root.child(1).type.name).toBe("paragraph");
+	});
+
+	test("Backspace on empty todo item exits the list", () => {
+		const editor = createEditor();
+		typeText(editor, "[] ");
+		typeText(editor, "abc");
+		sendKey(editor, "Enter"); // create empty next todo
+		sendKey(editor, "Backspace");
+		const root: any = editor.state.doc;
+		expect(root.child(0).type.name).toBe("bulletList");
+		expect(root.child(0).childCount).toBe(1);
 		expect(root.child(1).type.name).toBe("paragraph");
 	});
 
