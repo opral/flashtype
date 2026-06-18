@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 - 2026-06-18
+
+### Minor
+
+- Improved Markdown review diffs so edits inside lists, tables, and other structured Markdown render with less noise.
+
+  FlashType now uses Markdown-aware structure when showing review changes, making accepted and rejected edits easier to inspect before applying them.
+
+### Patch
+
+- Fixed deleted files staying open in the main editor.
+
+  When a file is deleted from the file navigator, any open editor view for that file now closes instead of showing stale content.
+- Fixed scrolling in the file navigator when a workspace contains many files.
+
+  The file list now scrolls inside the navigator panel instead of overflowing past the visible area.
+- Fixed the Files tab focus state.
+
+  File and folder rows now show focus on the full list item instead of making the filename text appear focused.
+- Fixed Markdown list roundtripping for bullets and checklists.
+
+  FlashType now preserves single-item bullet lists, manually typed checklist markers, and content below mid-document edits when saving Markdown files.
+- Fixed a crash when switching workspaces to an empty folder.
+
+  FlashType now closes the previous workspace cleanly before opening the next one, so switching folders no longer leaves stale files or app state behind.
+
 ## 0.2.0 - 2026-06-17
 
 ### Minor
