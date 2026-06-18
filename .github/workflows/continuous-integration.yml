@@ -70,10 +70,6 @@ jobs:
 
   macos-release-build-check:
     runs-on: blacksmith-12vcpu-macos-15
-    env:
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      CSC_FOR_PULL_REQUEST: "true"
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -101,6 +97,22 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare optional macOS signing
+        env:
+          MACOS_CSC_LINK: ${{ secrets.CSC_LINK }}
+          MACOS_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          if [ -n "${MACOS_CSC_LINK:-}" ]; then
+            {
+              echo "CSC_LINK=${MACOS_CSC_LINK}"
+              echo "CSC_KEY_PASSWORD=${MACOS_CSC_KEY_PASSWORD}"
+              echo "CSC_FOR_PULL_REQUEST=true"
+            } >> "$GITHUB_ENV"
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "Skipping macOS code signing because CSC_LINK is unavailable."
+          fi
 
       - name: Build macOS assets
         run: pnpm run package:mac

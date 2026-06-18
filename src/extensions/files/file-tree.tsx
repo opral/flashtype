@@ -38,6 +38,9 @@ const sanitizeForTestId = (value: string): string =>
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/(^-|-$)/g, "") || "root";
 
+const rowInteractionClass =
+	"select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring";
+
 /**
  * Minimal prototype file tree that mirrors the structure of the left sidebar.
  *
@@ -154,6 +157,7 @@ function FileTreeNode({
 		// Orange indicates the focused panel; inactive selections stay visible but quiet.
 		const buttonClass = clsx(
 			"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-[background-color,color,box-shadow] duration-100 ease-out [&_svg]:transition-colors [&_svg]:duration-100",
+			rowInteractionClass,
 			isSelected && isPanelFocused
 				? "bg-focus-tint font-semibold text-neutral-900 ring-1 ring-inset ring-focus-ring [&_svg]:text-brand-700"
 				: isSelected
@@ -193,6 +197,7 @@ function FileTreeNode({
 	// orange is reserved for the selected file row.
 	const buttonClass = clsx(
 		"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-colors hover:bg-hover-soft",
+		rowInteractionClass,
 		isSelected && "bg-hover-soft",
 		isOpen
 			? "font-normal text-neutral-700 [&_svg]:text-neutral-500"

@@ -47,6 +47,28 @@ describe("FilesView", () => {
 		}
 	});
 
+	test("prevents text selection on the new file row", async () => {
+		const lix = await openLix();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView context={createViewContext(lix)} />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		expect(await utils!.findByRole("button", { name: "New file" })).toHaveClass(
+			"select-none",
+		);
+
+		utils!.unmount();
+		await lix.close();
+	});
+
 	test("creates an inline draft when Cmd+. is pressed", async () => {
 		const lix = await openLix();
 		const openFile = vi.fn();

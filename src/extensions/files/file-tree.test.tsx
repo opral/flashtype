@@ -58,6 +58,17 @@ describe("FileTree", () => {
 		expect(handleOpen).toHaveBeenCalledWith("file-readme", "/README.md");
 	});
 
+	test("keeps focus styling on file tree rows instead of filename labels", () => {
+		render(<FileTree nodes={mockTree} />);
+
+		const fileRow = screen.getByRole("button", { name: /README.md/i });
+		const fileName = screen.getByText("README.md");
+
+		expect(fileRow).toHaveClass("focus-visible:ring-focus-ring");
+		expect(fileRow).toHaveClass("select-none");
+		expect(fileName).not.toHaveClass("focus-visible:ring-focus-ring");
+	});
+
 	test("renders percent text literally instead of URI-decoding filenames", () => {
 		render(
 			<FileTree

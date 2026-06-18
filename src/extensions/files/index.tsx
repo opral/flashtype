@@ -463,7 +463,7 @@ export function FilesView({ context }: FilesViewProps) {
 				<button
 					type="button"
 					onClick={handleNewFile}
-					className="mb-px flex h-7 w-full items-center justify-between gap-2 rounded-[7px] px-2.25 text-left text-xs text-neutral-600 transition-colors hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+					className="mb-px flex h-7 w-full select-none items-center justify-between gap-2 rounded-[7px] px-2.25 text-left text-xs text-neutral-600 transition-colors hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
 					aria-label="New file"
 					title="New file (⌘.)"
 				>
