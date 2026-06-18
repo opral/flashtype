@@ -15,6 +15,7 @@
 		"rebuild:electron-native": "electron-rebuild -f -w node-pty",
 		"fix:lix-native-macos": "node scripts/fix-lix-native-macos.mjs",
 		"package:mac": "pnpm run build:icons && pnpm run build && pnpm run build:env-variables && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish never",
+		"install:mac": "pnpm run package:mac && node scripts/install-mac.mjs",
 		"release:mac": "pnpm run build:icons && pnpm run build && pnpm run build:env-variables && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish always",
 		"dev:web": "vite",
 		"predev": "pnpm run build:lix && pnpm run build:markdown-wc && pnpm run rebuild:electron-native",
