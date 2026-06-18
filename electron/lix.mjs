@@ -1,6 +1,11 @@
-import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
+import {
+	FsBackend,
+	FilesBackend,
+	bundledPluginArchives,
+	openLix,
+} from "@lix-js/sdk";
 import path from "node:path";
-import { mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
 
 const LIX_DATABASE_DIR = ".lix";
@@ -18,13 +23,18 @@ export async function ensureLixOpen(window) {
 						"No workspace is open. Open a folder before using lix.",
 					);
 				}
-				await removeLegacyBundledPluginArchives(workspace.path);
-				await ensureBundledPluginArchivesOnDisk(workspace.path);
+				const isEphemeralFiles = workspace.kind === "ephemeralFiles";
+				const sourceFilePath = workspace.sourceFilePath ?? workspace.path;
 				const nativeLix = await openLix({
-					backend: new FsBackend({ path: workspace.path }),
+					backend: isEphemeralFiles
+						? new FilesBackend({ path: sourceFilePath })
+						: new FsBackend({ path: workspace.path }),
 				});
 				await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
-				return createDesktopLixHandle(nativeLix, workspace.path);
+				return createDesktopLixHandle(
+					nativeLix,
+					isEphemeralFiles ? path.dirname(sourceFilePath) : workspace.path,
+				);
 			})();
 			session.lixPromise = openingPromise;
 			openingPromise.catch(() => {
@@ -45,50 +55,6 @@ async function ensureDefaultPluginsInstalledOnCurrentBranch(lix) {
 		if (!bytesEqual(existing, plugin.archiveBytes)) {
 			await writeLixFileBytes(lix, archivePath, plugin.archiveBytes);
 		}
-	}
-}
-
-async function ensureBundledPluginArchivesOnDisk(workspacePath) {
-	for (const plugin of await bundledPluginArchives()) {
-		const filePath = path.join(
-			workspacePath,
-			pluginArchivePath(plugin).slice(1),
-		);
-		if (await fileBytesEqual(filePath, plugin.archiveBytes)) {
-			continue;
-		}
-		await mkdir(path.dirname(filePath), { recursive: true });
-		await writeFile(filePath, plugin.archiveBytes);
-	}
-}
-
-async function removeLegacyBundledPluginArchives(workspacePath) {
-	const plugins = await bundledPluginArchives();
-	for (const plugin of plugins) {
-		await rm(
-			path.join(
-				workspacePath,
-				".lix_system",
-				"plugins",
-				`${plugin.key}.lixplugin`,
-			),
-			{ force: true },
-		);
-	}
-	await removeEmptyDirectory(
-		path.join(workspacePath, ".lix_system", "plugins"),
-	);
-	await removeEmptyDirectory(path.join(workspacePath, ".lix_system"));
-}
-
-async function removeEmptyDirectory(directoryPath) {
-	try {
-		await rmdir(directoryPath);
-	} catch (error) {
-		if (error?.code === "ENOENT" || error?.code === "ENOTEMPTY") {
-			return;
-		}
-		throw error;
 	}
 }
 
@@ -118,18 +84,6 @@ function bytesEqual(actual, expected) {
 	return Buffer.compare(Buffer.from(actual), Buffer.from(expected)) === 0;
 }
 
-async function fileBytesEqual(filePath, expected) {
-	try {
-		const existing = await readFile(filePath);
-		return Buffer.compare(existing, Buffer.from(expected)) === 0;
-	} catch (error) {
-		if (error?.code === "ENOENT") {
-			return false;
-		}
-		throw error;
-	}
-}
-
 export async function closeLix(window, options = {}) {
 	const session = getSession(window);
 	if (!session) {
@@ -149,12 +103,21 @@ export async function resetLixRepository(window) {
 				"No workspace is open. Open a folder before resetting lix.",
 			);
 		}
+		if (workspace.kind === "ephemeralFiles") {
+			throw new Error("Cannot reset an ephemeral file workspace.");
+		}
 		await closeCurrentLix(session, { ignoreOpenError: true });
 		await removeLixDatabaseFiles(workspace.path);
 	});
 }
 
 export async function exportCurrentLixImage(window) {
+	const workspace = getWorkspace(window);
+	if (workspace?.kind === "ephemeralFiles") {
+		throw new Error(
+			"Cannot export a .lix database from an ephemeral file workspace.",
+		);
+	}
 	const session = getOrCreateSession(window);
 	await ensureLixOpen(window);
 

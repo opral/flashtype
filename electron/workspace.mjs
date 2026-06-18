@@ -2,7 +2,9 @@ import { dialog, ipcMain } from "electron";
 import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
 
-const LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
+const LIX_DATABASE_FILE = path.join(".lix", ".internal", "db.sqlite");
+const LEGACY_LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
+const LIX_DATABASE_FILES = [LIX_DATABASE_FILE, LEGACY_LIX_DATABASE_FILE];
 
 /**
  * The workspace is the folder Flashtype operates on. Each window has at most
@@ -28,12 +30,19 @@ export async function resolveWorkspaceTarget(requestedPath) {
 		if (stats.isFile()) {
 			const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
 			if (!workspaceDir) {
-				throw new Error(
-					`Cannot open file outside a Lix workspace: ${resolved}`,
-				);
+				return {
+					workspace: {
+						kind: "ephemeralFiles",
+						path: resolved,
+						sourceFilePath: resolved,
+						name: path.basename(resolved),
+					},
+					pendingOpenFilePath: toLixFilePath(path.basename(resolved)),
+				};
 			}
 			return {
 				workspace: {
+					kind: "directory",
 					path: workspaceDir,
 					name: path.basename(workspaceDir),
 				},
@@ -43,14 +52,15 @@ export async function resolveWorkspaceTarget(requestedPath) {
 			};
 		}
 	} catch {
-		if (await isFile(resolved)) {
-			throw new Error(`Cannot open file outside a Lix workspace: ${resolved}`);
-		}
 		// Keep the resolved path for directories and unreadable paths; the lix
 		// backend reports unreadable workspace folders.
 	}
 	return {
-		workspace: { path: resolved, name: path.basename(resolved) },
+		workspace: {
+			kind: "directory",
+			path: resolved,
+			name: path.basename(resolved),
+		},
 		pendingOpenFilePath: null,
 	};
 }
@@ -101,7 +111,16 @@ export async function exportWorkspaceLixFile(window) {
 			"No workspace is open. Open a folder before exporting lix.",
 		);
 	}
-	return await readFile(getWorkspaceLixDatabasePath(window));
+	if (workspace.kind === "ephemeralFiles") {
+		throw new Error(
+			"Cannot export a .lix database from an ephemeral file workspace.",
+		);
+	}
+	const databasePath = await findLixDatabasePath(workspace.path);
+	if (!databasePath) {
+		throw new Error("The opened workspace does not have a .lix database.");
+	}
+	return await readFile(databasePath);
 }
 
 export function getWorkspaceLixDatabasePath(window) {
@@ -109,6 +128,11 @@ export function getWorkspaceLixDatabasePath(window) {
 	if (!workspace) {
 		throw new Error(
 			"No workspace is open. Open a folder before exporting lix.",
+		);
+	}
+	if (workspace.kind === "ephemeralFiles") {
+		throw new Error(
+			"Ephemeral file workspaces do not have a .lix database on disk.",
 		);
 	}
 	return path.join(workspace.path, LIX_DATABASE_FILE);
@@ -150,7 +174,7 @@ async function showWorkspaceDialog(window) {
 async function findLixWorkspaceRoot(startDir) {
 	let current = path.resolve(startDir);
 	while (true) {
-		if (await isFile(path.join(current, LIX_DATABASE_FILE))) {
+		if ((await findLixDatabasePath(current)) !== null) {
 			return current;
 		}
 		const parent = path.dirname(current);
@@ -159,6 +183,16 @@ async function findLixWorkspaceRoot(startDir) {
 		}
 		current = parent;
 	}
+}
+
+async function findLixDatabasePath(workspaceDir) {
+	for (const databaseFile of LIX_DATABASE_FILES) {
+		const databasePath = path.join(workspaceDir, databaseFile);
+		if (await isFile(databasePath)) {
+			return databasePath;
+		}
+	}
+	return null;
 }
 
 async function isFile(filePath) {

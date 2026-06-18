@@ -21,6 +21,7 @@ describe("workspace resolution", () => {
 		await mkdir(directory, { recursive: true });
 
 		await expect(resolveWorkspace(directory)).resolves.toEqual({
+			kind: "directory",
 			path: directory,
 			name: "workspace",
 		});
@@ -34,11 +35,31 @@ describe("workspace resolution", () => {
 			"workspace",
 		);
 		const filePath = path.join(directory, "readme.md");
+		await mkdir(path.join(directory, ".lix", ".internal"), { recursive: true });
+		await writeFile(path.join(directory, ".lix", ".internal", "db.sqlite"), "");
+		await writeFile(filePath, "# Hello\n");
+
+		await expect(resolveWorkspace(filePath)).resolves.toEqual({
+			kind: "directory",
+			path: directory,
+			name: "workspace",
+		});
+	});
+
+	test("resolves files inside legacy Lix workspaces to the workspace root", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const filePath = path.join(directory, "readme.md");
 		await mkdir(path.join(directory, ".lix"), { recursive: true });
 		await writeFile(path.join(directory, ".lix", "db.sqlite"), "");
 		await writeFile(filePath, "# Hello\n");
 
 		await expect(resolveWorkspace(filePath)).resolves.toEqual({
+			kind: "directory",
 			path: directory,
 			name: "workspace",
 		});
@@ -52,13 +73,14 @@ describe("workspace resolution", () => {
 			"workspace",
 		);
 		const filePath = path.join(directory, "docs", "readme.md");
-		await mkdir(path.join(directory, ".lix"), { recursive: true });
+		await mkdir(path.join(directory, ".lix", ".internal"), { recursive: true });
 		await mkdir(path.dirname(filePath), { recursive: true });
-		await writeFile(path.join(directory, ".lix", "db.sqlite"), "");
+		await writeFile(path.join(directory, ".lix", ".internal", "db.sqlite"), "");
 		await writeFile(filePath, "# Hello\n");
 
 		await expect(resolveWorkspaceTarget(filePath)).resolves.toEqual({
 			workspace: {
+				kind: "directory",
 				path: directory,
 				name: "workspace",
 			},
@@ -66,7 +88,7 @@ describe("workspace resolution", () => {
 		});
 	});
 
-	test("rejects files outside a Lix workspace", async () => {
+	test("resolves files outside a Lix workspace to ephemeral file workspaces", async () => {
 		const directory = path.join(
 			tmpdir(),
 			"flashtype-workspace-test",
@@ -77,8 +99,14 @@ describe("workspace resolution", () => {
 		await mkdir(directory, { recursive: true });
 		await writeFile(filePath, "# Hello\n");
 
-		await expect(resolveWorkspace(filePath)).rejects.toThrow(
-			"Cannot open file outside a Lix workspace",
-		);
+		await expect(resolveWorkspaceTarget(filePath)).resolves.toEqual({
+			workspace: {
+				kind: "ephemeralFiles",
+				path: filePath,
+				sourceFilePath: filePath,
+				name: "readme.md",
+			},
+			pendingOpenFilePath: "/readme.md",
+		});
 	});
 });
