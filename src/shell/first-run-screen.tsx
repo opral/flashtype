@@ -1,5 +1,5 @@
 import { useCallback, useState, type JSX } from "react";
-import { Files, Zap } from "lucide-react";
+import { Files, FolderOpen, Zap } from "lucide-react";
 import { TopBar } from "./top-bar";
 import { AddViewButton, Island, IslandTabRow, TabChip } from "./island";
 import { AgentInvite } from "./agent-invite";
@@ -70,32 +70,39 @@ export function FirstRunScreen({
 						<span className="text-[12.5px] text-ink-faint">No folder open</span>
 					</div>
 				</Island>
-				<Island className="flex-50">
+				<Island
+					className={`flex-50 transition-[background-color,box-shadow] duration-150 ${
+						isDropTarget
+							? "bg-brand-50/45 shadow-[inset_0_0_0_2px_rgba(251,146,60,0.38)]"
+							: ""
+					}`}
+				>
 					<IslandTabRow>
 						<AddViewButton />
 					</IslandTabRow>
 					<div className="flex flex-1 flex-col items-center justify-center p-10 text-center">
-						<Zap className="size-6.5 fill-brand-600 text-brand-600" />
-						<h1 className="mt-4 text-2xl font-bold tracking-[-0.02em] text-neutral-900">
+						<div className="flex size-9 items-center justify-center rounded-lg bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+							<FolderOpen className="size-4.5" strokeWidth={2.2} />
+						</div>
+						<h1 className="mt-4 text-[18px] font-bold text-neutral-900">
 							Open a folder
 						</h1>
-						<p className="mt-1.5 max-w-85 text-sm leading-relaxed text-ink-muted text-pretty">
-							Flashtype works on a folder on your disk — your notes, docs, or a
-							repo. Everything stays in plain markdown files.
+						<p className="mt-1.5 max-w-78 text-[13px] leading-relaxed text-ink-muted text-pretty">
+							Choose a local repo, docs folder, or notes folder. Flashtype keeps
+							everything in plain markdown files.
 						</p>
 						<button
 							type="button"
 							onClick={() => void onOpenFolder()}
-							className={`mt-6 flex items-center gap-2 rounded-[10px] bg-linear-to-b from-brand-500 to-brand-600 px-6 py-2.75 text-sm font-bold text-neutral-0 shadow-[0_6px_18px_rgba(232,89,12,0.32),inset_0_1px_0_rgba(255,255,255,0.25)] hover:brightness-[1.06] ${
+							className={`mt-5 flex h-8.5 items-center gap-2 rounded-lg bg-brand-600 px-4.5 text-[12.5px] font-bold text-neutral-0 shadow-[0_5px_14px_rgba(232,89,12,0.24),inset_0_1px_0_rgba(255,255,255,0.2)] transition hover:bg-brand-700 ${
 								isDropTarget ? "brightness-[1.06]" : ""
 							}`}
 						>
-							Open folder…
-							<span className="text-[11.5px] font-semibold opacity-75">⌘O</span>
+							Open folder
+							<span className="rounded-[4px] bg-white/15 px-1.25 py-0.25 text-[11px] font-semibold leading-none text-white/80">
+								⌘O
+							</span>
 						</button>
-						<p className="mt-4.5 text-[12.5px] text-neutral-400">
-							or drop a folder anywhere in this window
-						</p>
 					</div>
 				</Island>
 				<Island className="flex-30">

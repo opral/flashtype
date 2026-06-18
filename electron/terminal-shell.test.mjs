@@ -39,6 +39,21 @@ describe("terminal shell launch", () => {
 		expect(env.TERM).toBe("xterm-256color");
 	});
 
+	test("does not pass NO_COLOR into spawned terminals", () => {
+		const env = buildTerminalEnv(
+			{
+				PATH: "/usr/bin",
+				NO_COLOR: "1",
+				COLORTERM: "truecolor",
+			},
+			"darwin",
+		);
+
+		expect(env.NO_COLOR).toBeUndefined();
+		expect(env.COLORTERM).toBe("truecolor");
+		expect(env.TERM).toBe("xterm-256color");
+	});
+
 	test("deduplicates fallback PATH entries", () => {
 		const env = buildTerminalEnv(
 			{ PATH: "/usr/local/bin:/custom/bin:/usr/local/bin" },

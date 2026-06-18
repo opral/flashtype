@@ -40,13 +40,14 @@ type FormatState = {
 
 /** 28px square icon button, matching the panel-header chips in the islands UI. */
 const iconButtonClass =
-	"inline-flex size-7 shrink-0 select-none items-center justify-center rounded-[7px] text-neutral-600 transition-colors hover:bg-hover-soft hover:text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-40";
+	"inline-flex size-7 shrink-0 select-none items-center justify-center rounded-[7px] text-neutral-500 transition-[background-color,color,box-shadow] duration-100 ease-out hover:bg-hover-soft hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:stroke-[1.9]";
 
 /** Pressed state for a formatting toggle. */
-const iconButtonActiveClass = "bg-neutral-200 text-neutral-900";
+const iconButtonActiveClass =
+	"bg-secondary-tint text-neutral-900 shadow-[inset_0_0_0_1px_var(--color-secondary-ring)] [&_svg]:text-secondary-icon";
 
 const ToolbarSeparator = () => (
-	<Toolbar.Separator className="mx-1.5 h-4 w-px bg-island-border" />
+	<Toolbar.Separator className="mx-1.5 h-3.5 w-px bg-island-divider" />
 );
 
 const initialFormatState: FormatState = {
@@ -151,6 +152,10 @@ export function FormattingToolbar({ className }: { className?: string }) {
 
 	const handleToggleBulletList = useCallback(() => {
 		if (!editor) return;
+		if (computeTaskListActive(editor, hasTaskListCommand)) {
+			setTaskListState(editor, null);
+			return;
+		}
 		if (editor.isActive("bulletList") && editor.state.selection.empty) {
 			return;
 		}
@@ -165,7 +170,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 				altChain.toggleBulletList?.()?.run?.() ??
 				false;
 		}
-	}, [editor]);
+	}, [editor, hasTaskListCommand]);
 
 	const handleToggleOrderedList = useCallback(() => {
 		if (!editor) return;
@@ -235,14 +240,18 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					<Toolbar.Button
 						render={<Select.Trigger />}
 						nativeButton={false}
-						className="inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-[7px] pr-1.5 pl-2.5 text-[12.5px] font-semibold text-neutral-700 transition-colors hover:bg-hover-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus-ring"
+						className={clsx(
+							"inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-[7px] pr-1.5 pl-2.25 text-[12.5px] font-medium text-neutral-700 transition-[background-color,color,box-shadow] duration-100 ease-out hover:bg-hover-soft hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
+							blockMenuOpen &&
+								"bg-secondary-tint text-neutral-900 shadow-[inset_0_0_0_1px_var(--color-secondary-ring)]",
+						)}
 						onMouseDown={suppressMouseDown}
 					>
-						<Select.Value className="block w-[4.65rem] truncate">
+						<Select.Value className="block w-[4.25rem] truncate">
 							{activeBlockLabel}
 						</Select.Value>
-						<Select.Icon className="text-neutral-400">
-							<ChevronDown className="size-3.5" aria-hidden />
+						<Select.Icon className="text-neutral-400 transition-transform duration-100 data-[popup-open]:rotate-180">
+							<ChevronDown className="size-[13px] stroke-[2]" aria-hidden />
 						</Select.Icon>
 					</Toolbar.Button>
 					<Select.Portal>
@@ -253,29 +262,29 @@ export function FormattingToolbar({ className }: { className?: string }) {
 							sideOffset={6}
 							alignItemWithTrigger={false}
 						>
-							<Select.Popup className="min-w-[12rem] rounded-lg border border-border bg-card p-1 shadow-xl data-[side=bottom]:mt-2 data-[side=top]:mb-2 origin-[var(--transform-origin)] transition-[transform,opacity] duration-150 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-100 data-[ending-style]:opacity-100">
-								<div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">
+							<Select.Popup className="min-w-[10.75rem] origin-[var(--transform-origin)] rounded-[8px] border border-island-border bg-neutral-0 p-1 shadow-lg transition-[transform,opacity] duration-150 data-[side=bottom]:mt-2 data-[side=top]:mb-2 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-100 data-[ending-style]:opacity-100">
+								<div className="px-2 pb-0.75 pt-1 text-[11px] font-medium leading-4 text-neutral-400">
 									Turn into
 								</div>
 								{TOOLBAR_BLOCK_OPTIONS.map((option) => (
 									<Select.Item
 										key={option.value}
 										value={option.value}
-										className="group flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none focus-visible:ring-0 data-[highlighted]:bg-muted data-[highlighted]:text-foreground"
+										className="group flex min-h-9 cursor-default items-center gap-2 rounded-[7px] px-2 py-1 text-[12.5px] outline-none focus-visible:ring-0 data-[highlighted]:bg-hover-soft data-[highlighted]:text-neutral-900"
 									>
-										<span className="flex size-5 items-center justify-center text-muted-foreground group-data-[highlighted]:text-foreground">
-											<option.icon className="h-4 w-4" aria-hidden />
+										<span className="flex size-4.5 items-center justify-center text-[12px] text-neutral-400 group-data-[highlighted]:text-neutral-600 [&_svg]:stroke-[1.8]">
+											<option.icon className="h-3.5 w-3.5" aria-hidden />
 										</span>
 										<div className="flex flex-1 flex-col">
-											<span className="text-sm font-medium">
+											<span className="text-[12.5px] font-semibold leading-4 text-neutral-800">
 												{option.label}
 											</span>
-											<span className="text-xs text-muted-foreground group-data-[highlighted]:text-muted-foreground/80">
+											<span className="text-[11.5px] font-normal leading-4 text-neutral-500">
 												{option.description}
 											</span>
 										</div>
-										<Select.ItemIndicator className="text-foreground">
-											<Check className="h-4 w-4" aria-hidden />
+										<Select.ItemIndicator className="text-brand-700">
+											<Check className="h-3.5 w-3.5 stroke-[2]" aria-hidden />
 										</Select.ItemIndicator>
 									</Select.Item>
 								))}
@@ -446,29 +455,58 @@ function toggleTaskListFallback(editor: Editor) {
 		}
 	}
 
-	const { state, view } = editor;
-	const { selection } = state;
-	const { from, to } = selection;
 	const listItemAttrs = editor.getAttributes("listItem");
 	const isCurrentlyTask =
 		listItemAttrs && typeof listItemAttrs.checked === "boolean";
+	setTaskListState(editor, isCurrentlyTask ? null : false);
+}
 
+function setTaskListState(editor: Editor, checked: boolean | null) {
+	const { state, view } = editor;
+	const { selection } = state;
 	const tr = state.tr;
 	let applied = false;
+	const touchedBulletLists = new Set<number>();
 
-	state.doc.nodesBetween(from, to, (node, pos) => {
+	const applyListItem = (node: any, pos: number) => {
 		if (node.type.name !== "listItem") return;
-		const attrs = { ...node.attrs };
-		if (isCurrentlyTask) {
-			if (attrs.checked == null) return;
-			attrs.checked = null;
-		} else {
-			if (attrs.checked === false) return;
-			attrs.checked = false;
-		}
-		tr.setNodeMarkup(pos, undefined, attrs);
+		if (checked === null && node.attrs.checked == null) return;
+		if (checked !== null && node.attrs.checked === checked) return;
+		tr.setNodeMarkup(pos, undefined, { ...node.attrs, checked });
 		applied = true;
-	});
+	};
+
+	const applyBulletList = (node: any, pos: number) => {
+		if (node.type.name !== "bulletList" || touchedBulletLists.has(pos)) return;
+		touchedBulletLists.add(pos);
+		const isTaskList = checked !== null;
+		if (node.attrs.isTaskList === isTaskList) return;
+		tr.setNodeMarkup(pos, undefined, { ...node.attrs, isTaskList });
+		applied = true;
+	};
+
+	const visitSelection = () => {
+		state.doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+			applyListItem(node, pos);
+			applyBulletList(node, pos);
+		});
+	};
+
+	const visitAncestors = () => {
+		const $from: any = selection.$from;
+		for (let depth = $from.depth; depth > 0; depth--) {
+			const node = $from.node(depth);
+			const pos = $from.before(depth);
+			applyListItem(node, pos);
+			applyBulletList(node, pos);
+		}
+	};
+
+	if (selection.empty) {
+		visitAncestors();
+	} else {
+		visitSelection();
+	}
 
 	if (applied) {
 		view.dispatch(tr);

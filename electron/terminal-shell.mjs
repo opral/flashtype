@@ -61,17 +61,20 @@ export function buildTerminalEnv(
 	env = process.env,
 	platform = process.platform,
 ) {
+	const terminalEnv = { ...env };
+	delete terminalEnv.NO_COLOR;
+
 	if (platform === "win32") {
 		return {
-			...env,
+			...terminalEnv,
 			TERM: "xterm-256color",
 		};
 	}
 
 	return {
-		...env,
+		...terminalEnv,
 		PATH: mergePathEntries([
-			...(env.PATH ?? "").split(":"),
+			...(terminalEnv.PATH ?? "").split(":"),
 			...(PATH_ENTRIES_BY_PLATFORM[platform] ??
 				PATH_ENTRIES_BY_PLATFORM.default),
 		]),

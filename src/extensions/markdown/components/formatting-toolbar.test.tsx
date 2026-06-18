@@ -265,6 +265,34 @@ describe("FormattingToolbar", () => {
 		destroyEditor(setup);
 	});
 
+	test("converts a selected checklist item back to a plain bullet list", async () => {
+		const setup = createEditor(
+			astToTiptapDoc(parseMarkdown("- [ ] todo\n")) as JSONContent,
+		);
+		const utils = renderToolbar(setup.editor);
+
+		const bulletButton = await screen.findByLabelText("Bullet list");
+		const checklistButton = await screen.findByLabelText("Checklist");
+
+		await act(async () => {
+			setup.editor.commands.setTextSelection({ from: 3, to: 3 });
+			fireEvent.click(bulletButton);
+		});
+
+		const list = (setup.editor.getJSON() as any).content?.[0];
+		const listItem = list?.content?.[0];
+		expect(list?.attrs?.isTaskList).toBe(false);
+		expect(listItem?.attrs?.checked ?? null).toBeNull();
+		expect(buildMarkdownFromEditor(setup.editor)).toBe("- todo\n");
+		expect(bulletButton).toHaveAttribute("aria-pressed", "true");
+		expect(checklistButton).toHaveAttribute("aria-pressed", "false");
+
+		await act(async () => {
+			utils.unmount();
+		});
+		destroyEditor(setup);
+	});
+
 	test("shows plain bullets and checklist items separately in a mixed list", async () => {
 		const setup = createEditor(
 			astToTiptapDoc(parseMarkdown(mixedTaskListMarkdown)) as JSONContent,

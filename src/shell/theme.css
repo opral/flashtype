@@ -40,6 +40,9 @@
 	--color-focus-tint: rgb(251, 239, 228); /* focused chip / selected file */
 	--color-focus-ring: rgb(243, 216, 190);
 	--color-focus-close: rgb(201, 168, 136); /* ✕ on the focused chip */
+	--color-secondary-tint: rgb(243, 244, 246);
+	--color-secondary-ring: rgb(209, 213, 219);
+	--color-secondary-icon: rgb(75, 85, 99);
 	--color-error-50: rgb(254, 242, 242);
 	--color-error-100: rgb(254, 226, 226);
 	--color-error-200: rgb(254, 202, 202);

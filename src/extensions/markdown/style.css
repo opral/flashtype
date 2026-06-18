@@ -152,8 +152,17 @@
 }
 
 .markdown-view .ProseMirror li {
+	margin-top: 0.1rem;
+	margin-bottom: 0.1rem;
+}
+
+.markdown-view .ProseMirror li p {
+	margin-top: 0;
+	margin-bottom: 0;
+}
+
+.markdown-view .ProseMirror li p + p {
 	margin-top: 0.35rem;
-	margin-bottom: 0.35rem;
 }
 
 /* Tables */
@@ -229,16 +238,44 @@
 
 /* Task lists */
 .markdown-view .ProseMirror li[data-task] {
-	display: flex;
+	display: grid;
+	grid-template-columns: 1.5rem minmax(0, 1fr);
 	align-items: flex-start;
+	margin-left: -1.5rem;
+	list-style: none;
 }
 
 .markdown-view .ProseMirror li[data-task] > input[type="checkbox"] {
-	margin-top: 0.2em;
+	appearance: none;
+	grid-column: 1;
+	width: 0.875rem;
+	height: 0.875rem;
+	margin: calc((1.7em - 0.875rem) / 2) 0 0;
+	justify-self: center;
+	border: 1.5px solid var(--color-neutral-400);
+	border-radius: 4px;
+	background-color: var(--color-neutral-0);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+	transition:
+		background-color 120ms ease,
+		border-color 120ms ease,
+		box-shadow 120ms ease;
+}
+
+.markdown-view .ProseMirror li[data-task] > input[type="checkbox"]:checked {
+	border-color: var(--color-brand-600);
+	background-color: var(--color-brand-600);
+	background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 12 12' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 6.2 5 8.1 9 3.8' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-position: center;
+	background-repeat: no-repeat;
+	background-size: 0.75rem 0.75rem;
+	box-shadow: 0 1px 2px rgba(194, 65, 12, 0.18);
 }
 
 .markdown-view .ProseMirror li[data-task] > div {
+	grid-column: 2;
 	flex: 1 1 auto;
+	min-width: 0;
 }
 
 .markdown-view .ProseMirror li[data-task] p {

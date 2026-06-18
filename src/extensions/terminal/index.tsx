@@ -5,13 +5,31 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
 import { TERMINAL_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
+import { createTerminalOutputNormalizer } from "./ansi-style-normalizer";
 
 const XTERM_THEMES = {
 	light: {
 		background: "#ffffff",
-		foreground: "#111827",
-		cursor: "#111827",
-		selectionBackground: "#dbeafe",
+		foreground: "#1c1917",
+		cursor: "#1c1917",
+		selectionBackground: "#e8ded2",
+		selectionInactiveBackground: "#f4f1ec",
+		black: "#f4f1ec",
+		red: "#d6d3d1",
+		green: "#d6d3d1",
+		yellow: "#b7791f",
+		blue: "#78716c",
+		magenta: "#78716c",
+		cyan: "#0e7490",
+		white: "#292524",
+		brightBlack: "#a8a29e",
+		brightRed: "#a8a29e",
+		brightGreen: "#a8a29e",
+		brightYellow: "#b45309",
+		brightBlue: "#57534e",
+		brightMagenta: "#57534e",
+		brightCyan: "#0891b2",
+		brightWhite: "#1c1917",
 	},
 } as const;
 const XTERM_THEME = XTERM_THEMES.light;
@@ -43,6 +61,7 @@ function TerminalView({
 			fontSize: 13,
 			lineHeight: 1.2,
 			scrollback: 3000,
+			minimumContrastRatio: 4.5,
 			allowTransparency: false,
 			theme: XTERM_THEME,
 		});
@@ -67,13 +86,18 @@ function TerminalView({
 			handleResize();
 		});
 		resizeObserver.observe(container);
+		const outputNormalizer = createTerminalOutputNormalizer();
 
 		const stopData = terminalApi.onData((event) => {
 			if (event.id !== terminalId) return;
-			terminal.write(event.data);
+			terminal.write(outputNormalizer.write(event.data));
 		});
 		const stopExit = terminalApi.onExit((event) => {
 			if (event.id !== terminalId) return;
+			const pendingOutput = outputNormalizer.flush();
+			if (pendingOutput) {
+				terminal.write(pendingOutput);
+			}
 			terminal.writeln("");
 			terminal.writeln(
 				`[process exited${event.exitCode !== null ? ` (${event.exitCode})` : ""}]`,

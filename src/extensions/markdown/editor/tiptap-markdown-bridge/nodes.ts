@@ -140,7 +140,6 @@ export function markdownWcNodes(): Extensions {
 							type: "checkbox",
 							checked: node.attrs.checked ? "checked" : undefined,
 							disabled: "true",
-							style: "margin-right: 6px;",
 						},
 					],
 					["div", 0],
@@ -158,7 +157,6 @@ export function markdownWcNodes(): Extensions {
 						input = document.createElement("input");
 						input.type = "checkbox";
 						input.checked = node.attrs.checked === true;
-						input.style.marginRight = "6px";
 						input.addEventListener("mousedown", (e) => {
 							// Prevent focusing the checkbox from moving the caret unexpectedly
 							e.preventDefault();
