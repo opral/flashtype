@@ -23,11 +23,19 @@ export function getWorkspace(window) {
  * Resolves a requested folder directly, or a requested file to the nearest
  * ancestor Lix workspace and the file path within that workspace.
  */
-export async function resolveWorkspaceTarget(requestedPath) {
+export async function resolveWorkspaceTarget(requestedPath, options = {}) {
 	const resolved = path.resolve(requestedPath);
 	try {
 		const stats = await stat(resolved);
 		if (stats.isFile()) {
+			if (options.openFilesAsTransient === true) {
+				const workspace = createTransientDirectoryWorkspace([resolved]);
+				return {
+					workspace,
+					pendingOpenFilePaths:
+						pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+				};
+			}
 			const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
 			if (!workspaceDir) {
 				const workspace = createTransientDirectoryWorkspace([resolved]);
@@ -62,7 +70,7 @@ export async function resolveWorkspaceTarget(requestedPath) {
 	};
 }
 
-export async function resolveWorkspaceTargets(requestedPaths) {
+export async function resolveWorkspaceTargets(requestedPaths, options = {}) {
 	const targets = [];
 	const standaloneFiles = [];
 	let standaloneFilesInsertIndex = null;
@@ -81,15 +89,19 @@ export async function resolveWorkspaceTargets(requestedPaths) {
 		}
 
 		const resolved = path.resolve(String(requestedPath));
-		const standaloneFileTarget = await resolveStandaloneFile(resolved);
+		const standaloneFileTarget = await resolveStandaloneFile(resolved, options);
 		if (standaloneFileTarget) {
+			if (options.openFilesAsTransient === true) {
+				targets.push(await resolveWorkspaceTarget(standaloneFileTarget, options));
+				continue;
+			}
 			if (standaloneFilesInsertIndex === null) {
 				standaloneFilesInsertIndex = targets.length;
 			}
 			standaloneFiles.push(standaloneFileTarget);
 			continue;
 		}
-		targets.push(await resolveWorkspaceTarget(resolved));
+		targets.push(await resolveWorkspaceTarget(resolved, options));
 	}
 
 	if (standaloneFiles.length > 0) {
@@ -102,6 +114,12 @@ export async function resolveWorkspaceTargets(requestedPaths) {
 	}
 
 	return targets;
+}
+
+export async function resolveDirectLaunchWorkspaceTargets(requestedPaths) {
+	return await resolveWorkspaceTargets(requestedPaths, {
+		openFilesAsTransient: true,
+	});
 }
 
 export async function resolveWorkspace(requestedPath) {
@@ -236,13 +254,16 @@ async function resolveWorkspaceSessionEntry(workspaceEntry) {
 	return null;
 }
 
-async function resolveStandaloneFile(resolvedPath) {
+async function resolveStandaloneFile(resolvedPath, options = {}) {
 	try {
 		if (!(await stat(resolvedPath)).isFile()) {
 			return null;
 		}
 	} catch {
 		return null;
+	}
+	if (options.openFilesAsTransient === true) {
+		return resolvedPath;
 	}
 	const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolvedPath));
 	return workspaceDir ? null : resolvedPath;

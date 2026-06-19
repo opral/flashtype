@@ -153,6 +153,28 @@ export function normalizeWorkspacePaths(workspacePaths) {
 	return normalizedWorkspacePaths;
 }
 
+export function mergeRestoredAndExplicitWorkspaceRequests(
+	restoredWorkspaceEntries,
+	explicitWorkspacePaths,
+) {
+	const normalizedExplicitWorkspacePaths = normalizeWorkspacePaths(
+		explicitWorkspacePaths,
+	);
+	const explicitWorkspacePathSet = new Set(normalizedExplicitWorkspacePaths);
+	const restoredOnlyWorkspaceEntries = normalizeWorkspaceSessionEntries(
+		restoredWorkspaceEntries,
+	).filter(
+		(workspaceEntry) =>
+			!workspaceEntryOverlapsExplicitPaths(
+				workspaceEntry,
+				normalizedExplicitWorkspacePaths,
+				explicitWorkspacePathSet,
+			),
+	);
+
+	return [...restoredOnlyWorkspaceEntries, ...normalizedExplicitWorkspacePaths];
+}
+
 export function getWorkspaceSessionPath(userDataPath) {
 	return path.join(userDataPath, WORKSPACE_SESSION_FILE);
 }
@@ -190,6 +212,42 @@ function workspaceSessionEntryKey(workspaceEntry) {
 		return `ephemeral:${workspaceEntry.sourceFilePaths.join("\0")}`;
 	}
 	return `directory:${workspaceEntry.path}`;
+}
+
+function workspaceEntryOverlapsExplicitPaths(
+	workspaceEntry,
+	explicitWorkspacePaths,
+	explicitWorkspacePathSet,
+) {
+	if (workspaceEntry.ephemeral === false) {
+		return explicitWorkspacePaths.some(
+			(explicitWorkspacePath) =>
+				isSamePathOrInside(workspaceEntry.path, explicitWorkspacePath) ||
+				isSamePathOrInside(explicitWorkspacePath, workspaceEntry.path),
+		);
+	}
+	if (workspaceEntry.ephemeral === true) {
+		return workspaceEntry.sourceFilePaths.some(
+			(sourceFilePath) =>
+				explicitWorkspacePathSet.has(sourceFilePath) ||
+				explicitWorkspacePaths.some((explicitWorkspacePath) =>
+					isSamePathOrInside(explicitWorkspacePath, sourceFilePath),
+				),
+		);
+	}
+	return false;
+}
+
+function isSamePathOrInside(parentPath, childPath) {
+	if (childPath === parentPath) {
+		return true;
+	}
+	const relativePath = path.relative(parentPath, childPath);
+	return (
+		relativePath.length > 0 &&
+		!relativePath.startsWith("..") &&
+		!path.isAbsolute(relativePath)
+	);
 }
 
 function serializeWorkspaceSessionEntries(workspaceEntries) {

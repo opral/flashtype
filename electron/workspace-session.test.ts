@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import {
 	filterExistingWorkspaceEntries,
 	getWorkspaceSessionPath,
+	mergeRestoredAndExplicitWorkspaceRequests,
 	readWorkspaceSessionEntries,
 	writeWorkspaceSessionEntries,
 	writeWorkspaceSessionEntriesSync,
@@ -113,6 +114,114 @@ describe("workspace session store", () => {
 			{ ephemeral: false, path: directoryWorkspacePath },
 			{ ephemeral: true, sourceFilePaths: [firstFilePath] },
 		]);
+	});
+
+	test("restores saved workspaces when launch has no explicit paths", () => {
+		const userDataPath = createUserDataPath();
+		const workspacePath = path.join(userDataPath, "workspace");
+		const firstFilePath = path.join(userDataPath, "files", "one.md");
+		const secondFilePath = path.join(userDataPath, "files", "two.md");
+
+		expect(
+			mergeRestoredAndExplicitWorkspaceRequests(
+				[
+					{ ephemeral: false, path: workspacePath },
+					{ ephemeral: false, path: workspacePath },
+					{
+						ephemeral: true,
+						sourceFilePaths: [firstFilePath, secondFilePath, firstFilePath],
+					},
+				],
+				[],
+			),
+		).toEqual([
+			{ ephemeral: false, path: workspacePath },
+			{ ephemeral: true, sourceFilePaths: [firstFilePath, secondFilePath] },
+		]);
+	});
+
+	test("keeps unrelated restored workspaces when launch has explicit paths", () => {
+		const userDataPath = createUserDataPath();
+		const restoredWorkspacePath = path.join(userDataPath, "Downloads");
+		const unrelatedWorkspacePath = path.join(userDataPath, "Projects");
+		const restoredFilePath = path.join(userDataPath, "notes", "draft.md");
+		const unrelatedFilePath = path.join(userDataPath, "notes", "other.md");
+		const explicitFilePath = path.join(
+			userDataPath,
+			"Downloads",
+			"docs",
+			"README.md",
+		);
+
+		expect(
+			mergeRestoredAndExplicitWorkspaceRequests(
+				[
+					{ ephemeral: false, path: restoredWorkspacePath },
+					{ ephemeral: false, path: unrelatedWorkspacePath },
+					{
+						ephemeral: true,
+						sourceFilePaths: [restoredFilePath, unrelatedFilePath],
+					},
+				],
+				[explicitFilePath, restoredFilePath],
+			),
+		).toEqual([
+			{ ephemeral: false, path: unrelatedWorkspacePath },
+			explicitFilePath,
+			restoredFilePath,
+		]);
+	});
+
+	test("does not duplicate explicitly opened restored workspace directories", () => {
+		const userDataPath = createUserDataPath();
+		const workspacePath = path.join(userDataPath, "workspace");
+
+		expect(
+			mergeRestoredAndExplicitWorkspaceRequests(
+				[{ ephemeral: false, path: workspacePath }],
+				[workspacePath],
+			),
+		).toEqual([workspacePath]);
+	});
+
+	test("drops restored workspace directories containing explicit launch files", () => {
+		const userDataPath = createUserDataPath();
+		const restoredWorkspacePath = path.join(userDataPath, "Downloads");
+		const explicitFilePath = path.join(
+			userDataPath,
+			"Downloads",
+			"docs",
+			"README.md",
+		);
+
+		expect(
+			mergeRestoredAndExplicitWorkspaceRequests(
+				[{ ephemeral: false, path: restoredWorkspacePath }],
+				[explicitFilePath],
+			),
+		).toEqual([explicitFilePath]);
+	});
+
+	test("drops restored nested entries contained by explicit launch folders", () => {
+		const userDataPath = createUserDataPath();
+		const explicitWorkspacePath = path.join(userDataPath, "Downloads");
+		const restoredWorkspacePath = path.join(userDataPath, "Downloads", "docs");
+		const restoredFilePath = path.join(
+			userDataPath,
+			"Downloads",
+			"notes",
+			"draft.md",
+		);
+
+		expect(
+			mergeRestoredAndExplicitWorkspaceRequests(
+				[
+					{ ephemeral: false, path: restoredWorkspacePath },
+					{ ephemeral: true, sourceFilePaths: [restoredFilePath] },
+				],
+				[explicitWorkspacePath],
+			),
+		).toEqual([explicitWorkspacePath]);
 	});
 });
 

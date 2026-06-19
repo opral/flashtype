@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
+	resolveDirectLaunchWorkspaceTargets,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
 	resolveWorkspaceTargets,
@@ -90,6 +91,116 @@ describe("workspace resolution", () => {
 			},
 			pendingOpenFilePaths: ["docs/readme.md"],
 		});
+	});
+
+	test("can resolve files inside Lix workspaces as transient launch targets", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const filePath = path.join(directory, "readme.md");
+		await mkdir(path.join(directory, ".lix", ".internal"), { recursive: true });
+		await writeFile(path.join(directory, ".lix", ".internal", "db.sqlite"), "");
+		await writeFile(filePath, "# Hello\n");
+
+		await expect(
+			resolveWorkspaceTargets([filePath], { openFilesAsTransient: true }),
+		).resolves.toEqual([
+			{
+				workspace: {
+					ephemeral: true,
+					path: directory,
+					sourceFilePaths: [filePath],
+					name: "workspace",
+				},
+				pendingOpenFilePaths: ["readme.md"],
+			},
+		]);
+	});
+
+	test("resolves direct launch file targets as transient workspaces", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const filePath = path.join(directory, "readme.md");
+		await mkdir(path.join(directory, ".lix", ".internal"), { recursive: true });
+		await writeFile(path.join(directory, ".lix", ".internal", "db.sqlite"), "");
+		await writeFile(filePath, "# Hello\n");
+
+		await expect(
+			resolveDirectLaunchWorkspaceTargets([filePath]),
+		).resolves.toEqual([
+			{
+				workspace: {
+					ephemeral: true,
+					path: directory,
+					sourceFilePaths: [filePath],
+					name: "workspace",
+				},
+				pendingOpenFilePaths: ["readme.md"],
+			},
+		]);
+	});
+
+	test("resolves each file in a direct launch batch independently", async () => {
+		const firstDirectory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"first",
+		);
+		const secondDirectory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"second",
+		);
+		const firstPath = path.join(firstDirectory, "readme.md");
+		const secondPath = path.join(secondDirectory, "readme.md");
+		await mkdir(path.join(firstDirectory, ".lix", ".internal"), {
+			recursive: true,
+		});
+		await mkdir(path.join(secondDirectory, ".lix", ".internal"), {
+			recursive: true,
+		});
+		await writeFile(
+			path.join(firstDirectory, ".lix", ".internal", "db.sqlite"),
+			"",
+		);
+		await writeFile(
+			path.join(secondDirectory, ".lix", ".internal", "db.sqlite"),
+			"",
+		);
+		await writeFile(firstPath, "# First\n");
+		await writeFile(secondPath, "# Second\n");
+
+		await expect(
+			resolveDirectLaunchWorkspaceTargets([firstPath, secondPath]),
+		).resolves.toEqual([
+			{
+				workspace: {
+					ephemeral: true,
+					path: firstDirectory,
+					sourceFilePaths: [firstPath],
+					name: "first",
+				},
+				pendingOpenFilePaths: ["readme.md"],
+			},
+			{
+				workspace: {
+					ephemeral: true,
+					path: secondDirectory,
+					sourceFilePaths: [secondPath],
+					name: "second",
+				},
+				pendingOpenFilePaths: ["readme.md"],
+			},
+		]);
 	});
 
 	test("resolves files outside a Lix workspace to transient directory workspaces", async () => {

@@ -317,17 +317,14 @@ test("macOS open-file events create workspace windows for folders and files", as
 		registerRendererConsoleLogging(folderPage);
 
 		await emitOpenFile(electronApp, filePath);
-		const filePage = await pageWithTitle(
-			electronApp,
-			path.basename(fileWorkspaceDir),
-		);
+		const filePage = await pageWithTitle(electronApp, "docs");
 		registerRendererConsoleLogging(filePage);
 
 		await expectWindowCount(electronApp, 3);
 		await expect(firstRunPage).toHaveTitle("Flashtype");
 		await expect(folderPage.getByText("folder-marker.md")).toBeVisible();
 		await expect(
-			filePage.getByRole("heading", { name: "docs/file-marker.md" }),
+			filePage.getByRole("heading", { name: "file-marker.md" }),
 		).toBeVisible();
 		await expect(
 			filePage
@@ -371,7 +368,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 				.first(),
 		).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
-		await expect(filePage.getByText("sibling.md")).toBeVisible();
+		await expect(filePage.getByText("sibling.md")).toHaveCount(0);
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
 
@@ -392,12 +389,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 				params: ["/generated.md", new TextEncoder().encode("# Generated\n")],
 			});
 		});
-		await expect
-			.poll(
-				async () =>
-					await readFile(path.join(directory, "generated.md"), "utf8"),
-			)
-			.toBe("# Generated\n");
+		await expectPathMissing(path.join(directory, "generated.md"));
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
 	} finally {
@@ -405,46 +397,58 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 	}
 });
 
-test("launching with multiple standalone markdown files creates one transient workspace", async ({
+test("launching with multiple standalone markdown files creates one window per file", async ({
 	browserName: _browserName,
 }, testInfo) => {
-	const directory = testInfo.outputPath("standalone-markdown");
-	const firstPath = path.join(directory, "alpha.md");
-	const secondPath = path.join(directory, "beta.markdown");
-	const siblingPath = path.join(directory, "sibling.md");
+	const firstDirectory = testInfo.outputPath("standalone-markdown-alpha");
+	const secondDirectory = testInfo.outputPath("standalone-markdown-beta");
+	const firstPath = path.join(firstDirectory, "alpha.md");
+	const secondPath = path.join(secondDirectory, "beta.markdown");
+	const siblingPath = path.join(firstDirectory, "sibling.md");
 
 	let electronApp: ElectronApplication | undefined;
 	try {
-		await mkdir(directory, { recursive: true });
+		await mkdir(firstDirectory, { recursive: true });
+		await mkdir(secondDirectory, { recursive: true });
 		await writeFile(firstPath, "# Alpha\n");
 		await writeFile(secondPath, "# Beta\n");
 		await writeFile(siblingPath, "# Sibling\n");
 
 		electronApp = await launchDevElectronAppWithArgs([firstPath, secondPath]);
-		const page = await pageWithTitle(electronApp, path.basename(directory));
-		registerRendererConsoleLogging(page);
+		const firstPage = await pageWithTitle(
+			electronApp,
+			path.basename(firstDirectory),
+		);
+		const secondPage = await pageWithTitle(
+			electronApp,
+			path.basename(secondDirectory),
+		);
+		registerRendererConsoleLogging(firstPage);
+		registerRendererConsoleLogging(secondPage);
 
-		await expectWindowCount(electronApp, 1);
-		await expect(page.getByRole("heading", { name: "Alpha" })).toBeVisible();
-		await expect(page.getByText("beta.markdown")).toBeVisible();
-		await expect(page.getByText("sibling.md")).toBeVisible();
-		await expectPathMissing(path.join(directory, ".lix"));
-		await expectPathMissing(path.join(directory, ".lix_system"));
+		await expectWindowCount(electronApp, 2);
+		await expect(firstPage.getByRole("heading", { name: "Alpha" })).toBeVisible();
+		await expect(firstPage.getByText("sibling.md")).toHaveCount(0);
+		await expect(secondPage.getByRole("heading", { name: "Beta" })).toBeVisible();
+		await expectPathMissing(path.join(firstDirectory, ".lix"));
+		await expectPathMissing(path.join(secondDirectory, ".lix"));
 	} finally {
 		await closeElectronApp(electronApp);
 	}
 });
 
-test("macOS open-file events group standalone markdown files", async ({
+test("macOS open-file events create one transient window per standalone file", async ({
 	browserName: _browserName,
 }, testInfo) => {
-	const directory = testInfo.outputPath("standalone-open-file-markdown");
-	const firstPath = path.join(directory, "first.md");
-	const secondPath = path.join(directory, "second.md");
+	const firstDirectory = testInfo.outputPath("standalone-open-file-first");
+	const secondDirectory = testInfo.outputPath("standalone-open-file-second");
+	const firstPath = path.join(firstDirectory, "first.md");
+	const secondPath = path.join(secondDirectory, "second.md");
 
 	let electronApp: ElectronApplication | undefined;
 	try {
-		await mkdir(directory, { recursive: true });
+		await mkdir(firstDirectory, { recursive: true });
+		await mkdir(secondDirectory, { recursive: true });
 		await writeFile(firstPath, "# First\n");
 		await writeFile(secondPath, "# Second\n");
 
@@ -453,32 +457,44 @@ test("macOS open-file events group standalone markdown files", async ({
 		registerRendererConsoleLogging(firstRunPage);
 
 		await emitOpenFiles(electronApp, [firstPath, secondPath]);
-		const filePage = await pageWithTitle(electronApp, path.basename(directory));
-		registerRendererConsoleLogging(filePage);
+		const firstPage = await pageWithTitle(
+			electronApp,
+			path.basename(firstDirectory),
+		);
+		const secondPage = await pageWithTitle(
+			electronApp,
+			path.basename(secondDirectory),
+		);
+		registerRendererConsoleLogging(firstPage);
+		registerRendererConsoleLogging(secondPage);
 
-		await expectWindowCount(electronApp, 2);
+		await expectWindowCount(electronApp, 3);
 		await expect(firstRunPage).toHaveTitle("Flashtype");
 		await expect(
-			filePage.getByRole("heading", { name: "First" }),
+			firstPage.getByRole("heading", { name: "First" }),
 		).toBeVisible();
-		await expect(filePage.getByText("second.md")).toBeVisible();
+		await expect(
+			secondPage.getByRole("heading", { name: "Second" }),
+		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
 });
 
-test("mixed folder and standalone markdown args create folder and grouped file windows", async ({
+test("mixed folder and standalone markdown args create folder and file windows", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const folderWorkspaceDir = testInfo.outputPath("folder-workspace");
-	const markdownDir = testInfo.outputPath("standalone-mixed-markdown");
-	const firstPath = path.join(markdownDir, "one.md");
-	const secondPath = path.join(markdownDir, "two.md");
+	const firstMarkdownDir = testInfo.outputPath("standalone-mixed-one");
+	const secondMarkdownDir = testInfo.outputPath("standalone-mixed-two");
+	const firstPath = path.join(firstMarkdownDir, "one.md");
+	const secondPath = path.join(secondMarkdownDir, "two.md");
 
 	let electronApp: ElectronApplication | undefined;
 	try {
 		await writeMarkerFile(folderWorkspaceDir, "folder-marker.md");
-		await mkdir(markdownDir, { recursive: true });
+		await mkdir(firstMarkdownDir, { recursive: true });
+		await mkdir(secondMarkdownDir, { recursive: true });
 		await writeFile(firstPath, "# One\n");
 		await writeFile(secondPath, "# Two\n");
 
@@ -491,57 +507,76 @@ test("mixed folder and standalone markdown args create folder and grouped file w
 			electronApp,
 			path.basename(folderWorkspaceDir),
 		);
-		const filePage = await pageWithTitle(
+		const firstFilePage = await pageWithTitle(
 			electronApp,
-			path.basename(markdownDir),
+			path.basename(firstMarkdownDir),
+		);
+		const secondFilePage = await pageWithTitle(
+			electronApp,
+			path.basename(secondMarkdownDir),
 		);
 		registerRendererConsoleLogging(folderPage);
-		registerRendererConsoleLogging(filePage);
+		registerRendererConsoleLogging(firstFilePage);
+		registerRendererConsoleLogging(secondFilePage);
 
-		await expectWindowCount(electronApp, 2);
+		await expectWindowCount(electronApp, 3);
 		await expect(folderPage.getByText("folder-marker.md")).toBeVisible();
-		await expect(filePage.getByRole("heading", { name: "One" })).toBeVisible();
-		await expect(filePage.getByText("two.md")).toBeVisible();
+		await expect(
+			firstFilePage.getByRole("heading", { name: "One" }),
+		).toBeVisible();
+		await expect(
+			secondFilePage.getByRole("heading", { name: "Two" }),
+		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
 });
 
-test("relaunch restores grouped transient file workspaces", async ({
+test("relaunch restores each transient file workspace", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const userDataDir = testInfo.outputPath("user-data");
-	const directory = testInfo.outputPath("restore-markdown");
-	const firstPath = path.join(directory, "first.md");
-	const secondPath = path.join(directory, "second.md");
+	const firstDirectory = testInfo.outputPath("restore-markdown-first");
+	const secondDirectory = testInfo.outputPath("restore-markdown-second");
+	const firstPath = path.join(firstDirectory, "first.md");
+	const secondPath = path.join(secondDirectory, "second.md");
 
 	let electronApp: ElectronApplication | undefined;
 	try {
-		await mkdir(directory, { recursive: true });
+		await mkdir(firstDirectory, { recursive: true });
+		await mkdir(secondDirectory, { recursive: true });
 		await writeFile(firstPath, "# First\n");
 		await writeFile(secondPath, "# Second\n");
 
 		electronApp = await launchDevElectronAppWithArgs([firstPath, secondPath], {
 			userDataDir,
 		});
-		await pageWithTitle(electronApp, path.basename(directory));
-		await expectWindowCount(electronApp, 1);
+		await pageWithTitle(electronApp, path.basename(firstDirectory));
+		await pageWithTitle(electronApp, path.basename(secondDirectory));
+		await expectWindowCount(electronApp, 2);
 
 		await closeElectronApp(electronApp);
 		electronApp = undefined;
 
 		electronApp = await launchDevElectronAppWithArgs([], { userDataDir });
-		const restoredPage = await pageWithTitle(
+		const firstRestoredPage = await pageWithTitle(
 			electronApp,
-			path.basename(directory),
+			path.basename(firstDirectory),
 		);
-		registerRendererConsoleLogging(restoredPage);
+		const secondRestoredPage = await pageWithTitle(
+			electronApp,
+			path.basename(secondDirectory),
+		);
+		registerRendererConsoleLogging(firstRestoredPage);
+		registerRendererConsoleLogging(secondRestoredPage);
 
-		await expectWindowCount(electronApp, 1);
+		await expectWindowCount(electronApp, 2);
 		await expect(
-			restoredPage.getByRole("heading", { name: "First" }),
+			firstRestoredPage.getByRole("heading", { name: "First" }),
 		).toBeVisible();
-		await expect(restoredPage.getByText("second.md")).toBeVisible();
+		await expect(
+			secondRestoredPage.getByRole("heading", { name: "Second" }),
+		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
