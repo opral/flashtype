@@ -165,11 +165,10 @@ export const MarkdownWcShortcuts = Extension.create({
 				"\uFFFC",
 				"\uFFFC",
 			);
-			const deleteFromOffset = findPreviousWordDeleteOffset(textBefore);
-			if (deleteFromOffset === textBefore.length) return false;
+			const textToDelete = previousWordText(textBefore);
+			if (!textToDelete) return false;
 
-			const deleteSize = textBefore.length - deleteFromOffset;
-			const from = Math.max($from.start(), $from.pos - deleteSize);
+			const from = Math.max($from.start(), $from.pos - textToDelete.length);
 			if (from >= $from.pos) return false;
 
 			view.dispatch(state.tr.delete(from, $from.pos).scrollIntoView());
@@ -249,37 +248,6 @@ export const MarkdownWcShortcuts = Extension.create({
 	},
 });
 
-function findPreviousWordDeleteOffset(text: string): number {
-	let end = text.length;
-	while (end > 0 && isWhitespace(text[end - 1] ?? "")) {
-		end -= 1;
-	}
-	if (end === 0) {
-		return 0;
-	}
-
-	let start = end;
-	if (isWordCharacter(text[start - 1] ?? "")) {
-		while (start > 0 && isWordCharacter(text[start - 1] ?? "")) {
-			start -= 1;
-		}
-		return start;
-	}
-
-	while (
-		start > 0 &&
-		!isWhitespace(text[start - 1] ?? "") &&
-		!isWordCharacter(text[start - 1] ?? "")
-	) {
-		start -= 1;
-	}
-	return start;
-}
-
-function isWhitespace(value: string): boolean {
-	return /\s/.test(value);
-}
-
-function isWordCharacter(value: string): boolean {
-	return /[\p{L}\p{N}_]/u.test(value);
+function previousWordText(textBeforeCursor: string): string {
+	return textBeforeCursor.match(/\s*\S+$/u)?.[0] ?? "";
 }

@@ -242,7 +242,7 @@ describe("Keyboard shortcuts (keymap)", () => {
 		editor.commands.insertContent("alpha beta gamma");
 		editor.commands.setTextSelection(editor.state.doc.content.size);
 		sendModKey(editor, "Backspace");
-		expect(buildMarkdownFromEditor(editor)).toBe("alpha beta \n");
+		expect(buildMarkdownFromEditor(editor)).toBe("alpha beta\n");
 	});
 
 	test("Mod-Backspace at the start of a text block does not merge blocks", () => {
