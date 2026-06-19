@@ -7,6 +7,8 @@ import { createReactExtensionDefinition } from "../../extension-runtime/react-ex
 import { TERMINAL_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import { createTerminalOutputNormalizer } from "./ansi-style-normalizer";
 
+const TERMINAL_INITIAL_COMMAND_LAUNCH_ARG = "initialCommand";
+
 const XTERM_THEMES = {
 	light: {
 		background: "#ffffff",
@@ -179,9 +181,12 @@ export const extension = createReactExtensionDefinition({
 	component: ({ instance }) => (
 		<TerminalView
 			initialCommand={
-				typeof instance.state?.command === "string"
-					? instance.state.command
-					: undefined
+				typeof instance.launchArgs?.[TERMINAL_INITIAL_COMMAND_LAUNCH_ARG] ===
+				"string"
+					? instance.launchArgs[TERMINAL_INITIAL_COMMAND_LAUNCH_ARG]
+					: typeof instance.state?.command === "string"
+						? instance.state.command
+						: undefined
 			}
 		/>
 	),

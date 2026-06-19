@@ -84,6 +84,7 @@ import {
 	cloneExtensionInstance,
 	reorderPanelExtensionsByIndex,
 } from "./panel-utils";
+import { buildAgentLaunchArgsWithActiveFile } from "./agent-launch";
 
 const stripLaunchArgs = (view: ExtensionInstance): ExtensionInstance => {
 	const { launchArgs: _omitLaunch, ...rest } = view as any;
@@ -1166,6 +1167,16 @@ function LayoutShellContent({
 		[setPanelState],
 	);
 
+	const activeCentralEntry = useMemo(() => {
+		const activeInstance =
+			centralPanel.activeInstance ?? centralPanel.views[0]?.instance ?? null;
+		if (!activeInstance) return null;
+		return (
+			centralPanel.views.find((entry) => entry.instance === activeInstance) ??
+			null
+		);
+	}, [centralPanel]);
+
 	const handleAddView = useCallback(
 		(side: PanelSide, kind: ExtensionKind, state?: ExtensionState) => {
 			// Multi-instance kinds (agent terminals) get a fresh instance per
@@ -1173,9 +1184,16 @@ function LayoutShellContent({
 			const instance = extensionMap.get(kind)?.multiInstance
 				? createExtensionInstanceId(kind)
 				: undefined;
-			handleOpenView({ panel: side, kind, state, instance });
+			const launchArgs = buildAgentLaunchArgsWithActiveFile({
+				state,
+				activeFilePath:
+					typeof activeCentralEntry?.state?.filePath === "string"
+						? activeCentralEntry.state.filePath
+						: null,
+			});
+			handleOpenView({ panel: side, kind, state, launchArgs, instance });
 		},
-		[handleOpenView, extensionMap],
+		[activeCentralEntry, handleOpenView, extensionMap],
 	);
 
 	const focusPanel = useCallback((side: PanelSide) => {
@@ -1359,15 +1377,6 @@ function LayoutShellContent({
 		});
 	}, [handleOpenFile, lix]);
 
-	const activeCentralEntry = useMemo(() => {
-		const activeInstance =
-			centralPanel.activeInstance ?? centralPanel.views[0]?.instance ?? null;
-		if (!activeInstance) return null;
-		return (
-			centralPanel.views.find((entry) => entry.instance === activeInstance) ??
-			null
-		);
-	}, [centralPanel]);
 	const activeCentralFileId =
 		activeMarkdownFileIdFromExtensionInstance(activeCentralEntry);
 
