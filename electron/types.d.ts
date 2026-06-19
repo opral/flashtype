@@ -157,7 +157,8 @@ export type DesktopUpdateCheckStatus =
 	| "disabled"
 	| "error"
 	| "installing"
-	| "not-ready";
+	| "not-ready"
+	| "ready";
 
 export type DesktopUpdateState = {
 	checking: boolean;

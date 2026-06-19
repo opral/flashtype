@@ -4,8 +4,6 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { closeLixSession, disposeLixIpc, registerLixIpc } from "./ipc-lix.mjs";
-import { disposeTerminalIpc, registerTerminalIpc } from "./ipc-terminal.mjs";
 import {
 	applyWorkspaceWindowChrome,
 	getWorkspace,
@@ -45,6 +43,7 @@ const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
 const pendingWorkspaceOpenRequests = [];
 let readyForWorkspaceOpens = false;
+let initialWorkspaceOpenInProgress = false;
 let isQuitting = false;
 let autoUpdaterInstance = null;
 let autoUpdateListenersRegistered = false;
@@ -53,9 +52,17 @@ let updateDownloadInProgress = false;
 let updateInstallReady = false;
 let pendingManualUpdateCheck = false;
 let updateWindow = null;
+let pendingUpdateWindowState = null;
 let updateWindowCloseTimer = null;
 let updateIconDataUrl = null;
 let telemetryHeartbeatInterval = null;
+let autoUpdatesSetup = false;
+let recoveryUpdateCheckStarted = false;
+let closeLixSession = async () => {};
+let disposeLixIpc = async () => {};
+let registerLixIpc = () => {};
+let disposeTerminalIpc = () => {};
+let registerTerminalIpc = () => {};
 
 if (isHeadless && process.platform === "darwin") {
 	app.dock.hide();
@@ -102,9 +109,7 @@ async function openWorkspacePathArguments(
 		workingDirectory,
 	);
 	if (workspacePaths.length === 0) {
-		if (!focusMostRecentWorkspaceWindow() && app.isReady()) {
-			await createMainWindow();
-		}
+		await focusOrCreateWorkspaceWindow();
 		return;
 	}
 
@@ -122,6 +127,20 @@ async function openWorkspaceRequests(workspaceRequests) {
 	for (const workspaceTarget of workspaceTargets) {
 		await createMainWindow(workspaceTarget);
 	}
+}
+
+async function focusOrCreateWorkspaceWindow() {
+	if (!readyForWorkspaceOpens) {
+		return false;
+	}
+	if (focusMostRecentWorkspaceWindow()) {
+		return true;
+	}
+	if (initialWorkspaceOpenInProgress || !app.isReady()) {
+		return false;
+	}
+	await createMainWindow();
+	return true;
 }
 
 function focusMostRecentWorkspaceWindow() {
@@ -271,12 +290,22 @@ async function createMainWindow(workspaceRequest) {
 			if (!isHeadless && !window.isDestroyed() && !window.isVisible()) {
 				window.show();
 			}
+			void triggerRecoveryUpdateCheck(
+				new Error(
+					`Failed to load ${validatedURL} (${errorCode}): ${errorDescription}`,
+				),
+			);
 		},
 	);
 
 	window.webContents.on("render-process-gone", (_event, details) => {
 		console.error(
 			`Renderer process exited: ${details.reason} (${details.exitCode ?? "n/a"})`,
+		);
+		void triggerRecoveryUpdateCheck(
+			new Error(
+				`Renderer process exited: ${details.reason} (${details.exitCode ?? "n/a"})`,
+			),
 		);
 	});
 
@@ -296,86 +325,108 @@ async function createMainWindow(workspaceRequest) {
 
 if (hasSingleInstanceLock) {
 	app.whenReady().then(async () => {
-		registerLixIpc((event) => BrowserWindow.fromWebContents(event.sender));
-		registerTerminalIpc();
 		registerAppIpc();
-		registerWorkspaceIpc(
-			(event) => BrowserWindow.fromWebContents(event.sender),
-			{
-				beforeChange: (_nextWorkspace, window) =>
-					closeLixSession(window, { ignoreOpenError: true }),
-				afterChange: (workspace, window) =>
-					recordOpenWorkspacePath(window, workspace),
-				openInNewWindow: async (requestedPath) => {
-					const workspaceTarget = (
-						await resolveDirectLaunchWorkspaceTargets([requestedPath])
-					)[0];
-					const window = await createMainWindow(workspaceTarget);
-					return getWorkspace(window);
-				},
-			},
-		);
 		installApplicationMenu();
-		void registerMarkdownDefaultHandler({
-			execFileAsync,
-			executablePath: process.execPath,
-			isPackaged: app.isPackaged,
-			platform: process.platform,
-		}).catch((error) => {
-			console.warn(
-				"Failed to register Flashtype as the Markdown editor",
-				error,
-			);
+		app.on("activate", () => {
+			void focusOrCreateWorkspaceWindow();
 		});
-		void captureAppOpened();
-		setupTelemetryHeartbeat();
-		const savedWorkspaceEntries = await readWorkspaceSessionEntries(
-			app.getPath("userData"),
-		);
-		const restorableSavedWorkspaceEntries =
-			await filterExistingWorkspaceEntries(savedWorkspaceEntries);
-		if (
-			restorableSavedWorkspaceEntries.length !== savedWorkspaceEntries.length
-		) {
-			try {
-				writeWorkspaceSessionEntriesSync(
-					app.getPath("userData"),
-					restorableSavedWorkspaceEntries,
-				);
-			} catch (error) {
-				console.warn("Failed to clean Flashtype workspace session", error);
-			}
+		await setupAutoUpdates();
+		if (isQuitting) {
+			return;
 		}
-		const explicitWorkspacePaths = normalizeWorkspacePaths([
-			...resolveWorkspacePathArguments(
-				getWorkspacePathArguments(process.argv, {
-					defaultApp: process.defaultApp === true,
-				}),
-				process.cwd(),
-			),
-			...pendingWorkspaceOpenRequests,
-		]);
-		const workspaceRequestsToOpen = mergeRestoredAndExplicitWorkspaceRequests(
-			restorableSavedWorkspaceEntries,
-			explicitWorkspacePaths,
-		);
-		pendingWorkspaceOpenRequests.length = 0;
-		readyForWorkspaceOpens = true;
+		void startWorkspaceLifecycle().catch((error) => {
+			console.warn("Failed to start Flashtype workspace UI", error);
+			void triggerRecoveryUpdateCheck(error);
+		});
+	});
+}
+
+async function loadNativeIpcModules() {
+	const [lixIpc, terminalIpc] = await Promise.all([
+		import("./ipc-lix.mjs"),
+		import("./ipc-terminal.mjs"),
+	]);
+	closeLixSession = lixIpc.closeLixSession;
+	disposeLixIpc = lixIpc.disposeLixIpc;
+	registerLixIpc = lixIpc.registerLixIpc;
+	disposeTerminalIpc = terminalIpc.disposeTerminalIpc;
+	registerTerminalIpc = terminalIpc.registerTerminalIpc;
+}
+
+async function startWorkspaceLifecycle() {
+	await loadNativeIpcModules();
+	if (isQuitting) {
+		return;
+	}
+	registerLixIpc((event) => BrowserWindow.fromWebContents(event.sender));
+	registerTerminalIpc();
+	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender), {
+		beforeChange: (_nextWorkspace, window) =>
+			closeLixSession(window, { ignoreOpenError: true }),
+		afterChange: (workspace, window) =>
+			recordOpenWorkspacePath(window, workspace),
+		openInNewWindow: async (requestedPath) => {
+			const workspaceTarget = (
+				await resolveDirectLaunchWorkspaceTargets([requestedPath])
+			)[0];
+			const window = await createMainWindow(workspaceTarget);
+			return getWorkspace(window);
+		},
+	});
+	void registerMarkdownDefaultHandler({
+		execFileAsync,
+		executablePath: process.execPath,
+		isPackaged: app.isPackaged,
+		platform: process.platform,
+	}).catch((error) => {
+		console.warn("Failed to register Flashtype as the Markdown editor", error);
+	});
+	void captureAppOpened();
+	setupTelemetryHeartbeat();
+	const savedWorkspaceEntries = await readWorkspaceSessionEntries(
+		app.getPath("userData"),
+	);
+	const restorableSavedWorkspaceEntries = await filterExistingWorkspaceEntries(
+		savedWorkspaceEntries,
+	);
+	if (restorableSavedWorkspaceEntries.length !== savedWorkspaceEntries.length) {
+		try {
+			writeWorkspaceSessionEntriesSync(
+				app.getPath("userData"),
+				restorableSavedWorkspaceEntries,
+			);
+		} catch (error) {
+			console.warn("Failed to clean Flashtype workspace session", error);
+		}
+	}
+	const explicitWorkspacePaths = normalizeWorkspacePaths([
+		...resolveWorkspacePathArguments(
+			getWorkspacePathArguments(process.argv, {
+				defaultApp: process.defaultApp === true,
+			}),
+			process.cwd(),
+		),
+		...pendingWorkspaceOpenRequests,
+	]);
+	const workspaceRequestsToOpen = mergeRestoredAndExplicitWorkspaceRequests(
+		restorableSavedWorkspaceEntries,
+		explicitWorkspacePaths,
+	);
+	pendingWorkspaceOpenRequests.length = 0;
+	if (isQuitting) {
+		return;
+	}
+	initialWorkspaceOpenInProgress = true;
+	readyForWorkspaceOpens = true;
+	try {
 		if (workspaceRequestsToOpen.length > 0) {
 			await openWorkspaceRequests(workspaceRequestsToOpen);
 		} else {
 			await createMainWindow();
 		}
-		void setupAutoUpdates();
-
-		app.on("activate", () => {
-			if (workspaceWindows.size === 0) {
-				void createMainWindow();
-			} else {
-				focusMostRecentWorkspaceWindow();
-			}
-		});
-	});
+	} finally {
+		initialWorkspaceOpenInProgress = false;
+	}
 }
 
 app.on("window-all-closed", () => {
@@ -392,9 +443,10 @@ app.on("before-quit", () => {
 });
 
 async function setupAutoUpdates() {
-	if (!canUseAutoUpdates()) {
+	if (!canUseAutoUpdates() || autoUpdatesSetup) {
 		return;
 	}
+	autoUpdatesSetup = true;
 
 	try {
 		const autoUpdater = await getAutoUpdater();
@@ -409,8 +461,18 @@ async function setupAutoUpdates() {
 			void checkForUpdates(autoUpdater);
 		}, AUTO_UPDATE_CHECK_INTERVAL_MS);
 	} catch (error) {
+		autoUpdatesSetup = false;
 		console.warn("Failed to initialize Flashtype auto updates", error);
 	}
+}
+
+async function triggerRecoveryUpdateCheck(error) {
+	if (!canUseAutoUpdates() || recoveryUpdateCheckStarted) {
+		return { status: "disabled" };
+	}
+	recoveryUpdateCheckStarted = true;
+	console.warn("Checking for a Flashtype update after app failure", error);
+	return await checkForUpdatesFromMenu({ manual: true });
 }
 
 function setupTelemetryHeartbeat() {
@@ -442,13 +504,17 @@ function registerAppIpc() {
 		return getUpdateState();
 	});
 	ipcMain.handle("app:installUpdate", async () => {
-		if (!updateInstallReady || !autoUpdaterInstance) {
-			return { status: "not-ready" };
-		}
-		closeUpdateWindow();
-		autoUpdaterInstance.quitAndInstall();
-		return { status: "installing" };
+		return installDownloadedUpdate();
 	});
+}
+
+function installDownloadedUpdate() {
+	if (!updateInstallReady || !autoUpdaterInstance) {
+		return { status: "not-ready" };
+	}
+	closeUpdateWindow();
+	autoUpdaterInstance.quitAndInstall();
+	return { status: "installing" };
 }
 
 async function getAutoUpdater() {
@@ -569,12 +635,11 @@ function registerAutoUpdateListeners(autoUpdater) {
 			updateUpdateWindow({
 				status: "ready",
 				title: "Update ready.",
-				detail: "Use the Update button in the top right to restart.",
+				detail: "Restart Flashtype to install the update.",
 				progress: 100,
+				actionLabel: "Restart",
+				action: "install",
 			});
-			updateWindowCloseTimer = setTimeout(() => {
-				closeUpdateWindow();
-			}, 1200);
 		}
 	});
 }
@@ -651,15 +716,38 @@ function showUpdateWindow(initialState) {
 
 	updateWindow.on("closed", () => {
 		updateWindow = null;
+		pendingUpdateWindowState = null;
 		if (updateWindowCloseTimer) {
 			clearTimeout(updateWindowCloseTimer);
 			updateWindowCloseTimer = null;
 		}
 	});
+	updateWindow.webContents.on("will-navigate", (event, url) => {
+		if (url === "flashtype-update://install") {
+			event.preventDefault();
+			installDownloadedUpdate();
+		}
+	});
+	updateWindow.webContents.setWindowOpenHandler(({ url }) => {
+		if (url === "flashtype-update://install") {
+			installDownloadedUpdate();
+		}
+		return { action: "deny" };
+	});
 
 	void updateWindow.loadURL(
 		`data:text/html;charset=utf-8,${encodeURIComponent(renderUpdateWindowHtml(initialState))}`,
 	);
+	pendingUpdateWindowState = initialState;
+	updateWindow.webContents.once("did-finish-load", () => {
+		if (!updateWindow || updateWindow.isDestroyed()) {
+			return;
+		}
+		const state = pendingUpdateWindowState;
+		if (state) {
+			void applyUpdateWindowState(state);
+		}
+	});
 	updateWindow.once("ready-to-show", () => {
 		if (updateWindow && !updateWindow.isDestroyed()) {
 			updateWindow.show();
@@ -676,6 +764,7 @@ function closeUpdateWindow() {
 	if (updateWindow && !updateWindow.isDestroyed()) {
 		updateWindow.close();
 	}
+	pendingUpdateWindowState = null;
 }
 
 function updateUpdateWindow(state) {
@@ -687,8 +776,19 @@ function updateUpdateWindow(state) {
 		clearTimeout(updateWindowCloseTimer);
 		updateWindowCloseTimer = null;
 	}
+	pendingUpdateWindowState = state;
+	if (updateWindow.webContents.isLoading()) {
+		return;
+	}
+	void applyUpdateWindowState(state);
+}
+
+async function applyUpdateWindowState(state) {
+	if (!updateWindow || updateWindow.isDestroyed()) {
+		return;
+	}
 	const payload = JSON.stringify(state);
-	void updateWindow.webContents
+	await updateWindow.webContents
 		.executeJavaScript(
 			`window.setUpdateState && window.setUpdateState(${payload})`,
 		)
@@ -862,9 +962,16 @@ function renderUpdateWindowHtml(initialState) {
 			fill.style.width = hasProgress ? Math.max(0, Math.min(100, state.progress)) + "%" : "";
 			content.classList.toggle("has-action", Boolean(state.actionLabel));
 			action.textContent = state.actionLabel || "";
+			action.dataset.action = state.action || "close";
 		};
 
-		action.addEventListener("click", () => window.close());
+		action.addEventListener("click", () => {
+			if (action.dataset.action === "install") {
+				window.location.href = "flashtype-update://install";
+				return;
+			}
+			window.close();
+		});
 		window.setUpdateState(${stateJson});
 	</script>
 </body>
@@ -884,9 +991,32 @@ function formatMegabytes(bytes) {
 }
 
 async function checkForUpdates(autoUpdater, { manual = false } = {}) {
+	if (updateInstallReady) {
+		if (manual) {
+			updateUpdateWindow({
+				status: "ready",
+				title: "Update ready.",
+				detail: "Restart Flashtype to install the update.",
+				progress: 100,
+				actionLabel: "Restart",
+				action: "install",
+			});
+		}
+		return { status: "ready" };
+	}
 	if (updateCheckInProgress || updateDownloadInProgress) {
-		if (manual && updateWindow && !updateWindow.isDestroyed()) {
-			updateWindow.focus();
+		if (manual) {
+			pendingManualUpdateCheck = true;
+			showUpdateWindow({
+				status: updateDownloadInProgress ? "downloading" : "checking",
+				title: updateDownloadInProgress
+					? "Downloading update..."
+					: "Checking for update...",
+				detail: updateDownloadInProgress
+					? "Downloading update."
+					: "Contacting GitHub releases.",
+				progress: null,
+			});
 		}
 		return { status: "busy" };
 	}
@@ -948,13 +1078,21 @@ async function checkForUpdatesFromMenu(options = {}) {
 function installApplicationMenu() {
 	const isUpdateBusy = updateCheckInProgress || updateDownloadInProgress;
 	const checkForUpdatesItem = {
-		label: updateDownloadInProgress
-			? "Downloading Update..."
-			: updateCheckInProgress
-				? "Checking for Updates..."
-				: "Check for Updates...",
-		enabled: canUseAutoUpdates() && !isUpdateBusy,
+		label: updateInstallReady
+			? "Restart to Install Update"
+			: updateDownloadInProgress
+				? "Downloading Update..."
+				: updateCheckInProgress
+					? "Checking for Updates..."
+					: "Check for Updates...",
+		enabled:
+			canUseAutoUpdates() &&
+			(updateInstallReady ? Boolean(autoUpdaterInstance) : !isUpdateBusy),
 		click: () => {
+			if (updateInstallReady) {
+				installDownloadedUpdate();
+				return;
+			}
 			void checkForUpdatesFromMenu({ manual: true });
 		},
 	};
