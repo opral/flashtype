@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.0 - 2026-06-19
+
+### Minor
+
+- Added active file context when launching Claude Code or Codex from FlashType.
+
+  Agent terminals now receive a short prompt with the currently open file path, so they can start with the right editing context without changing saved terminal state.
+- Added fast direct opening for Markdown files in large folders.
+
+  Double-clicking or launching a Markdown file from a folder like Downloads now opens only the requested file in a transient workspace, instead of indexing the whole surrounding folder.
+
+### Patch
+
+- Fixed Cmd+Backspace in the Markdown editor so it deletes the previous word instead of the whole line.
+
+  The shortcut now stays within the editor while file deletion shortcuts continue to work from the file tree.
+- Improved update recovery when FlashType cannot finish opening the workspace UI.
+
+  FlashType now starts its updater before loading workspace-native modules, so a follow-up update can still be found and installed even if the main editing experience fails during startup.
+
 ## 0.3.1 - 2026-06-19
 
 ### Patch
