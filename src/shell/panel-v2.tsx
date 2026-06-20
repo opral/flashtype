@@ -170,7 +170,9 @@ export function PanelV2({
 	const ContainerElement =
 		side === "central" ? ("section" as const) : ("aside" as const);
 	const hostTextClass =
-		side === "central" ? "text-neutral-900" : "text-neutral-600";
+		side === "central"
+			? "text-[var(--color-text-primary)]"
+			: "text-[var(--color-text-secondary)]";
 
 	const contentHandlers =
 		onActiveViewInteraction && activeInstance
@@ -188,8 +190,8 @@ export function PanelV2({
 		>
 			<div
 				className={clsx(
-					"flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-island-border bg-neutral-0",
-					isOver && "ring-2 ring-brand-600 ring-inset",
+					"flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)]",
+					isOver && "ring-2 ring-[var(--color-ring-focus-visible)] ring-inset",
 				)}
 			>
 				{/* Most islands render the identical 40px tab row; the central
@@ -321,14 +323,14 @@ function AddViewMenu({
 					type="button"
 					title="Add view"
 					aria-label="Add view"
-					className="flex size-6 flex-none items-center justify-center rounded-md text-ink-faint hover:bg-hover-soft hover:text-neutral-600"
+					className="flex size-6 flex-none items-center justify-center rounded-md text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-icon-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-bg-panel)]"
 				>
 					<Plus className="size-3.25" strokeWidth={2} />
 				</button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent
 				align={side === "right" ? "end" : "start"}
-				className="w-44 border border-island-border bg-neutral-0 p-1 shadow-lg"
+				className="w-44 border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)] p-1 shadow-lg"
 			>
 				{hasTerminal ? (
 					<>
@@ -338,7 +340,7 @@ function AddViewMenu({
 								onSelect={() =>
 									onAddView(TERMINAL_EXTENSION_KIND, preset.state)
 								}
-								className="flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-900 focus:bg-hover-soft"
+								className="flex items-center gap-2 px-3 py-1.5 text-sm text-[var(--color-text-primary)] focus:bg-[var(--color-bg-hover)]"
 							>
 								<preset.icon className="size-4" />
 								<span>{preset.label}</span>
@@ -351,7 +353,7 @@ function AddViewMenu({
 					<DropdownMenuItem
 						key={ext.kind}
 						onSelect={() => onAddView(ext.kind)}
-						className="flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-900 focus:bg-hover-soft"
+						className="flex items-center gap-2 px-3 py-1.5 text-sm text-[var(--color-text-primary)] focus:bg-[var(--color-bg-hover)]"
 					>
 						<ext.icon className="h-4 w-4" />
 						<span>{ext.label}</span>
@@ -614,15 +616,15 @@ function SortableTab({
 }
 
 const tabBaseClasses =
-	"group relative flex h-7 flex-none max-w-80 items-center gap-1.5 rounded-[7px] px-2.25 text-xs font-semibold transition-colors whitespace-nowrap";
+	"group relative flex h-7 flex-none max-w-80 items-center gap-1.5 rounded-[7px] px-2.25 text-xs font-semibold transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-bg-panel)]";
 
 const tabStateClasses = {
-	// The focused chip is the one orange element on screen: the view
-	// receiving keyboard input.
+	// The focused chip marks the view receiving keyboard input.
 	focused:
-		"bg-focus-tint text-neutral-900 ring-1 ring-inset ring-focus-ring [&_[data-tab-icon]]:text-brand-700",
-	active: "bg-hover-soft text-neutral-900 [&_[data-tab-icon]]:text-neutral-500",
-	idle: "bg-transparent text-neutral-500 hover:bg-hover-soft hover:text-neutral-900",
+		"bg-[var(--color-bg-selection-current)] text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-border-selection-current)] [&_[data-tab-icon]]:text-[var(--color-icon-selection-current)]",
+	active:
+		"bg-[var(--color-bg-hover)] text-[var(--color-text-primary)] [&_[data-tab-icon]]:text-[var(--color-icon-secondary)]",
+	idle: "bg-transparent text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
 } as const;
 
 interface TabBaseProps extends PanelTabPreviewProps {
@@ -687,8 +689,8 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 							className={clsx(
 								"pointer-events-none absolute -top-1 -left-1 flex h-4 min-w-[16px] -translate-y-1/2 items-center justify-center rounded-full px-[3px] text-[0.65rem] font-semibold leading-none transform",
 								isActive
-									? "bg-brand-600 text-white"
-									: "bg-secondary text-secondary-foreground",
+									? "bg-[var(--color-bg-action-primary)] text-[var(--color-text-on-action-primary)]"
+									: "bg-[var(--color-bg-notice-neutral)] text-[var(--color-text-notice-neutral)]",
 							)}
 						>
 							{badgeCount > 99 ? "99+" : badgeCount}
@@ -707,10 +709,10 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 							className={clsx(
 								"h-3 w-3",
 								isActive && isFocused
-									? "text-focus-close hover:text-brand-700"
+									? "text-[var(--color-action-selection-current)] hover:text-[var(--color-icon-selection-current)]"
 									: isActive
-										? "text-neutral-400 hover:text-neutral-600"
-										: "text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-neutral-600",
+										? "text-[var(--color-icon-tertiary)] hover:text-[var(--color-icon-secondary)]"
+										: "text-[var(--color-icon-tertiary)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-icon-secondary)]",
 							)}
 							onClick={(event) => {
 								event.stopPropagation();

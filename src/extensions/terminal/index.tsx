@@ -9,32 +9,40 @@ import { createTerminalOutputNormalizer } from "./ansi-style-normalizer";
 
 const TERMINAL_INITIAL_COMMAND_LAUNCH_ARG = "initialCommand";
 
-const XTERM_THEMES = {
-	light: {
-		background: "#ffffff",
-		foreground: "#1c1917",
-		cursor: "#1c1917",
-		selectionBackground: "#e8ded2",
-		selectionInactiveBackground: "#f4f1ec",
-		black: "#f4f1ec",
-		red: "#d6d3d1",
-		green: "#d6d3d1",
-		yellow: "#b7791f",
-		blue: "#78716c",
-		magenta: "#78716c",
+function cssColor(name: string, fallback: string): string {
+	if (typeof window === "undefined") return fallback;
+	const value = window
+		.getComputedStyle(document.documentElement)
+		.getPropertyValue(name)
+		.trim();
+	return value || fallback;
+}
+
+function buildTerminalTheme() {
+	return {
+		background: cssColor("--color-bg-panel", "#ffffff"),
+		foreground: cssColor("--color-text-primary", "#1c1917"),
+		cursor: cssColor("--color-text-primary", "#1c1917"),
+		selectionBackground: cssColor("--color-bg-selection-current", "#fbefe4"),
+		selectionInactiveBackground: cssColor("--color-bg-hover", "#f5f2ed"),
+		black: cssColor("--color-bg-hover", "#f5f2ed"),
+		red: cssColor("--color-error-700", "#b91c1c"),
+		green: cssColor("--color-success-700", "#15803d"),
+		yellow: cssColor("--color-warning-800", "#854d0e"),
+		blue: cssColor("--color-text-secondary", "#44403c"),
+		magenta: cssColor("--color-text-secondary", "#44403c"),
 		cyan: "#0e7490",
-		white: "#292524",
-		brightBlack: "#a8a29e",
-		brightRed: "#a8a29e",
-		brightGreen: "#a8a29e",
-		brightYellow: "#b45309",
-		brightBlue: "#57534e",
-		brightMagenta: "#57534e",
+		white: cssColor("--color-neutral-800", "#292524"),
+		brightBlack: cssColor("--color-icon-tertiary", "#78716c"),
+		brightRed: cssColor("--color-error-600", "#dc2626"),
+		brightGreen: cssColor("--color-success-600", "#16a34a"),
+		brightYellow: cssColor("--color-warning-700", "#a16207"),
+		brightBlue: cssColor("--color-icon-secondary", "#57534e"),
+		brightMagenta: cssColor("--color-icon-secondary", "#57534e"),
 		brightCyan: "#0891b2",
-		brightWhite: "#1c1917",
-	},
-} as const;
-const XTERM_THEME = XTERM_THEMES.light;
+		brightWhite: cssColor("--color-text-primary", "#1c1917"),
+	};
+}
 
 function TerminalView({
 	initialCommand,
@@ -65,7 +73,7 @@ function TerminalView({
 			scrollback: 3000,
 			minimumContrastRatio: 4.5,
 			allowTransparency: false,
-			theme: XTERM_THEME,
+			theme: buildTerminalTheme(),
 		});
 		terminalRef.current = terminal;
 		const fitAddon = new FitAddon();
@@ -156,7 +164,7 @@ function TerminalView({
 
 	if (!window.flashtypeDesktop?.terminal) {
 		return (
-			<div className="flex h-full min-h-0 items-center justify-center px-4 text-sm text-neutral-600">
+			<div className="flex h-full min-h-0 items-center justify-center px-4 text-sm text-[var(--color-text-secondary)]">
 				Terminal is only available in the desktop app.
 			</div>
 		);
@@ -165,7 +173,7 @@ function TerminalView({
 	return (
 		<div
 			className="h-full min-h-0"
-			style={{ backgroundColor: XTERM_THEME.background }}
+			style={{ backgroundColor: cssColor("--color-bg-panel", "#ffffff") }}
 		>
 			<div ref={containerRef} className="h-full w-full p-2" />
 		</div>

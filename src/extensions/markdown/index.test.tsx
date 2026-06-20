@@ -66,6 +66,58 @@ describe("MarkdownView", () => {
 		});
 	});
 
+	test("shows an autosave hint when pressing Cmd+S", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_autosave_hint",
+				path: "/docs/autosave.md",
+				data: new TextEncoder().encode("# Autosave"),
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_autosave_hint"
+								filePath="/docs/autosave.md"
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(await screen.findByTestId("tiptap-editor")).toBeInTheDocument();
+
+		const event = new KeyboardEvent("keydown", {
+			key: "s",
+			metaKey: true,
+			bubbles: true,
+			cancelable: true,
+		});
+		await act(async () => {
+			window.dispatchEvent(event);
+		});
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(await screen.findByRole("status")).toHaveTextContent(
+			/auto-saved.*no cmd\+s needed/i,
+		);
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
 	test("renders the TipTap editor for .markdown files", async () => {
 		const lix = await openLix();
 		await qb(lix)

@@ -86,7 +86,7 @@ function CsvViewContent({
 
 	if (!fileRow) {
 		return (
-			<div className="flex h-full items-center justify-center text-sm text-neutral-500">
+			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">
 				File not found in the workspace.
 			</div>
 		);
@@ -99,7 +99,7 @@ function CsvViewContent({
 	return (
 		<div className="csv-view flex min-h-0 flex-1 flex-col bg-background">
 			{parsed.warnings.length > 0 ? (
-				<div className="mx-5 mt-3 flex shrink-0 items-start gap-2 rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+				<div className="mx-5 mt-3 flex shrink-0 items-start gap-2 rounded-[8px] border border-[var(--color-border-notice-warning)] bg-[var(--color-bg-notice-warning)] px-3 py-2 text-xs text-[var(--color-text-notice-warning)]">
 					<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 					<span className="min-w-0 truncate">{parsed.warnings[0]}</span>
 				</div>
@@ -191,11 +191,11 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 			className="h-full min-h-0 flex-1 overflow-auto bg-background"
 		>
 			<div style={{ minWidth: totalWidth }} className="relative w-full">
-				<div className="sticky top-0 z-10 flex h-10 w-full border-b border-island-divider bg-neutral-50 text-[11px] font-bold uppercase tracking-[0.04em] text-neutral-600">
+				<div className="sticky top-0 z-10 flex h-10 w-full border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-panel-muted)] text-[11px] font-bold uppercase tracking-[0.04em] text-[var(--color-text-secondary)]">
 					{table.getHeaderGroups()[0]?.headers.map((header) => (
 						<div
 							key={header.id}
-							className="flex h-10 items-center border-r border-[#f1ece5] px-4 last:border-r-0"
+							className="flex h-10 items-center border-r border-[var(--color-border-table-grid)] px-4 last:border-r-0"
 							style={columnStyle()}
 							title={String(header.column.columnDef.header ?? "")}
 						>
@@ -220,7 +220,7 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 								key={row.id}
 								data-index={virtualRow.index}
 								ref={virtualizer.measureElement}
-								className="absolute left-0 flex w-full border-b border-[#f4f1ec] text-[13.5px] text-neutral-700 transition-colors hover:bg-[#faf6f0]"
+								className="absolute left-0 flex w-full border-b border-[var(--color-border-table-grid)] text-[13.5px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-table-row-hover)]"
 								style={{
 									minHeight: virtualRow.size,
 									transform: `translateY(${virtualRow.start}px)`,
@@ -229,7 +229,7 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 								{row.getVisibleCells().map((cell) => (
 									<div
 										key={cell.id}
-										className="border-r border-[#f4f1ec] px-4 py-0 last:border-r-0"
+										className="border-r border-[var(--color-border-table-grid)] px-4 py-0 last:border-r-0"
 										style={columnStyle()}
 										title={String(cell.getValue() ?? "")}
 									>
@@ -258,15 +258,15 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 function cellValueClassName(value: string, isFirstColumn: boolean): string {
 	const base = "flex min-h-12 items-center whitespace-normal break-words py-2";
 	if (isEmailLike(value)) {
-		return `${base} font-mono text-[12.5px] text-brand-700`;
+		return `${base} font-mono text-[12.5px] text-[var(--color-text-link-hover)]`;
 	}
 	if (isNumericValue(value)) {
-		return `${base} font-mono text-[13px] text-neutral-700`;
+		return `${base} font-mono text-[13px] text-[var(--color-text-secondary)]`;
 	}
 	if (isFirstColumn) {
-		return `${base} font-mono text-[12.5px] text-neutral-400`;
+		return `${base} font-mono text-[12.5px] text-[var(--color-icon-tertiary)]`;
 	}
-	return `${base} font-normal text-neutral-900`;
+	return `${base} font-normal text-[var(--color-text-primary)]`;
 }
 
 function isEmailLike(value: string): boolean {
@@ -280,10 +280,14 @@ function isNumericValue(value: string): boolean {
 function CsvEmptyState({ filePath }: { readonly filePath: string }) {
 	return (
 		<div className="flex h-full items-center justify-center px-6 py-8 text-center">
-			<div className="max-w-sm space-y-2 text-sm text-neutral-600">
-				<p className="font-medium text-neutral-800">No CSV rows to display.</p>
+			<div className="max-w-sm space-y-2 text-sm text-[var(--color-text-secondary)]">
+				<p className="font-medium text-[var(--color-text-primary)]">
+					No CSV rows to display.
+				</p>
 				<p>
-					<span className="font-mono text-xs text-neutral-700">{filePath}</span>{" "}
+					<span className="font-mono text-xs text-[var(--color-text-secondary)]">
+						{filePath}
+					</span>{" "}
 					is empty or does not contain a header row.
 				</p>
 			</div>

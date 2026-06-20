@@ -88,7 +88,7 @@ export function ErrorFallback(props: { error: unknown }) {
 		return (
 			<div className="min-h-dvh w-full flex items-center justify-center p-6">
 				<div className="max-w-lg w-full border rounded-lg p-6 bg-card text-card-foreground">
-					<div className="flex items-center gap-2 text-amber-600 mb-3">
+					<div className="flex items-center gap-2 text-[var(--color-text-notice-warning)] mb-3">
 						<AlertTriangle className="h-5 w-5" />
 						<h1 className="text-lg font-semibold">Flashtype is already open</h1>
 					</div>
@@ -139,7 +139,7 @@ export function ErrorFallback(props: { error: unknown }) {
 						<button
 							onClick={handleReset}
 							disabled={busy}
-							className="inline-flex items-center gap-2 rounded-md bg-red-600 px-3 py-2 text-white text-sm disabled:opacity-60"
+							className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-[var(--color-text-on-action-primary)] text-sm disabled:opacity-60"
 						>
 							<Trash2 className="h-4 w-4" />
 							{busyAction === "reset" ? "Resetting..." : "Reset Lix repository"}

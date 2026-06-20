@@ -205,7 +205,7 @@ export const AppRoot = () => {
 };
 
 function BootPlaceholder() {
-	return <div className="h-dvh w-full bg-shell" />;
+	return <div className="h-dvh w-full bg-[var(--color-bg-app)]" />;
 }
 
 createRoot(document.getElementById("root")!).render(

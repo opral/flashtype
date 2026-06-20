@@ -54,7 +54,9 @@ export function SidePanel({
 			/>
 		) : (
 			<div className="flex flex-1 items-center justify-center">
-				<span className="text-[12.5px] text-ink-faint">No view open</span>
+				<span className="text-[12.5px] text-[var(--color-icon-tertiary)]">
+					No view open
+				</span>
 			</div>
 		);
 

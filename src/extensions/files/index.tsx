@@ -465,19 +465,24 @@ export function FilesView({ context }: FilesViewProps) {
 				<button
 					type="button"
 					onClick={handleNewFile}
-					className="mb-px flex h-7 w-full select-none items-center justify-between gap-2 rounded-[7px] px-2.25 text-left text-xs text-neutral-600 transition-colors hover:bg-hover-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+					className="mb-px flex h-7 w-full select-none items-center justify-between gap-2 rounded-[7px] px-2.25 text-left text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
 					aria-label="New file"
 					title="New file (⌘.)"
 				>
 					<span className="flex items-center gap-2">
-						<FilePlus className="size-3.25 text-neutral-400" strokeWidth={2} />
+						<FilePlus
+							className="size-3.25 text-[var(--color-icon-tertiary)]"
+							strokeWidth={2}
+						/>
 						<span>New file</span>
 					</span>
-					<span className="text-[10px] font-semibold text-ink-faint">⌘ ·</span>
+					<span className="text-[10px] font-semibold text-[var(--color-icon-tertiary)]">
+						⌘ ·
+					</span>
 				</button>
 			)}
 			{isDraggingOver && (
-				<div className="absolute inset-1 z-50 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-amber-400 bg-amber-50/50 backdrop-blur-sm pointer-events-none">
+				<div className="absolute inset-1 z-50 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-[var(--color-border-notice-warning)] bg-[color-mix(in_srgb,var(--color-bg-notice-warning)_50%,transparent)] backdrop-blur-sm pointer-events-none">
 					<FileUp className="h-12 w-12 text-foreground" />
 					<p className="mt-3 text-center text-sm font-medium text-foreground">
 						Drop markdown files here

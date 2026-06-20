@@ -73,7 +73,7 @@ export function TopBar({
 	};
 
 	return (
-		<header className="relative flex h-9 shrink-0 items-center px-3 text-ink-muted [-webkit-app-region:drag]">
+		<header className="relative flex h-9 shrink-0 items-center px-3 text-[var(--color-text-secondary)] [-webkit-app-region:drag]">
 			<div
 				className={`flex min-w-0 flex-1 items-center gap-1 text-sm ${
 					isMacPlatform ? "pl-[68px]" : ""
@@ -84,7 +84,7 @@ export function TopBar({
 						<Button
 							variant="ghost"
 							size="icon"
-							className="h-7 w-7 rounded-[7px] text-ink-muted hover:bg-hover-soft hover:text-neutral-900 [-webkit-app-region:no-drag]"
+							className="h-7 w-7 rounded-[7px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] [-webkit-app-region:no-drag]"
 							type="button"
 							onClick={onToggleLeftSidebar}
 							aria-label="Toggle left panel"
@@ -94,7 +94,7 @@ export function TopBar({
 							<PanelToggleIcon side="left" isActive={isLeftSidebarVisible} />
 						</Button>
 					</TooltipTrigger>
-					<TooltipContent className="bg-neutral-900 text-neutral-0 [&_[class*='bg-secondary']]:bg-neutral-900 [&_[class*='fill-secondary']]:fill-neutral-900">
+					<TooltipContent className="bg-[var(--color-bg-tooltip)] text-[var(--color-text-tooltip)] [&_[class*='bg-secondary']]:bg-[var(--color-bg-tooltip)] [&_[class*='fill-secondary']]:fill-[var(--color-bg-tooltip)]">
 						Toggle left panel ({leftShortcut})
 					</TooltipContent>
 				</Tooltip>
@@ -108,19 +108,24 @@ export function TopBar({
 							onClick={onWorkspaceTitleClick}
 							disabled={!onWorkspaceTitleClick}
 							title="Switch workspace"
-							className={`flex h-7 min-w-0 items-center gap-1.5 rounded-[7px] px-2 enabled:hover:bg-hover-soft ${
+							className={`flex h-7 min-w-0 items-center gap-1.5 rounded-[7px] px-2 enabled:hover:bg-[var(--color-bg-hover)] ${
 								activeFileName
-									? "font-medium text-ink-muted"
-									: "font-semibold text-neutral-700"
+									? "font-medium text-[var(--color-text-secondary)]"
+									: "font-semibold text-[var(--color-text-secondary)]"
 							}`}
 						>
-							<Folder className="size-3.25 text-ink-muted" strokeWidth={2} />
+							<Folder
+								className="size-3.25 text-[var(--color-text-secondary)]"
+								strokeWidth={2}
+							/>
 							<span className="max-w-60 truncate">{workspaceName}</span>
 						</button>
 						{activeFileName ? (
 							<>
-								<span className="mx-0.5 shrink-0 text-neutral-300">/</span>
-								<span className="max-w-60 truncate px-1 font-semibold text-neutral-900">
+								<span className="mx-0.5 shrink-0 text-[var(--color-border-panel)]">
+									/
+								</span>
+								<span className="max-w-60 truncate px-1 font-semibold text-[var(--color-text-primary)]">
 									{activeFileName}
 								</span>
 							</>
@@ -132,7 +137,7 @@ export function TopBar({
 				{showUpdateButton ? (
 					<Button
 						type="button"
-						className="h-6 rounded-md bg-linear-to-b from-brand-500 to-brand-600 px-2.5 text-[11.5px] font-bold text-neutral-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_1px_2px_rgba(123,62,27,0.16)] hover:brightness-[1.06] [-webkit-app-region:no-drag]"
+						className="h-6 rounded-md bg-[var(--color-bg-action-primary)] px-2.5 text-[11.5px] font-bold text-[var(--color-text-on-action-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_2px_rgba(123,62,27,0.16)] hover:bg-[var(--color-bg-action-primary-hover)] [-webkit-app-region:no-drag]"
 						disabled={isInstallingUpdate}
 						onClick={() => {
 							void handleInstallUpdate();
@@ -147,7 +152,7 @@ export function TopBar({
 					target="_blank"
 					rel="noreferrer"
 					title="GitHub"
-					className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[7px] text-sm font-medium whitespace-nowrap text-chrome-icon transition-all outline-none hover:bg-hover-soft hover:text-neutral-900 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [-webkit-app-region:no-drag] [&_svg]:pointer-events-none [&_svg]:shrink-0"
+					className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[7px] text-sm font-medium whitespace-nowrap text-[var(--color-icon-tertiary)] transition-all outline-none hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring [-webkit-app-region:no-drag] [&_svg]:pointer-events-none [&_svg]:shrink-0"
 				>
 					<svg
 						className="size-3.75"
@@ -167,7 +172,7 @@ export function TopBar({
 						<Button
 							variant="ghost"
 							size="icon"
-							className="h-7 w-7 rounded-[7px] text-chrome-icon hover:bg-hover-soft hover:text-neutral-900 [-webkit-app-region:no-drag]"
+							className="h-7 w-7 rounded-[7px] text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] [-webkit-app-region:no-drag]"
 							type="button"
 							onClick={onToggleRightSidebar}
 							aria-label="Toggle right panel"
@@ -177,7 +182,7 @@ export function TopBar({
 							<PanelToggleIcon side="right" isActive={isRightSidebarVisible} />
 						</Button>
 					</TooltipTrigger>
-					<TooltipContent className="bg-neutral-900 text-neutral-0 [&_[class*='bg-secondary']]:bg-neutral-900 [&_[class*='fill-secondary']]:fill-neutral-900">
+					<TooltipContent className="bg-[var(--color-bg-tooltip)] text-[var(--color-text-tooltip)] [&_[class*='bg-secondary']]:bg-[var(--color-bg-tooltip)] [&_[class*='fill-secondary']]:fill-[var(--color-bg-tooltip)]">
 						Toggle right panel ({rightShortcut})
 					</TooltipContent>
 				</Tooltip>

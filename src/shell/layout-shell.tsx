@@ -1748,7 +1748,7 @@ function LayoutShellContent({
 		>
 			<ExternalWriteDetector onExternalWrites={handleExternalFileWrites} />
 			<div
-				className="relative flex flex-col bg-shell text-neutral-900"
+				className="relative flex flex-col bg-[var(--color-bg-app)] text-[var(--color-text-primary)]"
 				style={{
 					// Pin the shell to the available viewport (inspector offset included) to avoid vertical scrolling.
 					height: "calc(100dvh - var(--lix-inspector-offset, 0px))",
@@ -1791,7 +1791,7 @@ function LayoutShellContent({
 							/>
 						</Panel>
 						<PanelResizeHandle className="group relative flex w-1.75 items-center justify-center">
-							<div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 h-full rounded-full bg-gradient-to-b from-transparent via-brand-600/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+							<div className="absolute inset-y-0 left-1/2 h-full w-0.5 -translate-x-1/2 rounded-full bg-[linear-gradient(to_bottom,transparent,color-mix(in_srgb,var(--color-icon-brand)_50%,transparent),transparent)] opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
 						</PanelResizeHandle>
 						<Panel
 							defaultSize={panelSizes.central}
@@ -1817,7 +1817,7 @@ function LayoutShellContent({
 							/>
 						</Panel>
 						<PanelResizeHandle className="group relative flex w-1.75 items-center justify-center">
-							<div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 h-full rounded-full bg-gradient-to-b from-transparent via-brand-600/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+							<div className="absolute inset-y-0 left-1/2 h-full w-0.5 -translate-x-1/2 rounded-full bg-[linear-gradient(to_bottom,transparent,color-mix(in_srgb,var(--color-icon-brand)_50%,transparent),transparent)] opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
 						</PanelResizeHandle>
 						<Panel
 							ref={rightPanelRef}

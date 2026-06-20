@@ -195,7 +195,7 @@ function BranchSwitcherContent({
 					type="button"
 					variant="ghost"
 					size="sm"
-					className="inline-flex h-5.5 items-center gap-1 rounded-md px-1.5 font-normal text-chrome-icon hover:bg-hover-soft hover:text-neutral-600"
+					className="inline-flex h-5.5 items-center gap-1 rounded-md px-1.5 font-normal text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
 					aria-label="Select branch"
 				>
 					<GitBranch className="size-3" />
@@ -212,7 +212,7 @@ function BranchSwitcherContent({
 				align="start"
 				sideOffset={6}
 			>
-				<DropdownMenuLabel className="text-[11px] uppercase tracking-wide text-neutral-500">
+				<DropdownMenuLabel className="text-[11px] uppercase tracking-wide text-[var(--color-text-tertiary)]">
 					Branches
 				</DropdownMenuLabel>
 				{branches.length === 0 ? (
@@ -242,12 +242,14 @@ function BranchSwitcherContent({
 								}}
 								className={clsx(
 									"group flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs",
-									isActive ? "text-neutral-900" : "text-neutral-600",
+									isActive
+										? "text-[var(--color-text-primary)]"
+										: "text-[var(--color-text-secondary)]",
 								)}
 							>
 								<span className="flex w-3 justify-center" aria-hidden>
 									{isActive ? (
-										<Check className="h-3 w-3 text-brand-600" />
+										<Check className="h-3 w-3 text-[var(--color-icon-brand)]" />
 									) : null}
 								</span>
 								<span id={branchLabelId} className="truncate">
@@ -268,7 +270,7 @@ function BranchSwitcherContent({
 												Branch actions for {branch.name}
 											</span>
 											<MoreVertical
-												className="h-3.5 w-3.5 text-neutral-400"
+												className="h-3.5 w-3.5 text-[var(--color-icon-tertiary)]"
 												aria-hidden="true"
 											/>
 										</button>
@@ -308,7 +310,7 @@ function BranchSwitcherContent({
 				<DropdownMenuSeparator />
 				<DropdownMenuItem
 					onSelect={handleCreateBranch}
-					className="flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-600"
+					className="flex items-center gap-2 px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
 				>
 					<Plus className="h-3 w-3" />
 					<span>Create branch</span>

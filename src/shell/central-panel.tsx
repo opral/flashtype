@@ -98,11 +98,14 @@ function EmptyStateContent({
 			className="flex h-full flex-col items-center justify-center p-10 text-center"
 			data-testid="central-panel-empty-state"
 		>
-			<FilePlus className="size-8 text-ink-faint" strokeWidth={1.5} />
-			<h1 className="mt-4 text-2xl font-bold tracking-[-0.02em] text-neutral-900">
+			<FilePlus
+				className="size-8 text-[var(--color-icon-tertiary)]"
+				strokeWidth={1.5}
+			/>
+			<h1 className="mt-4 text-2xl font-bold tracking-[-0.02em] text-[var(--color-text-primary)]">
 				Start writing
 			</h1>
-			<p className="mt-1.5 max-w-90 text-sm leading-relaxed text-ink-muted text-pretty">
+			<p className="mt-1.5 max-w-90 text-sm leading-relaxed text-[var(--color-text-secondary)] text-pretty">
 				Open a file from the left, or create a new document — saved as plain
 				markdown in this folder.
 			</p>
@@ -110,7 +113,7 @@ function EmptyStateContent({
 				<button
 					type="button"
 					onClick={() => void onCreateNewFile()}
-					className="mt-6 flex items-center gap-2 rounded-[10px] bg-linear-to-b from-brand-500 to-brand-600 px-6 py-2.75 text-sm font-bold text-neutral-0 shadow-[0_6px_18px_rgba(232,89,12,0.32),inset_0_1px_0_rgba(255,255,255,0.25)] hover:brightness-[1.06]"
+					className="mt-6 flex items-center gap-2 rounded-[10px] bg-[var(--color-bg-action-primary)] px-6 py-2.75 text-sm font-bold text-[var(--color-text-on-action-primary)] shadow-[0_6px_18px_rgba(154,52,18,0.24),inset_0_1px_0_rgba(255,255,255,0.18)] hover:bg-[var(--color-bg-action-primary-hover)]"
 				>
 					New document
 					<span className="text-[11.5px] font-semibold opacity-75">⌘.</span>
@@ -119,7 +122,7 @@ function EmptyStateContent({
 			<button
 				type="button"
 				onClick={onAskAgent}
-				className="mt-4.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-neutral-400 hover:text-neutral-600"
+				className="mt-4.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-[var(--color-icon-tertiary)] hover:text-[var(--color-text-secondary)]"
 			>
 				or ask your agent to draft one
 				<ArrowRight className="size-3" strokeWidth={2} />

@@ -40,14 +40,14 @@ type FormatState = {
 
 /** 28px square icon button, matching the panel-header chips in the islands UI. */
 const iconButtonClass =
-	"inline-flex size-7 shrink-0 select-none items-center justify-center rounded-[7px] text-neutral-500 transition-[background-color,color,box-shadow] duration-100 ease-out hover:bg-hover-soft hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:stroke-[1.9]";
+	"inline-flex size-7 shrink-0 select-none items-center justify-center rounded-[7px] text-[var(--color-text-tertiary)] transition-[background-color,color,box-shadow] duration-100 ease-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)] disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:stroke-[1.9]";
 
 /** Pressed state for a formatting toggle. */
 const iconButtonActiveClass =
-	"bg-secondary-tint text-neutral-900 shadow-[inset_0_0_0_1px_var(--color-secondary-ring)] [&_svg]:text-secondary-icon";
+	"bg-[var(--color-bg-control-selected)] text-[var(--color-text-primary)] [&_svg]:text-[var(--color-icon-control-selected)]";
 
 const ToolbarSeparator = () => (
-	<Toolbar.Separator className="mx-1.5 h-3.5 w-px bg-island-divider" />
+	<Toolbar.Separator className="mx-1.5 h-3.5 w-px bg-[var(--color-border-subtle)]" />
 );
 
 const initialFormatState: FormatState = {
@@ -225,7 +225,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 	return (
 		<Toolbar.Root
 			className={clsx(
-				"flex h-10 w-full shrink-0 items-center gap-0.5 border-b border-island-divider bg-neutral-0 px-2 text-foreground",
+				"flex h-10 w-full shrink-0 items-center gap-0.5 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-panel)] px-2 text-foreground",
 				className,
 			)}
 			aria-label="Formatting toolbar"
@@ -241,16 +241,16 @@ export function FormattingToolbar({ className }: { className?: string }) {
 						render={<Select.Trigger />}
 						nativeButton={false}
 						className={clsx(
-							"inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-[7px] pr-1.5 pl-2.25 text-[12.5px] font-medium text-neutral-700 transition-[background-color,color,box-shadow] duration-100 ease-out hover:bg-hover-soft hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
+							"inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-[7px] pr-1.5 pl-2.25 text-[12.5px] font-medium text-[var(--color-text-secondary)] transition-[background-color,color,box-shadow] duration-100 ease-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]",
 							blockMenuOpen &&
-								"bg-secondary-tint text-neutral-900 shadow-[inset_0_0_0_1px_var(--color-secondary-ring)]",
+								"bg-[var(--color-bg-control-selected)] text-[var(--color-text-primary)]",
 						)}
 						onMouseDown={suppressMouseDown}
 					>
 						<Select.Value className="block w-[4.25rem] truncate">
 							{activeBlockLabel}
 						</Select.Value>
-						<Select.Icon className="text-neutral-400 transition-transform duration-100 data-[popup-open]:rotate-180">
+						<Select.Icon className="text-[var(--color-icon-tertiary)] transition-transform duration-100 data-[popup-open]:rotate-180">
 							<ChevronDown className="size-[13px] stroke-[2]" aria-hidden />
 						</Select.Icon>
 					</Toolbar.Button>
@@ -262,28 +262,28 @@ export function FormattingToolbar({ className }: { className?: string }) {
 							sideOffset={6}
 							alignItemWithTrigger={false}
 						>
-							<Select.Popup className="min-w-[10.75rem] origin-[var(--transform-origin)] rounded-[8px] border border-island-border bg-neutral-0 p-1 shadow-lg transition-[transform,opacity] duration-150 data-[side=bottom]:mt-2 data-[side=top]:mb-2 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-100 data-[ending-style]:opacity-100">
-								<div className="px-2 pb-0.75 pt-1 text-[11px] font-medium leading-4 text-neutral-400">
+							<Select.Popup className="min-w-[10.75rem] origin-[var(--transform-origin)] rounded-[8px] border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)] p-1 shadow-lg transition-[transform,opacity] duration-150 data-[side=bottom]:mt-2 data-[side=top]:mb-2 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-100 data-[ending-style]:opacity-100">
+								<div className="px-2 pb-0.75 pt-1 text-[11px] font-medium leading-4 text-[var(--color-icon-tertiary)]">
 									Turn into
 								</div>
 								{TOOLBAR_BLOCK_OPTIONS.map((option) => (
 									<Select.Item
 										key={option.value}
 										value={option.value}
-										className="group flex min-h-9 cursor-default items-center gap-2 rounded-[7px] px-2 py-1 text-[12.5px] outline-none focus-visible:ring-0 data-[highlighted]:bg-hover-soft data-[highlighted]:text-neutral-900"
+										className="group flex min-h-9 cursor-default items-center gap-2 rounded-[7px] px-2 py-1 text-[12.5px] outline-none focus-visible:ring-0 data-[highlighted]:bg-[var(--color-bg-hover)] data-[highlighted]:text-[var(--color-text-primary)]"
 									>
-										<span className="flex size-4.5 items-center justify-center text-[12px] text-neutral-400 group-data-[highlighted]:text-neutral-600 [&_svg]:stroke-[1.8]">
+										<span className="flex size-4.5 items-center justify-center text-[12px] text-[var(--color-icon-tertiary)] group-data-[highlighted]:text-[var(--color-text-secondary)] [&_svg]:stroke-[1.8]">
 											<option.icon className="h-3.5 w-3.5" aria-hidden />
 										</span>
 										<div className="flex flex-1 flex-col">
-											<span className="text-[12.5px] font-semibold leading-4 text-neutral-800">
+											<span className="text-[12.5px] font-semibold leading-4 text-[var(--color-text-primary)]">
 												{option.label}
 											</span>
-											<span className="text-[11.5px] font-normal leading-4 text-neutral-500">
+											<span className="text-[11.5px] font-normal leading-4 text-[var(--color-text-tertiary)]">
 												{option.description}
 											</span>
 										</div>
-										<Select.ItemIndicator className="text-brand-700">
+										<Select.ItemIndicator className="text-[var(--color-text-link-hover)]">
 											<Check className="h-3.5 w-3.5 stroke-[2]" aria-hidden />
 										</Select.ItemIndicator>
 									</Select.Item>
@@ -383,7 +383,8 @@ export function FormattingToolbar({ className }: { className?: string }) {
 							className={clsx(
 								iconButtonClass,
 								"ml-auto",
-								copyStatus === "error" && "text-error-600",
+								copyStatus === "error" &&
+									"text-[var(--color-text-status-danger)]",
 							)}
 							onClick={handleCopyMarkdown}
 							onMouseDown={suppressMouseDown}
@@ -403,7 +404,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 								/>
 								<Check
 									className={clsx(
-										"absolute size-3.5 text-success-600 transition-all duration-150",
+										"absolute size-3.5 text-[var(--color-text-status-success)] transition-all duration-150",
 										copyStatus === "success"
 											? "scale-100 opacity-100"
 											: "scale-75 opacity-0",
@@ -416,7 +417,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 				/>
 				<Tooltip.Portal>
 					<Tooltip.Positioner side="top" align="center" sideOffset={6}>
-						<Tooltip.Popup className="rounded-md border border-border bg-popover px-2 py-1 text-xs text-foreground shadow-md transition-opacity duration-150 data-[state=closed]:opacity-0 data-[state=open]:opacity-100">
+						<Tooltip.Popup className="rounded-md border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)] px-2 py-1 text-xs text-[var(--color-text-primary)] shadow-md transition-opacity duration-150 data-[state=closed]:opacity-0 data-[state=open]:opacity-100">
 							{copyStatus === "success" ? "Copied Markdown" : "Copy Markdown"}
 						</Tooltip.Popup>
 					</Tooltip.Positioner>

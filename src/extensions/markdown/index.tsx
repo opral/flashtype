@@ -1,7 +1,7 @@
 import { Suspense, useEffect } from "react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ExternalLink, FileText, Github, Loader2 } from "lucide-react";
+import { Check, ExternalLink, FileText, Github, Loader2 } from "lucide-react";
 import {
 	LixProvider,
 	useLix,
@@ -117,7 +117,7 @@ function MarkdownViewContent({
 
 	if (!fileRow) {
 		content = (
-			<div className="flex h-full items-center justify-center text-sm text-neutral-500">
+			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">
 				File not found in the workspace.
 			</div>
 		);
@@ -140,6 +140,9 @@ function MarkdownViewContent({
 							fileId={fileRow.id}
 							isActiveView={isActiveView}
 							focusOnLoad={focusOnLoad}
+						/>
+						<MarkdownAutosaveHint
+							enabled={isActiveView && isPanelFocused && !reviewDiff}
 						/>
 						{reviewDiff && externalWriteReview ? (
 							<Suspense fallback={<MarkdownReviewOverlayFallback />}>
@@ -168,6 +171,56 @@ function MarkdownViewContent({
 				<ActiveFileSync fileId={fileRow?.id} isActiveView={isActiveView} />
 			) : null}
 			{content}
+		</div>
+	);
+}
+
+function MarkdownAutosaveHint({ enabled }: { readonly enabled: boolean }) {
+	const [hintKey, setHintKey] = useState(0);
+
+	useEffect(() => {
+		if (enabled) return;
+		setHintKey(0);
+	}, [enabled]);
+
+	useEffect(() => {
+		if (!enabled) return;
+		const handleKeyDown = (event: KeyboardEvent) => {
+			const usesPrimaryModifier = event.metaKey || event.ctrlKey;
+			if (!usesPrimaryModifier || event.altKey || event.shiftKey) return;
+			if (event.key.toLowerCase() !== "s") return;
+			event.preventDefault();
+			event.stopPropagation();
+			setHintKey((current) => current + 1);
+		};
+		window.addEventListener("keydown", handleKeyDown, { capture: true });
+		return () => {
+			window.removeEventListener("keydown", handleKeyDown, { capture: true });
+		};
+	}, [enabled]);
+
+	useEffect(() => {
+		if (hintKey === 0) return;
+		const timeoutId = window.setTimeout(() => setHintKey(0), 2400);
+		return () => window.clearTimeout(timeoutId);
+	}, [hintKey]);
+
+	if (hintKey === 0) return null;
+
+	return (
+		<div
+			key={hintKey}
+			className="markdown-autosave-hint"
+			role="status"
+			aria-live="polite"
+			aria-atomic="true"
+		>
+			<span className="markdown-autosave-hint-icon" aria-hidden="true">
+				<Check aria-hidden />
+			</span>
+			<span>
+				<strong>Auto-saved.</strong> No Cmd+S needed.
+			</span>
 		</div>
 	);
 }
@@ -353,13 +406,15 @@ function UnsupportedFilePlaceholder({
 }): ReactNode {
 	return (
 		<div className="flex h-full items-center justify-center px-6 py-8 text-center">
-			<div className="max-w-sm space-y-2 text-sm text-neutral-600">
-				<p className="font-medium text-neutral-800">
+			<div className="max-w-sm space-y-2 text-sm text-[var(--color-text-secondary)]">
+				<p className="font-medium text-[var(--color-text-primary)]">
 					This file type is not supported yet.
 				</p>
 				<p>
 					Flashtype only opens markdown files in this editor, so{" "}
-					<span className="font-mono text-xs text-neutral-700">{filePath}</span>{" "}
+					<span className="font-mono text-xs text-[var(--color-text-secondary)]">
+						{filePath}
+					</span>{" "}
 					was left blank to avoid damaging its formatting.
 				</p>
 				<p>
@@ -367,7 +422,7 @@ function UnsupportedFilePlaceholder({
 						href="https://github.com/opral/flashtype/issues"
 						target="_blank"
 						rel="noopener noreferrer"
-						className="inline-flex items-center gap-1 font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700"
+						className="inline-flex items-center gap-1 font-medium text-[var(--color-icon-brand)] underline underline-offset-2 hover:text-[var(--color-text-link-hover)]"
 					>
 						<Github className="size-3.5" aria-hidden="true" />
 						Open an issue on GitHub

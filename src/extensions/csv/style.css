@@ -33,11 +33,11 @@
 
 .csv-review-table th {
 	height: 2.5rem;
-	border-right: 1px solid #f1ece5;
-	border-bottom: 1px solid var(--color-island-divider);
-	background: var(--color-neutral-50);
+	border-right: 1px solid var(--color-border-table-grid);
+	border-bottom: 1px solid var(--color-border-subtle);
+	background: var(--color-bg-panel-muted);
 	padding: 0 1rem;
-	color: var(--color-neutral-600);
+	color: var(--color-text-secondary);
 	font-size: 11px;
 	font-weight: 700;
 	letter-spacing: 0.04em;
@@ -48,10 +48,10 @@
 .csv-review-table td {
 	min-width: 72px;
 	min-height: 3rem;
-	border-right: 1px solid #f4f1ec;
-	border-bottom: 1px solid #f4f1ec;
+	border-right: 1px solid var(--color-border-table-grid);
+	border-bottom: 1px solid var(--color-border-table-grid);
 	padding: 0.65rem 1rem;
-	color: var(--color-neutral-900);
+	color: var(--color-text-primary);
 	font-size: 13.5px;
 	font-weight: 400;
 	line-height: 1.35;
@@ -60,25 +60,18 @@
 }
 
 .csv-review-table [data-diff-status="added"] {
-	background-color: color-mix(in srgb, var(--color-green-500) 8%, transparent);
-	color: color-mix(
-		in srgb,
-		var(--color-green-700) 88%,
-		var(--color-neutral-900)
-	);
+	background-color: var(--color-bg-diff-added);
+	color: var(--color-text-diff-added);
 }
 
 .csv-review-table [data-diff-status="removed"] {
-	background-color: color-mix(in srgb, var(--color-red-500) 7%, transparent);
-	color: color-mix(in srgb, var(--color-red-700) 82%, var(--color-neutral-900));
+	background-color: var(--color-bg-diff-removed);
+	color: var(--color-text-diff-removed);
 	text-decoration: line-through;
-	text-decoration-color: color-mix(
-		in srgb,
-		var(--color-red-700) 68%,
-		transparent
-	);
+	text-decoration-color: var(--color-border-diff-removed);
 }
 
 .csv-review-table [data-diff-status="modified"] {
-	background-color: color-mix(in srgb, var(--color-amber-400) 9%, transparent);
+	background-color: var(--color-bg-diff-modified);
+	color: var(--color-text-diff-modified);
 }

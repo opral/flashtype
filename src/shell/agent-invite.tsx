@@ -26,10 +26,10 @@ export function AgentInvite({
 				/>
 				<img src={codexIcon} alt="Codex" className="size-8 object-contain" />
 			</div>
-			<div className="text-[14.5px] font-bold text-neutral-900">
+			<div className="text-[14.5px] font-bold text-[var(--color-text-primary)]">
 				Your agent writes here
 			</div>
-			<p className="max-w-55 text-[12.5px] leading-relaxed text-ink-muted text-pretty">
+			<p className="max-w-55 text-[12.5px] leading-relaxed text-[var(--color-text-secondary)] text-pretty">
 				Claude Code or Codex edits your files directly — every change is a diff
 				you approve.
 			</p>
@@ -38,7 +38,7 @@ export function AgentInvite({
 					<button
 						type="button"
 						onClick={onStartClaude}
-						className="flex items-center gap-1.75 rounded-lg bg-neutral-900 px-4.5 py-2.25 text-[12.5px] font-bold text-neutral-0 hover:bg-neutral-800"
+						className="flex items-center gap-1.75 rounded-lg bg-[var(--color-bg-action-secondary)] px-4.5 py-2.25 text-[12.5px] font-bold text-[var(--color-text-on-action-secondary)] hover:bg-[var(--color-bg-action-secondary-hover)]"
 					>
 						<img src={claudeIcon} alt="" className="size-3.25 object-contain" />
 						Start Claude Code
@@ -47,7 +47,7 @@ export function AgentInvite({
 						<button
 							type="button"
 							onClick={onStartCodex}
-							className="rounded-md px-1.5 py-0.5 text-[11.5px] text-neutral-400 hover:text-neutral-600"
+							className="rounded-md px-1.5 py-0.5 text-[11.5px] text-[var(--color-icon-tertiary)] hover:text-[var(--color-text-secondary)]"
 						>
 							Use Codex instead
 						</button>

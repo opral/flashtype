@@ -64,9 +64,13 @@ describe("FileTree", () => {
 		const fileRow = screen.getByRole("button", { name: /README.md/i });
 		const fileName = screen.getByText("README.md");
 
-		expect(fileRow).toHaveClass("focus-visible:ring-focus-ring");
+		expect(fileRow).toHaveClass(
+			"focus-visible:ring-[var(--color-ring-focus-visible)]",
+		);
 		expect(fileRow).toHaveClass("select-none");
-		expect(fileName).not.toHaveClass("focus-visible:ring-focus-ring");
+		expect(fileName).not.toHaveClass(
+			"focus-visible:ring-[var(--color-ring-focus-visible)]",
+		);
 	});
 
 	test("renders percent text literally instead of URI-decoding filenames", () => {
@@ -105,8 +109,10 @@ describe("FileTree", () => {
 			/>,
 		);
 		const selectedFile = screen.getByRole("button", { name: /README.md/i });
-		expect(selectedFile).toHaveClass("bg-focus-tint");
-		expect(selectedFile).toHaveClass("ring-focus-ring");
+		expect(selectedFile).toHaveClass("bg-[var(--color-bg-selection-current)]");
+		expect(selectedFile).toHaveClass(
+			"ring-[var(--color-border-selection-current)]",
+		);
 
 		rerender(
 			<FileTree
@@ -115,9 +121,13 @@ describe("FileTree", () => {
 				isPanelFocused={false}
 			/>,
 		);
-		expect(selectedFile).toHaveClass("bg-hover-soft");
-		expect(selectedFile).not.toHaveClass("bg-focus-tint");
-		expect(selectedFile).not.toHaveClass("ring-focus-ring");
+		expect(selectedFile).toHaveClass("bg-[var(--color-bg-hover)]");
+		expect(selectedFile).not.toHaveClass(
+			"bg-[var(--color-bg-selection-current)]",
+		);
+		expect(selectedFile).not.toHaveClass(
+			"ring-[var(--color-border-selection-current)]",
+		);
 	});
 });
 

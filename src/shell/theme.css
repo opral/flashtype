@@ -29,20 +29,72 @@
 	--color-neutral-900: rgb(28, 25, 23);
 	--color-neutral-950: rgb(12, 10, 9);
 
-	/* Shell chrome — values off the stone scale, from the islands design. */
-	--color-shell: rgb(244, 242, 239); /* window background */
-	--color-island-border: rgb(236, 232, 226);
-	--color-island-divider: rgb(244, 241, 236); /* tab-row bottom border */
-	--color-ink-muted: rgb(140, 133, 128); /* secondary copy, header icons */
-	--color-ink-faint: rgb(181, 175, 166); /* empty states, "+" buttons */
-	--color-chrome-icon: rgb(163, 156, 149); /* footer + outer chrome icons */
-	--color-hover-soft: rgb(245, 242, 237); /* row + quiet-button hover, chips */
-	--color-focus-tint: rgb(251, 239, 228); /* focused chip / selected file */
-	--color-focus-ring: rgb(243, 216, 190);
-	--color-focus-close: rgb(201, 168, 136); /* ✕ on the focused chip */
-	--color-secondary-tint: rgb(243, 244, 246);
-	--color-secondary-ring: rgb(209, 213, 219);
-	--color-secondary-icon: rgb(75, 85, 99);
+	/* Flashtype semantic aliases. Named by role, prominence, and state. */
+	--color-bg-app: rgb(244, 242, 239);
+	--color-bg-panel: var(--color-neutral-0);
+	--color-bg-panel-muted: var(--color-neutral-50);
+	--color-bg-hover: rgb(245, 242, 237);
+	--color-border-panel: rgb(236, 232, 226);
+	--color-border-subtle: rgb(244, 241, 236);
+	--color-text-primary: var(--color-neutral-900);
+	--color-text-secondary: var(--color-neutral-700);
+	--color-text-tertiary: var(--color-neutral-500);
+	--color-icon-secondary: var(--color-neutral-600);
+	--color-icon-tertiary: var(--color-neutral-500);
+	--color-icon-brand: var(--color-brand-600);
+	--color-bg-brand-soft: var(--color-brand-50);
+	--color-border-brand-soft: var(--color-brand-100);
+	--color-text-link: var(--color-brand-600);
+	--color-text-link-hover: var(--color-brand-700);
+	--color-bg-tooltip: var(--color-neutral-900);
+	--color-text-tooltip: var(--color-neutral-0);
+	--color-bg-selection-current: rgb(251, 239, 228);
+	--color-border-selection-current: rgb(243, 216, 190);
+	--color-icon-selection-current: var(--color-brand-700);
+	--color-action-selection-current: var(--color-icon-selection-current);
+	--color-ring-focus-visible: var(--color-brand-700);
+	--color-bg-action-primary: var(--color-brand-700);
+	--color-bg-action-primary-hover: var(--color-brand-800);
+	--color-text-on-action-primary: var(--color-neutral-0);
+	--color-bg-action-secondary: var(--color-neutral-900);
+	--color-bg-action-secondary-hover: var(--color-neutral-800);
+	--color-text-on-action-secondary: var(--color-neutral-0);
+	--color-bg-notice-neutral: var(--color-bg-hover);
+	--color-border-notice-neutral: transparent;
+	--color-icon-notice-neutral: var(--color-icon-secondary);
+	--color-text-notice-neutral: var(--color-text-primary);
+	--color-bg-notice-warning: var(--color-warning-50);
+	--color-border-notice-warning: var(--color-warning-200);
+	--color-text-notice-warning: var(--color-warning-900);
+	--color-text-status-danger: var(--color-error-600);
+	--color-text-status-success: var(--color-success-600);
+	--color-bg-control-selected: var(--color-bg-hover);
+	--color-border-control-selected: var(--color-border-panel);
+	--color-icon-control-selected: var(--color-icon-secondary);
+	--color-bg-diff-added: color-mix(
+		in srgb,
+		var(--color-success-500) 8%,
+		transparent
+	);
+	--color-text-diff-added: var(--color-success-800);
+	--color-border-diff-added: var(--color-success-700);
+	--color-bg-diff-removed: color-mix(
+		in srgb,
+		var(--color-error-500) 7%,
+		transparent
+	);
+	--color-text-diff-removed: var(--color-error-800);
+	--color-border-diff-removed: var(--color-error-700);
+	--color-bg-diff-modified: color-mix(
+		in srgb,
+		var(--color-warning-400) 11%,
+		transparent
+	);
+	--color-text-diff-modified: var(--color-warning-800);
+	--color-border-diff-modified: var(--color-warning-700);
+	--color-border-table-grid: var(--color-border-subtle);
+	--color-bg-table-row-hover: rgb(250, 246, 240);
+
 	--color-error-50: rgb(254, 242, 242);
 	--color-error-100: rgb(254, 226, 226);
 	--color-error-200: rgb(254, 202, 202);
@@ -74,51 +126,14 @@
 	--color-success-800: rgb(22, 101, 52);
 	--color-success-900: rgb(20, 83, 45);
 
-	/* Semantic tokens - clearer naming */
-	--color-text-primary: var(--color-neutral-900);
-	--color-text-secondary: var(--color-neutral-600);
-	--color-text-tertiary: var(--color-neutral-400);
-	--color-surface-primary: var(--color-neutral-0);
-	--color-surface-secondary: var(--color-neutral-50);
-	--color-surface-tertiary: var(--color-neutral-100);
-	--color-border-primary: var(--color-neutral-200);
-	--color-border-secondary: var(--color-neutral-100);
-	--color-brand-primary: var(--color-brand-600);
-	--color-brand-subtle: var(--color-brand-200);
-
-	/* Font families */
-	--font-caption: Inter;
-	--font-caption-bold: Inter;
-	--font-body: Inter;
-	--font-body-bold: Inter;
-	--font-heading-3: Inter;
-	--font-heading-2: Inter;
-	--font-heading-1: Inter;
-	--font-monospace-body: monospace;
-
 	/* Box shadows */
-	--shadow-sm: 0px 1px 2px 0px rgba(0, 0, 0, 0.05);
-	--shadow-default: 0px 1px 2px 0px rgba(0, 0, 0, 0.05);
 	--shadow-md:
 		0px 4px 16px -2px rgba(0, 0, 0, 0.08), 0px 2px 4px -1px rgba(0, 0, 0, 0.08);
 	--shadow-lg:
 		0px 12px 32px -4px rgba(0, 0, 0, 0.08), 0px 4px 8px -2px rgba(0, 0, 0, 0.08);
-	--shadow-overlay:
-		0px 12px 32px -4px rgba(0, 0, 0, 0.08), 0px 4px 8px -2px rgba(0, 0, 0, 0.08);
 
 	/* Border radiuses */
-	--radius-sm: 2px;
-	--radius-md: 4px;
-	--radius-DEFAULT: 4px;
-	--radius-lg: 8px;
 	--radius-full: 9999px;
-
-	/* Spacing */
-	--spacing-112: 28rem;
-	--spacing-144: 36rem;
-	--spacing-192: 48rem;
-	--spacing-256: 64rem;
-	--spacing-320: 80rem;
 }
 
 /* Container */

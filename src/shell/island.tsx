@@ -26,7 +26,7 @@ export function Island({
 	return (
 		<div
 			className={cn(
-				"flex h-full min-w-0 flex-col overflow-hidden rounded-[10px] border border-island-border bg-neutral-0",
+				"flex h-full min-w-0 flex-col overflow-hidden rounded-[10px] border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)]",
 				className,
 			)}
 		>
@@ -41,7 +41,7 @@ export function IslandTabRow({
 	readonly children?: ReactNode;
 }): JSX.Element {
 	return (
-		<div className="flex h-10 shrink-0 items-center gap-1 border-b border-island-divider px-2">
+		<div className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--color-border-subtle)] px-2">
 			{children}
 		</div>
 	);
@@ -66,10 +66,10 @@ export function TabChip({
 			type="button"
 			onClick={onClick}
 			className={cn(
-				"flex h-7 items-center gap-1.5 rounded-[7px] px-2.25 text-xs font-semibold text-neutral-900",
+				"flex h-7 items-center gap-1.5 rounded-[7px] px-2.25 text-xs font-semibold text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-bg-panel)]",
 				isFocused
-					? "bg-focus-tint ring-1 ring-inset ring-focus-ring [&_svg]:text-brand-700"
-					: "bg-hover-soft [&_svg]:text-neutral-500",
+					? "bg-[var(--color-bg-selection-current)] ring-1 ring-inset ring-[var(--color-border-selection-current)] [&_svg]:text-[var(--color-icon-selection-current)]"
+					: "bg-[var(--color-bg-hover)] [&_svg]:text-[var(--color-icon-secondary)]",
 			)}
 		>
 			{icon ? <span className="[&_svg]:size-3.25">{icon}</span> : null}
@@ -91,7 +91,7 @@ export function AddViewButton({
 			type="button"
 			onClick={onClick}
 			aria-label={ariaLabel}
-			className="flex size-6 items-center justify-center rounded-md text-ink-faint hover:bg-hover-soft hover:text-neutral-600"
+			className="flex size-6 items-center justify-center rounded-md text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-icon-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-bg-panel)]"
 		>
 			<Plus className="size-3.25" strokeWidth={2} />
 		</button>

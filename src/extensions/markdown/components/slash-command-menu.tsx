@@ -226,7 +226,7 @@ export function SlashCommandMenu() {
 	return createPortal(
 		<div
 			ref={menuRef}
-			className="bg-popover text-popover-foreground border rounded-md shadow-md z-50 p-1 min-w-[180px] max-h-80 overflow-y-auto"
+			className="z-50 max-h-80 min-w-[180px] overflow-y-auto rounded-md border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)] p-1 text-[var(--color-text-primary)] shadow-md"
 			style={{
 				position: "fixed",
 				top: position.top,
@@ -239,7 +239,7 @@ export function SlashCommandMenu() {
 				<div
 					key={command.id}
 					data-index={index}
-					className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer select-none hover:bg-accent hover:text-accent-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
+					className="flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] data-[selected=true]:bg-[var(--color-bg-hover)] data-[selected=true]:text-[var(--color-text-primary)]"
 					data-selected={index === selectedIndex}
 					role="option"
 					aria-selected={index === selectedIndex}
@@ -254,7 +254,7 @@ export function SlashCommandMenu() {
 					tabIndex={0}
 				>
 					<command.icon
-						className="size-4 shrink-0 text-muted-foreground"
+						className="size-4 shrink-0 text-[var(--color-icon-secondary)]"
 						aria-hidden
 					/>
 					<span>{command.label}</span>

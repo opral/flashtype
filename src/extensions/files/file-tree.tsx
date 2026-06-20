@@ -39,7 +39,7 @@ const sanitizeForTestId = (value: string): string =>
 		.replace(/(^-|-$)/g, "") || "root";
 
 const rowInteractionClass =
-	"select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring";
+	"select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--color-ring-focus-visible)]";
 
 /**
  * Minimal prototype file tree that mirrors the structure of the left sidebar.
@@ -154,15 +154,15 @@ function FileTreeNode({
 	if (node.type === "file") {
 		const displayName = formatDisplayName(node.name);
 		const isSelected = selectedPath === node.path;
-		// Orange indicates the focused panel; inactive selections stay visible but quiet.
+		// Current selection is vivid only when the file panel owns keyboard input.
 		const buttonClass = clsx(
 			"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-[background-color,color,box-shadow] duration-100 ease-out [&_svg]:transition-colors [&_svg]:duration-100",
 			rowInteractionClass,
 			isSelected && isPanelFocused
-				? "bg-focus-tint text-neutral-900 ring-1 ring-inset ring-focus-ring [&_svg]:text-brand-700"
+				? "bg-[var(--color-bg-selection-current)] text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-border-selection-current)] [&_svg]:text-[var(--color-icon-selection-current)]"
 				: isSelected
-					? "bg-hover-soft text-neutral-700 [&_svg]:text-neutral-500"
-					: "text-neutral-600 hover:bg-hover-soft [&_svg]:text-neutral-400",
+					? "bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)] [&_svg]:text-[var(--color-icon-secondary)]"
+					: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] [&_svg]:text-[var(--color-icon-tertiary)]",
 		);
 		const itemTestId = `file-tree-item-${sanitizeForTestId(node.path)}`;
 		return (
@@ -196,12 +196,12 @@ function FileTreeNode({
 	// Open/closed icons carry directory state. Selection stays quiet:
 	// orange is reserved for the selected file row.
 	const buttonClass = clsx(
-		"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-colors hover:bg-hover-soft",
+		"flex h-7 w-full min-w-0 items-center gap-2 rounded-[7px] pr-2.25 text-left transition-colors hover:bg-[var(--color-bg-hover)]",
 		rowInteractionClass,
-		isSelected && "bg-hover-soft",
+		isSelected && "bg-[var(--color-bg-hover)]",
 		isOpen
-			? "font-normal text-neutral-700 [&_svg]:text-neutral-500"
-			: "text-neutral-600 [&_svg]:text-neutral-400",
+			? "font-normal text-[var(--color-text-secondary)] [&_svg]:text-[var(--color-icon-secondary)]"
+			: "text-[var(--color-text-secondary)] [&_svg]:text-[var(--color-icon-tertiary)]",
 	);
 
 	return (
@@ -269,11 +269,11 @@ function DraftRow({
 	const isFile = draft.kind === "file";
 	const Icon = isFile ? FileText : Folder;
 	const suffix = isFile ? (
-		<span className="shrink-0 text-neutral-400">.md</span>
+		<span className="shrink-0 text-[var(--color-icon-tertiary)]">.md</span>
 	) : null;
 	const ringClasses = isPanelFocused
-		? "ring-1 ring-inset ring-focus-ring bg-focus-tint"
-		: "ring-1 ring-inset ring-island-border";
+		? "ring-1 ring-inset ring-[var(--color-border-selection-current)] bg-[var(--color-bg-selection-current)]"
+		: "ring-1 ring-inset ring-[var(--color-border-panel)]";
 
 	useEffect(() => {
 		setValue(draft.value);
@@ -311,12 +311,12 @@ function DraftRow({
 			<div
 				ref={rowRef}
 				className={clsx(
-					"flex h-7 items-center gap-2 rounded-[7px] pr-2.25 text-left text-xs text-neutral-900",
+					"flex h-7 items-center gap-2 rounded-[7px] pr-2.25 text-left text-xs text-[var(--color-text-primary)]",
 					ringClasses,
 				)}
 				style={rowIndentStyle(depth)}
 			>
-				<Icon className="size-3.25 shrink-0 text-neutral-400" />
+				<Icon className="size-3.25 shrink-0 text-[var(--color-icon-tertiary)]" />
 				<input
 					ref={inputRef}
 					data-testid="files-view-draft-input"
