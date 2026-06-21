@@ -126,3 +126,15 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 
 - 2026-06-21: Current best single run is BlobDB 16 KiB plus FastCDC 128/512/2048 KiB at 5679/3586 ms cold/warm on the sanitized Downloads sample. BlobDB 32 KiB plus 128/512/2048 KiB was close at 5770/3725 ms. Repeat runs are needed before treating this as a stable ranking.
 - 2026-06-21: Verification passed after adding FastCDC overrides: `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo test -p lix_engine binary_cas --lib`, and `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`.
+- 2026-06-21: Added binary CAS storage stats to the engine and `profile_fs_open`: manifest rows, empty/single/chunked blob manifests, manifest-chunk rows, unique chunk rows, total chunk refs, and logical blob bytes. The profiler counts chunk rows with key-only scans so it does not read all blob payloads just to collect counts.
+- 2026-06-21: Repeated the strongest Downloads sample candidates with 5 runs each using `REPEAT=0`. Medians:
+
+| BlobDB min | FastCDC min/avg/max | Single threshold | Cold median | Warm median | `.lix` median | SST median | Blob median | CAS chunk rows | CAS chunk refs | Manifest chunk rows | Chunked blobs |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 KiB | 128/512/2048 KiB | 512 KiB | 5924 ms | 3917 ms | 1,603,536,751 B | 2,513,333 B | 1,600,867,343 B | 2,957 | 2,958 | 2,489 | 114 |
+| 16 KiB | 64/256/1024 KiB | 256 KiB | 6553 ms | 4305 ms | 1,601,659,542 B | 2,766,391 B | 1,598,733,259 B | 5,408 | 5,417 | 4,982 | 148 |
+| 32 KiB | 128/512/2048 KiB | 512 KiB | 6753 ms | 4210 ms | 1,603,507,672 B | 3,017,026 B | 1,600,334,565 B | 2,957 | 2,958 | 2,489 | 114 |
+| 16 KiB | 16/64/256 KiB | 64 KiB | 11235 ms | 8050 ms | 1,601,179,844 B | 4,781,402 B | 1,596,238,370 B | 20,223 | 20,299 | 19,964 | 248 |
+
+- 2026-06-21: The repeated run keeps BlobDB 16 KiB plus FastCDC 128/512/2048 KiB as the best candidate. It reduces unique CAS chunk rows from 20,223 to 2,957, about an 85% reduction, while improving median cold/warm open from 11235/8050 ms to 5924/3917 ms versus current chunking on the same BlobDB threshold.
+- 2026-06-21: Verification passed after adding CAS stats: `cargo test -p lix_engine binary_cas --lib`, `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo check -p lix_sdk --features sqlite --example profile_fs_open`, and `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`.
