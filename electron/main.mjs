@@ -1214,33 +1214,37 @@ function updateDockMenu() {
 		return;
 	}
 
-	const template = [];
-
-	template.push({
-		label: "New Window",
-		click: () => {
-			void createMainWindow();
-		},
-	});
-
-	app.dock.setMenu(Menu.buildFromTemplate(template));
+	app.dock.setMenu(
+		Menu.buildFromTemplate([
+			{
+				label: "New Window",
+				click: () => {
+					void createMainWindow();
+				},
+			},
+		]),
+	);
 }
 
 function applyDockWindowChrome(window) {
-	if (!window || window.isDestroyed()) {
+	if (process.platform !== "darwin" || window.isDestroyed()) {
 		return;
 	}
+
 	const workspace = getWorkspace(window);
 	const activeFilePath = activeFilePathsByWindowId.get(window.id);
 	const activeFileLabel = activeFileDockLabel(workspace, activeFilePath);
-	if (activeFileLabel) {
+	if (activeFileLabel && activeFilePath) {
 		window.setTitle(activeFileLabel);
 		window.setRepresentedFilename(activeFilePath);
 		return;
 	}
-	if (workspace) {
-		window.setTitle(workspace.name);
+
+	applyWorkspaceWindowChrome(window, workspace ?? undefined);
+	if (workspace?.representedPath || workspace?.path) {
 		window.setRepresentedFilename(workspace.representedPath ?? workspace.path);
+	} else {
+		window.setRepresentedFilename("");
 	}
 }
 
