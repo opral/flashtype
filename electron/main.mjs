@@ -1,4 +1,10 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import {
+	app,
+	BrowserWindow,
+	ipcMain,
+	Menu,
+	shell,
+} from "electron";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -17,6 +23,7 @@ import {
 	APP_NAME,
 	registerMarkdownDefaultHandler,
 } from "./markdown-default-handler.mjs";
+import { getApplicationIconPath as resolveApplicationIconPath } from "./app-icon.mjs";
 import {
 	getWorkspacePathArguments,
 	resolveWorkspacePathArguments,
@@ -39,6 +46,11 @@ const TELEMETRY_HEARTBEAT_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DEV_SERVER_URL =
 	process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:4173";
 const isHeadless = process.env.FLASHTYPE_HEADLESS === "1";
+const isDevRuntime =
+	process.env.FLASHTYPE_DEV_RUNTIME === "1" &&
+	process.env.VITE_DEV_SERVER_URL !== undefined &&
+	!app.isPackaged;
+const APP_DISPLAY_NAME = isDevRuntime ? `${APP_NAME} (Dev)` : APP_NAME;
 const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
 const pendingWorkspaceOpenRequests = [];
@@ -68,9 +80,9 @@ if (isHeadless && process.platform === "darwin") {
 	app.dock.hide();
 }
 
-app.setName(APP_NAME);
+app.setName(APP_DISPLAY_NAME);
 app.setAboutPanelOptions({
-	applicationName: APP_NAME,
+	applicationName: APP_DISPLAY_NAME,
 	copyright: "Copyright © 2026 Opral US Inc.",
 });
 
@@ -227,6 +239,7 @@ async function createMainWindow(workspaceRequest) {
 		minHeight: 700,
 		show: false,
 		autoHideMenuBar: true,
+		icon: getApplicationIconPath(),
 		...(process.platform === "darwin"
 			? {
 					titleBarStyle: "hiddenInset",
@@ -268,6 +281,7 @@ async function createMainWindow(workspaceRequest) {
 		if (window.isDestroyed() || isHeadless) {
 			return;
 		}
+		installDevelopmentDockIcon();
 		window.show();
 		window.focus();
 	});
@@ -325,6 +339,7 @@ async function createMainWindow(workspaceRequest) {
 
 if (hasSingleInstanceLock) {
 	app.whenReady().then(async () => {
+		installDevelopmentDockIcon();
 		registerAppIpc();
 		installApplicationMenu();
 		app.on("activate", () => {
@@ -536,21 +551,6 @@ function registerAutoUpdateListeners(autoUpdater) {
 	}
 	autoUpdateListenersRegistered = true;
 
-	autoUpdater.on("checking-for-update", () => {
-		updateCheckInProgress = true;
-		updateDownloadInProgress = false;
-		if (pendingManualUpdateCheck) {
-			updateUpdateWindow({
-				status: "checking",
-				title: "Checking for update...",
-				detail: "Contacting GitHub releases.",
-				progress: null,
-			});
-		}
-		installApplicationMenu();
-		broadcastUpdateState();
-	});
-
 	autoUpdater.on("update-available", () => {
 		updateCheckInProgress = false;
 		updateDownloadInProgress = true;
@@ -666,7 +666,7 @@ function getUpdateWindowIconDataUrl() {
 	}
 
 	try {
-		const iconPath = path.join(app.getAppPath(), "build/icon.png");
+		const iconPath = getApplicationIconPath();
 		updateIconDataUrl = `data:image/png;base64,${readFileSync(iconPath).toString("base64")}`;
 	} catch {
 		updateIconDataUrl = "";
@@ -698,7 +698,8 @@ function showUpdateWindow(initialState) {
 		maximizable: false,
 		fullscreenable: false,
 		show: false,
-		title: `Updating ${APP_NAME}`,
+		title: `Updating ${APP_DISPLAY_NAME}`,
+		icon: getApplicationIconPath(),
 		backgroundColor: "#23272f",
 		...(process.platform === "darwin"
 			? {
@@ -932,7 +933,7 @@ function renderUpdateWindowHtml(initialState) {
 	</style>
 </head>
 <body>
-	<header class="titlebar">Updating ${escapeHtml(APP_NAME)}</header>
+	<header class="titlebar">Updating ${escapeHtml(APP_DISPLAY_NAME)}</header>
 	<main class="content" id="content">
 		<div class="icon">${
 			iconDataUrl
@@ -1075,6 +1076,35 @@ async function checkForUpdatesFromMenu(options = {}) {
 	}
 }
 
+function installDevelopmentDockIcon() {
+	if (
+		process.platform !== "darwin" ||
+		isHeadless ||
+		!isDevRuntime ||
+		!app.dock
+	) {
+		return;
+	}
+
+	app.dock.setIcon(getApplicationIconPath());
+}
+
+function getApplicationIconPath() {
+	return resolveApplicationIconPath(getApplicationIconBasePath(), {
+		isDevRuntime,
+		isPackaged: app.isPackaged,
+		viteDevServerUrl: process.env.VITE_DEV_SERVER_URL,
+	});
+}
+
+function getApplicationIconBasePath() {
+	if (isDevRuntime) {
+		return path.resolve(__dirname, "..");
+	}
+	return app.getAppPath();
+}
+
+
 function installApplicationMenu() {
 	const isUpdateBusy = updateCheckInProgress || updateDownloadInProgress;
 	const checkForUpdatesItem = {
@@ -1101,18 +1131,18 @@ function installApplicationMenu() {
 		Menu.setApplicationMenu(
 			Menu.buildFromTemplate([
 				{
-					label: APP_NAME,
+					label: APP_DISPLAY_NAME,
 					submenu: [
-						{ label: `About ${APP_NAME}`, role: "about" },
+						{ label: `About ${APP_DISPLAY_NAME}`, role: "about" },
 						checkForUpdatesItem,
 						{ type: "separator" },
 						{ role: "services" },
 						{ type: "separator" },
-						{ label: `Hide ${APP_NAME}`, role: "hide" },
+						{ label: `Hide ${APP_DISPLAY_NAME}`, role: "hide" },
 						{ role: "hideOthers" },
 						{ role: "unhide" },
 						{ type: "separator" },
-						{ label: `Quit ${APP_NAME}`, role: "quit" },
+						{ label: `Quit ${APP_DISPLAY_NAME}`, role: "quit" },
 					],
 				},
 				{ role: "fileMenu" },

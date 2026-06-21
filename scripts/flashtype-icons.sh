@@ -7,6 +7,7 @@ cd "$repo_root"
 
 favicon_source="assets/icons/flashtype/favicon.svg"
 app_source="assets/icons/flashtype/app-rounded.svg"
+dev_app_source="assets/icons/flashtype/app-rounded-dev.svg"
 markdown_source="assets/icons/flashtype/markdown-document.svg"
 
 if ! command -v resvg >/dev/null 2>&1; then
@@ -95,7 +96,9 @@ for destination in "${app_svg_destinations[@]}"; do
 done
 
 render_png "$app_source" "build/icon.png" 1024
+render_png "$dev_app_source" "build/icon-dev.png" 1024
 build_icns "$app_source" "build/icon.icns"
+build_icns "$dev_app_source" "build/icon-dev.icns"
 build_icns "$markdown_source" "build/markdown.icns"
 
 echo "Generated Flashtype icons."

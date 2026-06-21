@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#BFE9FF"></stop>
+      <stop offset="0.52" stop-color="#38BDF8"></stop>
+      <stop offset="1" stop-color="#0284C7"></stop>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.3" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.4"></stop>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"></stop>
+    </radialGradient>
+    <filter id="boltShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#075985" flood-opacity="0.35"></feDropShadow>
+    </filter>
+  </defs>
+  <g transform="translate(44 44) scale(0.828125)">
+    <rect width="512" height="512" rx="115" fill="url(#bg)"></rect>
+    <rect width="512" height="512" rx="115" fill="url(#sheen)"></rect>
+    <g filter="url(#boltShadow)">
+      <path d="M13 2L4.5 13.5H11L9.5 22L19.5 9.5H12.5L13 2Z" fill="#FFFFFF" transform="translate(256,256) scale(15.5) translate(-12,-12)"></path>
+    </g>
+  </g>
+</svg>
