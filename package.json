@@ -14,9 +14,9 @@
 		"build:env-variables": "node scripts/write-env-variables.mjs",
 		"rebuild:electron-native": "electron-rebuild -f -w node-pty",
 		"fix:lix-native-macos": "node scripts/fix-lix-native-macos.mjs",
-		"package:mac": "pnpm run build:icons && pnpm run build && pnpm run build:env-variables && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish never",
+		"package:mac": "pnpm run build:icons && pnpm run build && pnpm run build:env-variables && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish never && pnpm run verify:mac-app-version",
 		"install:mac": "pnpm run package:mac && node scripts/install-mac.mjs",
-		"release:mac": "pnpm run build:icons && pnpm run build && pnpm run build:env-variables && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish always",
+		"release:mac": "pnpm run build:icons && pnpm run build && pnpm run build:env-variables && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish always && pnpm run verify:mac-app-version",
 		"dev:web": "vite",
 		"predev": "pnpm run build:lix && pnpm run build:markdown-wc && pnpm run rebuild:electron-native",
 		"predev:web": "pnpm run build:markdown-wc",
@@ -37,6 +37,7 @@
 		"pretest:e2e:headed": "pnpm run pretest:e2e",
 		"test:e2e:headed": "FLASHTYPE_HEADLESS=0 playwright test",
 		"test:e2e:packaged-macos": "playwright test --config playwright.packaged.config.ts",
+		"verify:mac-app-version": "node scripts/verify-macos-app-version.mjs",
 		"ci": "pnpm run build && pnpm test"
 	},
 	"dependencies": {

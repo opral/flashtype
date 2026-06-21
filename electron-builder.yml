@@ -2,6 +2,7 @@ appId: com.flashtype.app
 productName: Flashtype
 executableName: Flashtype
 artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+afterPack: scripts/verify-macos-app-version-hook.cjs
 directories:
   output: release
   buildResources: build

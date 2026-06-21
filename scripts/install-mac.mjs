@@ -33,6 +33,12 @@ try {
 	console.log("Refreshing Launch Services...");
 	await run(lsregisterPath, ["-f", installedAppPath]);
 
+	console.log("Verifying installed app version metadata...");
+	await run(process.execPath, [
+		path.resolve("scripts/verify-macos-app-version.mjs"),
+		installedAppPath,
+	]);
+
 	console.log(`Opening ${installedAppPath}...`);
 	await run("/usr/bin/open", [installedAppPath]);
 
