@@ -150,3 +150,19 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 | rocksdb | - | 16/64/256 KiB | 64 KiB | 6601 ms | 5540 ms | 1,599,651,528 B | 1,599,375,863 B | 0 B | 20,223 | 20,299 | 19,964 | 248 |
 
 - 2026-06-21: Current open/import recommendation is BlobDB 16 KiB with a larger-than-128/512/2048 FastCDC profile. 256/1024/4096 had the best cold median and fewest CAS chunk rows; 192/768/3072 had the best warm median. The final choice should also be tested against full-file reads, random reads, tiny rewrites, deletes, and dedup behavior before changing defaults.
+- 2026-06-21: Added a benchmark-only compaction hook to the RocksDB filesystem backend and `profile_fs_open` via `--compact-before-stats`.
+- 2026-06-21: Ran a single rewrite/delete stress test at FastCDC 256/1024/4096 KiB. Workload: import the Downloads sample, patch three 4 KiB regions in each of the four largest files for three rounds, then delete those four files, then force compact. This changes about 661 MB of live corpus bytes by deletion and keeps Lix history/CAS rows, so old versions are still intentionally retained.
+
+| Backend | Stage | Open | Compact | `.lix` total | SST | Blob | CAS chunks | CAS chunk refs | Live corpus |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rocksdb | initial | 5957 ms | - | 1,602,423,130 B | 1,546,221,571 B | 0 B | 1,738 | 1,739 | 1,610,600,522 B |
+| rocksdb | rewrite round 3 | 5707 ms | - | 2,028,181,514 B | 1,891,930,194 B | 0 B | 1,774 | 3,305 | 1,610,600,522 B |
+| rocksdb | delete | 3964 ms | - | 2,028,246,451 B | 2,027,448,429 B | 0 B | 1,774 | 3,305 | 949,167,784 B |
+| rocksdb | compact after delete | 3377 ms | 891 ms | 1,661,927,185 B | 1,661,088,048 B | 0 B | 1,774 | 3,305 | 949,167,784 B |
+| rocksdb-blob 16 KiB | initial | 6259 ms | - | 1,603,008,795 B | 1,126,057 B | 1,545,792,112 B | 1,738 | 1,739 | 1,610,600,522 B |
+| rocksdb-blob 16 KiB | rewrite round 3 | 5263 ms | - | 2,942,829,179 B | 2,456,545 B | 2,804,531,432 B | 1,774 | 3,305 | 1,610,600,522 B |
+| rocksdb-blob 16 KiB | delete | 3563 ms | - | 2,942,916,776 B | 2,491,141 B | 2,940,021,502 B | 1,774 | 3,305 | 949,167,784 B |
+| rocksdb-blob 16 KiB | compact after delete | 2411 ms | 38 ms | 2,575,900,213 B | 2,551,077 B | 2,572,989,064 B | 1,774 | 3,305 | 949,167,784 B |
+
+- 2026-06-21: Rewrite/delete result: BlobDB does what we expected for LSM pressure. Plain RocksDB SST grew from 1.55 GB to 2.03 GB before compaction and remained 1.66 GB after compaction. BlobDB SST stayed around 1-2.6 MB throughout, and forced compaction was much cheaper in this run (38 ms vs 891 ms). The tradeoff is visible too: BlobDB total bytes were larger because blob files held historical/garbage values after rewrites and deletes, only partially reclaimed by forced compaction. Next useful work is blob GC/retention tuning and read/rewrite latency on these larger chunk profiles.
+- 2026-06-21: Verification passed after adding the compaction hook: `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo test -p lix_fs_backend --features rocksdb`, `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`, and `cargo check -p lix_sdk --features sqlite --example profile_fs_open`.
