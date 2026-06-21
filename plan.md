@@ -214,3 +214,21 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 | rocksdb-blob | 32 KiB | 6243 ms | 3698 ms | 1,757 | 589 | 6.1 ms | 0.1% | 1.602 GB | 2.9 MB | 1.599 GB | 1,745 |
 
 - 2026-06-21: Interpretation: the core matrix still favors BlobDB after batching. Plain RocksDB pays about 0.40 s in CAS chunk-existence lookups, while BlobDB pays about 0.006 s. BlobDB 16 KiB and 32 KiB are effectively tied for open time and total size on this larger FastCDC profile; 16 KiB has a slightly smaller SST footprint, 32 KiB had a slightly faster cold median in this run. Plain RocksDB size varied across raw rows from about 1.60 GB to 1.73 GB without forced compaction, while BlobDB size was stable because nearly all CAS chunk payload bytes live in blob files.
+- 2026-06-21: Reran the rewrite/delete stress test after batching CAS chunk existence checks, now including BlobDB 32 KiB. Workload: import the Downloads sample at FastCDC 256/1024/4096 KiB, patch three 4 KiB regions in each of the four largest files for three rounds, delete those four files, then force compact.
+
+| Backend | Stage | Open | Compact | Lookup | `.lix` total | SST | Blob | CAS chunks | CAS refs | Live corpus |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rocksdb | initial | 8542 ms | - | 387.8 ms | 1.602 GB | 1.546 GB | 0 B | 1,745 | 1,746 | 1.611 GB |
+| rocksdb | rewrite round 3 | 5557 ms | - | 120.4 ms | 1.663 GB | 1.643 GB | 0 B | 1,781 | 3,309 | 1.611 GB |
+| rocksdb | delete | 4095 ms | - | 0.0 ms | 1.664 GB | 1.663 GB | 0 B | 1,781 | 3,309 | 949.2 MB |
+| rocksdb | compact after delete | 2517 ms | 436 ms | 0.0 ms | 1.664 GB | 1.663 GB | 0 B | 1,781 | 3,309 | 949.2 MB |
+| rocksdb-blob 16 KiB | initial | 6785 ms | - | 6.1 ms | 1.602 GB | 1.2 MB | 1.545 GB | 1,745 | 1,746 | 1.611 GB |
+| rocksdb-blob 16 KiB | rewrite round 3 | 5176 ms | - | 105.8 ms | 1.663 GB | 2.5 MB | 1.640 GB | 1,781 | 3,309 | 1.611 GB |
+| rocksdb-blob 16 KiB | delete | 3341 ms | - | 0.0 ms | 1.663 GB | 2.5 MB | 1.661 GB | 1,781 | 3,309 | 949.2 MB |
+| rocksdb-blob 16 KiB | compact after delete | 2392 ms | 112 ms | 0.0 ms | 1.663 GB | 2.6 MB | 1.661 GB | 1,781 | 3,309 | 949.2 MB |
+| rocksdb-blob 32 KiB | initial | 6932 ms | - | 7.2 ms | 1.602 GB | 1.2 MB | 1.545 GB | 1,745 | 1,746 | 1.611 GB |
+| rocksdb-blob 32 KiB | rewrite round 3 | 5086 ms | - | 110.4 ms | 1.663 GB | 2.9 MB | 1.640 GB | 1,781 | 3,309 | 1.611 GB |
+| rocksdb-blob 32 KiB | delete | 3278 ms | - | 0.0 ms | 1.663 GB | 3.0 MB | 1.660 GB | 1,781 | 3,309 | 949.2 MB |
+| rocksdb-blob 32 KiB | compact after delete | 2457 ms | 123 ms | 0.0 ms | 1.663 GB | 3.1 MB | 1.660 GB | 1,781 | 3,309 | 949.2 MB |
+
+- 2026-06-21: Interpretation: batching keeps the skip-existing behavior intact. The three rewrite rounds grew physical `.lix` size by only about 61 MB for all backends, while CAS refs grew from 1,746 to 3,309 because history keeps references to new file versions. BlobDB still has the better storage shape for this workload: after delete+compact, RocksDB has about 1.66 GB in SST files, while BlobDB has only 2.6-3.1 MB in SST files with payload bytes in blob files. BlobDB 16 KiB and 32 KiB remain effectively tied; 32 KiB was slightly faster on rewrite/delete in this single run, while 16 KiB had slightly smaller SSTs and compaction time.
