@@ -166,3 +166,20 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 
 - 2026-06-21: Rewrite/delete result: BlobDB does what we expected for LSM pressure. Plain RocksDB SST grew from 1.55 GB to 2.03 GB before compaction and remained 1.66 GB after compaction. BlobDB SST stayed around 1-2.6 MB throughout, and forced compaction was much cheaper in this run (38 ms vs 891 ms). The tradeoff is visible too: BlobDB total bytes were larger because blob files held historical/garbage values after rewrites and deletes, only partially reclaimed by forced compaction. Next useful work is blob GC/retention tuning and read/rewrite latency on these larger chunk profiles.
 - 2026-06-21: Verification passed after adding the compaction hook: `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo test -p lix_fs_backend --features rocksdb`, `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`, and `cargo check -p lix_sdk --features sqlite --example profile_fs_open`.
+- 2026-06-21: Added an experiment that skips staging CAS chunk payload rows when the chunk key already exists in the backing store. The transaction file-data path now checks chunk existence with key-only point reads before writing chunk rows, while still writing new blob manifests and manifest-chunk references.
+- 2026-06-21: Reran the same rewrite/delete stress test at FastCDC 256/1024/4096 KiB. This confirmed the BlobDB size problem was largely duplicate blob payload writes for existing CAS chunk keys, not just unavoidable BlobDB garbage.
+
+| Variant | Backend | Stage | Open | Compact | `.lix` total | SST | Blob | CAS chunks | CAS chunk refs |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| before skip | rocksdb | delete | 3964 ms | - | 2,028,246,451 B | 2,027,448,429 B | 0 B | 1,774 | 3,305 |
+| before skip | rocksdb | compact after delete | 3377 ms | 891 ms | 1,661,927,185 B | 1,661,088,048 B | 0 B | 1,774 | 3,305 |
+| before skip | rocksdb-blob 16 KiB | delete | 3563 ms | - | 2,942,916,776 B | 2,491,141 B | 2,940,021,502 B | 1,774 | 3,305 |
+| before skip | rocksdb-blob 16 KiB | compact after delete | 2411 ms | 38 ms | 2,575,900,213 B | 2,551,077 B | 2,572,989,064 B | 1,774 | 3,305 |
+| after skip | rocksdb | delete | 5165 ms | - | 1,661,601,317 B | 1,661,140,114 B | 0 B | 1,774 | 3,305 |
+| after skip | rocksdb | compact after delete | 2860 ms | 463 ms | 1,661,694,544 B | 1,661,205,151 B | 0 B | 1,774 | 3,305 |
+| after skip | rocksdb-blob 16 KiB | delete | 3298 ms | - | 1,661,414,227 B | 2,541,304 B | 1,658,539,236 B | 1,774 | 3,305 |
+| after skip | rocksdb-blob 16 KiB | compact after delete | 2353 ms | 118 ms | 1,661,428,901 B | 2,599,687 B | 1,658,539,174 B | 1,774 | 3,305 |
+
+- 2026-06-21: After skipping existing chunk payload writes, BlobDB keeps the desired LSM shape without the earlier disk-size penalty: post-delete total dropped from 2.94 GB to 1.66 GB, and post-compact total dropped from 2.58 GB to 1.66 GB. BlobDB SST still stayed tiny at about 2.5-2.6 MB. The remaining CAS chunk-ref growth is expected because Lix history keeps new file versions referencing mostly existing chunks.
+- 2026-06-21: Caveat: this first skip-existing implementation does one key-only point read per candidate CAS chunk. That is good enough to prove the storage-shape hypothesis, but the next implementation pass should batch chunk-existence checks or otherwise avoid adding avoidable read overhead on first import.
+- 2026-06-21: Verification passed after skip-existing CAS chunk writes: `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo test -p lix_engine existing_chunk_aware_writer_skips_persisted_chunk_payloads --lib`, `cargo test -p lix_engine binary_cas --lib`, `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, and `cargo check -p lix_sdk --features sqlite --example profile_fs_open`.
