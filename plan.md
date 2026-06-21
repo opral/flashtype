@@ -138,3 +138,15 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 
 - 2026-06-21: The repeated run keeps BlobDB 16 KiB plus FastCDC 128/512/2048 KiB as the best candidate. It reduces unique CAS chunk rows from 20,223 to 2,957, about an 85% reduction, while improving median cold/warm open from 11235/8050 ms to 5924/3917 ms versus current chunking on the same BlobDB threshold.
 - 2026-06-21: Verification passed after adding CAS stats: `cargo test -p lix_engine binary_cas --lib`, `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo check -p lix_sdk --features sqlite --example profile_fs_open`, and `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`.
+- 2026-06-21: Ran a follow-up backend comparison and neighborhood sweep using 5 runs each. Plain RocksDB also benefits from larger chunks, but BlobDB still wins warm reopen and keeps SSTs tiny. 128/512/2048 KiB is not the open/import optimum on this Downloads sample; 192/768/3072 and 256/1024/4096 both beat it in this sweep.
+
+| Backend | BlobDB min | FastCDC min/avg/max | Single threshold | Cold median | Warm median | `.lix` median | SST median | Blob median | CAS chunk rows | CAS chunk refs | Manifest chunk rows | Chunked blobs |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rocksdb-blob | 16 KiB | 256/1024/4096 KiB | 1024 KiB | 5712 ms | 3666 ms | 1,603,150,721 B | 2,383,234 B | 1,600,611,441 B | 1,738 | 1,739 | 1,248 | 92 |
+| rocksdb-blob | 16 KiB | 192/768/3072 KiB | 768 KiB | 5779 ms | 3636 ms | 1,603,320,125 B | 2,361,578 B | 1,600,802,497 B | 1,921 | 1,922 | 1,437 | 98 |
+| rocksdb-blob | 16 KiB | 96/384/1536 KiB | 384 KiB | 5838 ms | 3747 ms | 1,601,708,114 B | 2,515,112 B | 1,599,036,920 B | 3,391 | 3,397 | 2,943 | 129 |
+| rocksdb-blob | 16 KiB | 128/512/2048 KiB | 512 KiB | 5868 ms | 3718 ms | 1,603,534,911 B | 2,511,490 B | 1,600,867,343 B | 2,957 | 2,958 | 2,489 | 114 |
+| rocksdb | - | 128/512/2048 KiB | 512 KiB | 6006 ms | 4189 ms | 1,602,842,938 B | 1,602,571,534 B | 0 B | 2,957 | 2,958 | 2,489 | 114 |
+| rocksdb | - | 16/64/256 KiB | 64 KiB | 6601 ms | 5540 ms | 1,599,651,528 B | 1,599,375,863 B | 0 B | 20,223 | 20,299 | 19,964 | 248 |
+
+- 2026-06-21: Current open/import recommendation is BlobDB 16 KiB with a larger-than-128/512/2048 FastCDC profile. 256/1024/4096 had the best cold median and fewest CAS chunk rows; 192/768/3072 had the best warm median. The final choice should also be tested against full-file reads, random reads, tiny rewrites, deletes, and dedup behavior before changing defaults.
