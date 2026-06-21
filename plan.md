@@ -36,7 +36,7 @@ Extend `profile_fs_open` with:
 --backend rocksdb-blob --blob-min 16384
 ```
 
-The PR already uses `profile_fs_open` as the folder-open validation harness, and its PR body reports sub-second `/Users/samuel/Downloads` opens after the descriptor/hash work, so that is the right E2E baseline to preserve. Source: PR #548 summary and validation notes on GitHub. 
+The PR already uses `profile_fs_open` as the folder-open validation harness, and its PR body reports sub-second `/Users/samuel/Downloads` opens after the descriptor/hash work, so that is the right E2E baseline to preserve. Source: PR #549 summary and validation notes on GitHub.
 
 **Benchmark Matrix**
 First pass:
@@ -57,9 +57,10 @@ Second pass, only after RocksDB/BlobDB looks promising:
 
 ```text
 FastCDC 16/64/256 KiB
+FastCDC 32/128/512 KiB
 FastCDC 64/256/1024 KiB
-FastCDC 128/512/2048 KiB
-maybe single-chunk threshold variants
+maybe FastCDC 128/512/2048 KiB
+matching single-chunk threshold variants
 ```
 
 Important subtlety: BlobDB sees the encoded CAS chunk values, not original files. Since current chunks average 64 KiB, `min_blob_size = 64KiB` may only blob a subset of chunks. That is why I’d test 16 and 32 KiB too.
@@ -109,3 +110,19 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 - 2026-06-21: Smoke-ran stats output on the 32 MiB corpus. SQLite reported `.lix`/db size around 34.6 MiB. RocksDB BlobDB at 64 KiB reported about 33.8 MiB total, split into about 5.5 MiB SST and 28.2 MiB blob files, and the preserved workspace path was verified on disk.
 - 2026-06-21: Built a deterministic sanitized Downloads sample at `submodule/lix/target/fs-backend-experiment/downloads-sample/corpus` with 604 files / 1.61 GB. Composition: 250 small text/code files, 80 small misc files, 119 docs/PDFs, 15 spreadsheet/data files, 112 images, 18 archives/installers, 6 medium media files, and 4 large mixed files.
 - 2026-06-21: Ran the stats matrix on the Downloads sample. SQLite cold/warm 14136/12730 ms, `.lix` 1.636 GB. Plain RocksDB 7347/6838 ms, SST 1.599 GB, blob 0. BlobDB 16 KiB 6815/5310 ms, SST 4.7 MB, blob 1.596 GB. BlobDB 32 KiB 6636/5100 ms, SST 64.6 MB, blob 1.536 GB. BlobDB 64 KiB 7080/5843 ms, SST 251.5 MB, blob 1.351 GB. BlobDB 128 KiB 7634/5687 ms, SST 1.280 GB, blob 347.7 MB. BlobDB 256 KiB 7323/5879 ms, SST 1.582 GB, blob 19.7 MB.
+- 2026-06-21: Added experiment-only FastCDC runtime overrides for chunk sizing: `LIX_EXPERIMENT_FASTCDC_MIN_BYTES`, `LIX_EXPERIMENT_FASTCDC_AVG_BYTES`, `LIX_EXPERIMENT_FASTCDC_MAX_BYTES`, and `LIX_EXPERIMENT_FASTCDC_SINGLE_BYTES`. Defaults remain the current 16/64/256 KiB with 64 KiB single-chunk fast path when the variables are unset.
+- 2026-06-21: Ran the combined Downloads sample matrix for BlobDB 16 KiB and 32 KiB against FastCDC 16/64/256, 32/128/512, 64/256/1024, and 128/512/2048 KiB. Single-run results:
+
+| BlobDB min | FastCDC min/avg/max | Single threshold | Cold | Warm | `.lix` total | SST | Blob |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 16 KiB | 16/64/256 KiB | 64 KiB | 6782 ms | 5024 ms | 1,601,155,104 B | 4,756,476 B | 1,596,238,370 B |
+| 16 KiB | 32/128/512 KiB | 128 KiB | 5966 ms | 4376 ms | 1,600,010,692 B | 3,322,336 B | 1,596,528,201 B |
+| 16 KiB | 64/256/1024 KiB | 256 KiB | 5868 ms | 3990 ms | 1,601,711,500 B | 2,818,165 B | 1,598,733,259 B |
+| 16 KiB | 128/512/2048 KiB | 512 KiB | 5679 ms | 3586 ms | 1,603,459,167 B | 2,431,776 B | 1,600,867,343 B |
+| 32 KiB | 16/64/256 KiB | 64 KiB | 6248 ms | 4814 ms | 1,600,985,828 B | 64,505,533 B | 1,536,320,354 B |
+| 32 KiB | 32/128/512 KiB | 128 KiB | 6457 ms | 5100 ms | 1,599,975,689 B | 4,257,167 B | 1,595,558,358 B |
+| 32 KiB | 64/256/1024 KiB | 256 KiB | 6757 ms | 4734 ms | 1,601,684,442 B | 3,498,240 B | 1,598,026,125 B |
+| 32 KiB | 128/512/2048 KiB | 512 KiB | 5770 ms | 3725 ms | 1,603,623,627 B | 3,129,014 B | 1,600,334,565 B |
+
+- 2026-06-21: Current best single run is BlobDB 16 KiB plus FastCDC 128/512/2048 KiB at 5679/3586 ms cold/warm on the sanitized Downloads sample. BlobDB 32 KiB plus 128/512/2048 KiB was close at 5770/3725 ms. Repeat runs are needed before treating this as a stable ranking.
+- 2026-06-21: Verification passed after adding FastCDC overrides: `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo test -p lix_engine binary_cas --lib`, and `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`.
