@@ -205,3 +205,12 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 
 - 2026-06-21: Interpretation: batching reduced existence-check backend calls from roughly one per unique candidate chunk to one per file/blob with candidates (1,757 keys across 589 batches). Plain RocksDB lookup time improved modestly versus the previous 489 ms median, to 416 ms, but total open/import time remains noisy. BlobDB lookup time stayed effectively negligible. This confirms batching is still worth keeping for architecture cleanliness, but it does not change the main conclusion: BlobDB is better for this filesystem workload because chunk payload reads/writes do not inflate the LSM/SST set.
 - 2026-06-21: Verification passed after batched CAS chunk lookups: `cargo fmt -p lix_engine -p lix_sdk`, `cargo test -p lix_engine binary_cas --lib`, `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open` with the local libclang env, `cargo build --release -p lix_sdk --features sqlite,rocksdb --example profile_fs_open` with the local libclang env, `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture` with the local libclang env, and `cargo check -p lix_sdk --features sqlite --example profile_fs_open`.
+- 2026-06-21: Reran the core post-batching matrix on the sanitized Downloads sample using FastCDC 256/1024/4096 KiB and 5 runs per backend. Median results:
+
+| Backend | BlobDB min | Cold median | Warm median | Lookup keys | Lookup batches | Lookup time | Lookup share of cold | `.lix` total | SST | Blob | CAS chunks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rocksdb | - | 7246 ms | 3838 ms | 1,757 | 589 | 396 ms | 5.5% | 1.728 GB | 1.728 GB | 0 B | 1,745 |
+| rocksdb-blob | 16 KiB | 6277 ms | 3642 ms | 1,757 | 589 | 6.5 ms | 0.1% | 1.602 GB | 2.4 MB | 1.600 GB | 1,745 |
+| rocksdb-blob | 32 KiB | 6243 ms | 3698 ms | 1,757 | 589 | 6.1 ms | 0.1% | 1.602 GB | 2.9 MB | 1.599 GB | 1,745 |
+
+- 2026-06-21: Interpretation: the core matrix still favors BlobDB after batching. Plain RocksDB pays about 0.40 s in CAS chunk-existence lookups, while BlobDB pays about 0.006 s. BlobDB 16 KiB and 32 KiB are effectively tied for open time and total size on this larger FastCDC profile; 16 KiB has a slightly smaller SST footprint, 32 KiB had a slightly faster cold median in this run. Plain RocksDB size varied across raw rows from about 1.60 GB to 1.73 GB without forced compaction, while BlobDB size was stable because nearly all CAS chunk payload bytes live in blob files.
