@@ -1,114 +1,100 @@
-# Lix Catalog MVP Plan
+Yep. I’d set this up as two separate tests so we do not blur the answer:
 
-## Objective
+1. Does RocksDB/BlobDB help with the current 16/64/256 KiB FastCDC layout?
+2. Once SQLite is no longer the constraint, can we safely raise chunk sizes?
 
-Introduce two canonical metadata surfaces for agents:
+The current code makes this pretty approachable: `FsBackend::open` hardwires persistent filesystem storage to SQLite, but `FilesystemSync<B>` is already generic over `Backend`, so the first implementation should be a narrow RocksDB persistent open path, not a filesystem rewrite. See [filesystem.rs](/Users/samuel/git-repos/flashtype2/submodule/lix/packages/rs-sdk/src/filesystem.rs:253) and [filesystem.rs](/Users/samuel/git-repos/flashtype2/submodule/lix/packages/rs-sdk/src/filesystem.rs:445). The RocksDB backend already uses snapshots for reads and atomic `WriteBatch` commits, so I would not introduce `TransactionDB` in the first pass. That would add a variable before we know if BlobDB/chunk sizing is the win. See [rocksdb.rs](/Users/samuel/git-repos/flashtype2/submodule/lix/packages/backends/src/rocksdb.rs:119) and [rocksdb.rs](/Users/samuel/git-repos/flashtype2/submodule/lix/packages/backends/src/rocksdb.rs:310).
 
-1. `lix_catalog_tables`
-2. `lix_catalog_columns`
+**Minimal Experiment**
+Add:
 
-MVP goal: let agents discover the current public Lix surfaces and their columns from SQL.
+```rust
+pub enum RocksDbProfile {
+    Plain,
+    BlobDb {
+        min_blob_size: u64,
+        blob_file_size: u64,
+        enable_gc: bool,
+        gc_age_cutoff: f64,
+    },
+}
+```
 
-## Why
+Then add `RocksDbBackend::open_with_options(...)` and keep `RocksDbBackend::open(...)` as today’s plain default. The options go into [rocksdb.rs](/Users/samuel/git-repos/flashtype2/submodule/lix/packages/backends/src/rocksdb.rs:441).
 
-The engine already knows table and column shapes, but that knowledge is split across registries, constants, and rewrite code. Agents need one stable SQL source of truth for:
+Then add an rs-sdk `rocksdb` feature and a benchmark-only/public-hidden open path like:
 
-1. Which public surfaces exist.
-2. Which columns each surface exposes.
+```rust
+FsBackend::open_rocksdb_with_options(dir, rocksdb_options)
+```
 
-## Scope
+Extend `profile_fs_open` with:
 
-In scope:
+```sh
+--backend sqlite
+--backend rocksdb
+--backend rocksdb-blob --blob-min 16384
+```
 
-1. Engine-level read-only metadata surfaces for tables and columns.
-2. Population logic based on current engine metadata sources.
-3. Coverage for public core surfaces and dynamic entity views backed by builtin schemas and `lix_registered_schema`.
+The PR already uses `profile_fs_open` as the folder-open validation harness, and its PR body reports sub-second `/Users/samuel/Downloads` opens after the descriptor/hash work, so that is the right E2E baseline to preserve. Source: PR #548 summary and validation notes on GitHub. 
 
-Out of scope (MVP):
+**Benchmark Matrix**
+First pass:
 
-1. `lix_catalog_functions`
-2. Unknown table/column error integration
-3. `information_schema` compatibility
-4. Rich type/capability metadata that is not already cheap to derive from current engine logic
+```text
+sqlite current
+rocksdb plain
+rocksdb blob min=16KiB
+rocksdb blob min=32KiB
+rocksdb blob min=64KiB
+rocksdb blob min=128KiB
+rocksdb blob min=256KiB
+```
 
-## Surface Definitions
+Keep current chunking fixed for that pass: [chunking.rs](/Users/samuel/git-repos/flashtype2/submodule/lix/packages/engine/src/binary_cas/chunking.rs:1).
 
-## `lix_catalog_tables`
+Second pass, only after RocksDB/BlobDB looks promising:
 
-One row per public queryable surface.
+```text
+FastCDC 16/64/256 KiB
+FastCDC 64/256/1024 KiB
+FastCDC 128/512/2048 KiB
+maybe single-chunk threshold variants
+```
 
-Required columns:
+Important subtlety: BlobDB sees the encoded CAS chunk values, not original files. Since current chunks average 64 KiB, `min_blob_size = 64KiB` may only blob a subset of chunks. That is why I’d test 16 and 32 KiB too.
 
-1. `table_name` (TEXT, PK)
-2. `schema_key` (TEXT, nullable; populated for entity views)
+**What To Measure**
+For each run:
 
-## `lix_catalog_columns`
+```text
+cold open/import time
+warm reopen time
+no-op reopen/sync time
+large-file read time
+small random chunk/file read time
+rewrite after tiny edit near beginning/middle/end
+delete large file
+database directory size
+SST size
+blob file size
+WAL size
+chunk count
+binary_cas manifest rows
+binary_cas manifest_chunk rows
+binary_cas chunk rows
+commit put_entries / written_bytes
+```
 
-One row per column per public queryable surface.
+Also flush/close/reopen before measuring disk layout. Integrated BlobDB can move values to blob files during flush/compaction, so measuring immediately after writes can lie.
 
-Required columns:
+**Decision Rule**
+BlobDB is a win if it improves large-file import/rewrite/storage without making many-small-file opens noticeably worse. But if the bottleneck is mostly “too many CAS keys,” BlobDB will not solve that alone; then the real win is probably RocksDB BlobDB plus larger FastCDC chunks.
 
-1. `table_name` (TEXT)
-2. `column_name` (TEXT)
-3. `ordinal_position` (INTEGER)
+My recommended first concrete move: add the RocksDB options/open path and extend `profile_fs_open` into a backend-selectable JSON-emitting harness. Then run the matrix against one synthetic corpus and `/Users/samuel/Downloads`.
 
-Primary key:
+## Log
 
-1. (`table_name`, `column_name`)
-
-## Population Strategy
-
-Populate catalogs from the current engine logic, without introducing a new metadata system first.
-
-### Tables
-
-1. Start from the public core surface names already registered in `PUBLIC_LIX_TABLE_REGISTRY`.
-2. Enumerate entity views from builtin schemas plus the latest registered schemas visible through `lix_registered_schema`.
-3. Emit concrete public `table_name` rows exactly as the engine exposes them, for example `lix_state`, `lix_state_by_branch`, and `lix_file_history`.
-4. For entity views, emit only the concrete table names the engine currently resolves, such as base, `_by_branch`, and `_history` names.
-5. Do not invent `_history_by_branch` entity-view table names unless the engine actually resolves them.
-
-### Columns
-
-1. Use the in-code `lix_table_registry` / `PUBLIC_LIX_TABLE_REGISTRY` where a core surface already has explicit columns there.
-2. Use the current state-column constants for `lix_state` and `lix_state_by_branch`.
-3. Use the current projection definitions for `lix_branch` and the workspace branch selector.
-4. Use entity-view target resolution plus projected columns for entity views.
-5. Keep rows keyed by the concrete public `table_name`, so `lix_file`, `lix_file_by_branch`, and `lix_file_history` each get their own rows.
-
-Do not infer canonical metadata from `sqlite_master` or `pragma_table_info` at runtime.
-
-## Implementation Notes
-
-1. Reuse the current engine source of truth per surface family, even if that means the catalog is assembled from multiple code paths in MVP.
-2. For registered schemas, use the latest schema definition per `schema_key`; MVP does not need historical schema catalog entries.
-3. The catalog only needs to describe public queryable surfaces. Internal tables and internal vtables stay out of scope for MVP.
-
-## Implementation Phases
-
-1. Phase 1: Add stable schemas for `lix_catalog_tables` and `lix_catalog_columns`.
-2. Phase 2: Populate public core surfaces from existing registries, constants, and rewrite projections.
-3. Phase 3: Populate entity-view rows and columns from builtin schemas plus latest `lix_registered_schema` rows.
-4. Phase 4: Add regression tests that keep catalog output aligned with current public surface logic.
-
-## Acceptance Criteria
-
-1. `SELECT table_name FROM lix_catalog_tables ORDER BY table_name` lists the current public core surfaces.
-2. `SELECT column_name FROM lix_catalog_columns WHERE table_name = 'lix_file' ORDER BY ordinal_position` returns the current `lix_file` columns.
-3. `SELECT column_name FROM lix_catalog_columns WHERE table_name = 'lix_state' ORDER BY ordinal_position` returns the current `lix_state` visible columns.
-4. Builtin and stored-schema-backed entity views appear in `lix_catalog_tables`.
-5. `lix_catalog_columns` returns projected columns for registered-schema-backed entity views.
-6. No function catalog is required for MVP.
-
-## Testing Plan
-
-1. Unit tests for table rows generated from `PUBLIC_LIX_TABLE_REGISTRY`.
-2. Unit tests for `lix_state`, `lix_state_by_branch`, `lix_branch`, and workspace branch selector column generation.
-3. Unit tests for entity-view table and column generation from builtin and registered schemas.
-4. Regression tests to keep catalog output in sync with current public surface logic.
-
-## Progress Log
-
-- 2026-03-05: MVP narrowed to `lix_catalog_tables` and `lix_catalog_columns` only.
-- 2026-03-05: Removed `lix_catalog_functions` and error discoverability from MVP scope.
-- 2026-03-05: Anchored entity-view discovery to builtin schemas plus latest `lix_registered_schema` rows.
+- 2026-06-21: Replaced the existing catalog MVP plan with the RocksDB/BlobDB filesystem backend testing plan.
+- 2026-06-21: Confirmed the first experiment can stay narrow: add RocksDB backend options/open plumbing and reuse the generic `FilesystemSync<B>` path.
+- 2026-06-21: Next progress item is to extend `profile_fs_open` with backend selection, BlobDB thresholds, and JSON output for matrix runs.
