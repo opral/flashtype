@@ -98,3 +98,7 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 - 2026-06-21: Replaced the existing catalog MVP plan with the RocksDB/BlobDB filesystem backend testing plan.
 - 2026-06-21: Confirmed the first experiment can stay narrow: add RocksDB backend options/open plumbing and reuse the generic `FilesystemSync<B>` path.
 - 2026-06-21: Next progress item is to extend `profile_fs_open` with backend selection, BlobDB thresholds, and JSON output for matrix runs.
+- 2026-06-21: Created the `lix_fs_backend` crate in `submodule/lix/packages/fs-backend` with a filesystem-specialized RocksDB backend that owns BlobDB options directly and does not depend on `lix_backends`.
+- 2026-06-21: Wired `lix_fs_backend` into `lix_sdk` behind a `rocksdb` feature and extended `profile_fs_open` with `--backend sqlite|rocksdb|rocksdb-blob`, `--blob-min`, and `--json`.
+- 2026-06-21: Ran the first synthetic import/open matrix against a 32 MiB corpus with 83 files. Results: SQLite cold/warm 387/111 ms; plain RocksDB 263/127 ms; BlobDB min 16 KiB 275/129 ms; 32 KiB 261/132 ms; 64 KiB 278/128 ms; 128 KiB 271/129 ms; 256 KiB 279/128 ms.
+- 2026-06-21: Verification passed: `cargo check -p lix_sdk --features sqlite,rocksdb --example profile_fs_open`, `cargo test -p lix_fs_backend --features rocksdb`, and `cargo test -p lix_sdk --features sqlite,rocksdb filesystem::tests:: -- --nocapture`.
