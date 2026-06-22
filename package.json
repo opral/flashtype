@@ -24,6 +24,7 @@
 		"prebuild": "pnpm run build:lix && pnpm run build:markdown-wc",
 		"postinstall": "command -v cargo >/dev/null 2>&1 && cargo fetch --manifest-path submodule/lix/Cargo.toml || true",
 		"build:lix": "node scripts/build-lix.mjs",
+		"benchmark:open-workspaces": "node scripts/profile-generated-workspaces.mjs",
 		"preview": "vite preview --strictPort --port 5173",
 		"typecheck": "tsc -p . --pretty false",
 		"format": "prettier --write .",
