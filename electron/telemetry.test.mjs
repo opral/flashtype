@@ -29,7 +29,7 @@ describe("isWorkspaceProfileDue", () => {
 });
 
 describe("sanitizeProperties", () => {
-	test("allows workspace profile counts and workspace id", () => {
+	test("keeps simple telemetry values", () => {
 		expect(
 			sanitizeProperties({
 				workspace_id: "018f64f4-7d3c-7c2d-95d8-7e9625cfa211",
@@ -50,6 +50,7 @@ describe("sanitizeProperties", () => {
 				largest_extension_file_count: 92,
 				largest_extension_share: 0.5,
 				view_kind: "installed_notes",
+				"bad/key": "dropped",
 			}),
 		).toEqual({
 			workspace_id: "018f64f4-7d3c-7c2d-95d8-7e9625cfa211",
@@ -57,19 +58,22 @@ describe("sanitizeProperties", () => {
 			directory_count: 12,
 			extension_count: 3,
 			extension_counts: {
-				md: 92,
+				MD: 92,
 				json: 41,
 				none: 3,
-				other: 12,
+				too_long_private_customer_slug: 1,
+				acmecustomer: 2,
+				negative: -1,
+				floaty: 1.2,
 			},
-			largest_extension: "md",
+			largest_extension: "MD",
 			largest_extension_file_count: 92,
 			largest_extension_share: 0.5,
-			view_kind: "other",
+			view_kind: "installed_notes",
 		});
 	});
 
-	test("drops path-like strings and invalid numeric values", () => {
+	test("drops path-like strings", () => {
 		expect(
 			sanitizeProperties({
 				source: "renderer",
@@ -83,8 +87,9 @@ describe("sanitizeProperties", () => {
 		).toEqual({
 			source: "renderer",
 			reason: "workspace_ready",
-			file_extension: "other",
-			largest_extension: "other",
+			largest_extension: "acmecustomer",
+			largest_extension_share: 1.2,
+			file_count: -1,
 		});
 	});
 

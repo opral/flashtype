@@ -4,7 +4,6 @@ import {
 	captureTelemetryAsync,
 	markWorkspaceProfiled,
 	normalizeTelemetryFileExtension,
-	releaseWorkspaceProfileClaim,
 	shouldProfileWorkspace,
 } from "@/lib/telemetry";
 
@@ -42,31 +41,24 @@ export async function captureWorkspaceProfile(args: {
 		return;
 	}
 
-	let profileQueued = false;
-	try {
-		const filePaths = await readWorkspaceFilePaths(args.lix);
-		const profile = buildWorkspaceProfile(filePaths);
-		const profileResult = await captureTelemetryAsync("workspace profiled", {
-			workspace_id: workspaceId,
-			file_count: profile.fileCount,
-			directory_count: profile.directoryCount,
-			extension_count: profile.extensionCount,
-			extension_counts: profile.extensionCounts,
-			largest_extension: profile.largestExtension,
-			largest_extension_file_count: profile.largestExtensionFileCount,
-			largest_extension_share: profile.largestExtensionShare,
-			is_ephemeral_workspace: args.isEphemeralWorkspace,
-		});
-		if (profileResult?.status !== "queued") {
-			return;
-		}
-		profileQueued = true;
-		await markWorkspaceProfiled(workspaceId);
-	} finally {
-		if (!profileQueued) {
-			await releaseWorkspaceProfileClaim(workspaceId);
-		}
+	const filePaths = await readWorkspaceFilePaths(args.lix);
+	const profile = buildWorkspaceProfile(filePaths);
+	const profileResult = await captureTelemetryAsync("workspace profiled", {
+		workspace_id: workspaceId,
+		file_count: profile.fileCount,
+		directory_count: profile.directoryCount,
+		extension_count: profile.extensionCount,
+		extension_counts: profile.extensionCounts,
+		largest_extension: profile.largestExtension,
+		largest_extension_file_count: profile.largestExtensionFileCount,
+		largest_extension_share: profile.largestExtensionShare,
+		is_ephemeral_workspace: args.isEphemeralWorkspace,
+	});
+	if (profileResult?.status !== "queued") {
+		return;
 	}
+
+	await markWorkspaceProfiled(workspaceId);
 }
 
 export function buildWorkspaceProfile(

@@ -1,6 +1,5 @@
 import { app, ipcMain } from "electron";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PostHog } from "posthog-node";
@@ -10,7 +9,6 @@ const ENV_VARIABLES_FILE = "build/env-variables.mjs";
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
 const SESSION_REPLAY_SAMPLE_RATE = 0.1;
 const WORKSPACE_PROFILE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
-const WORKSPACE_PROFILE_CLAIM_TTL_MS = 5 * 60 * 1000;
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
 const RENDERER_EVENT_ALLOWLIST = new Set([
@@ -24,137 +22,16 @@ const RENDERER_EVENT_ALLOWLIST = new Set([
 	"workspace profiled",
 ]);
 
-const PROPERTY_ALLOWLIST = new Set([
-	"agent",
-	"branch_count",
-	"directory_count",
-	"extension_counts",
-	"extension_kind",
-	"extension_count",
-	"exit_code",
-	"file_extension",
-	"file_count",
-	"is_ephemeral_workspace",
-	"largest_extension",
-	"largest_extension_file_count",
-	"largest_extension_share",
-	"launch_source",
-	"open_source",
-	"outcome",
-	"panel",
-	"pending_file_count",
-	"process_type",
-	"rank",
-	"reason",
-	"review_action",
-	"share",
-	"source",
-	"trigger",
-	"throttle_minutes",
-	"view_kind",
-	"workspace_id",
-	"workspace_state",
-]);
-
-const SAFE_FILE_EXTENSIONS = new Set([
-	"bash",
-	"c",
-	"cc",
-	"cjs",
-	"cpp",
-	"cs",
-	"css",
-	"csv",
-	"cxx",
-	"doc",
-	"docx",
-	"env",
-	"fish",
-	"gif",
-	"go",
-	"gql",
-	"graphql",
-	"gz",
-	"h",
-	"htm",
-	"html",
-	"ini",
-	"java",
-	"jpeg",
-	"jpg",
-	"js",
-	"json",
-	"jsonl",
-	"jsx",
-	"kt",
-	"kts",
-	"lock",
-	"markdown",
-	"md",
-	"mjs",
-	"pdf",
-	"php",
-	"png",
-	"ppt",
-	"pptx",
-	"py",
-	"rb",
-	"rs",
-	"sh",
-	"sql",
-	"svg",
-	"swift",
-	"toml",
-	"ts",
-	"tsx",
-	"tsv",
-	"txt",
-	"webp",
-	"xls",
-	"xlsx",
-	"xml",
-	"yaml",
-	"yml",
-	"zsh",
-]);
-
-const SAFE_VIEW_KINDS = new Set([
-	"flashtype_csv",
-	"flashtype_file",
-	"flashtype_files",
-	"flashtype_terminal",
-]);
-
-const SAFE_LAUNCH_SOURCES = new Set([
-	"app",
-	"file",
-	"folder",
-	"mixed",
-	"unknown",
-]);
-
-const SAFE_WORKSPACE_OPEN_SOURCES = new Set([
-	"app_restore",
-	"file_launch",
-	"file_open_event",
-	"folder_launch",
-	"open_in_new_window",
-	"workspace_picker",
-	"unknown",
-]);
-
 let envVariablesPromise;
 let telemetryStorePromise;
 let telemetryStore;
 let posthogClient;
 let posthogClientPromise;
-let identifiedThisSession = false;
 let telemetryIpcRegistered = false;
 let telemetryShutdownStarted = false;
 let latestRendererPostHogSessionId;
 let cachedDistinctId;
 const rendererPostHogSessionIdsByWebContentsId = new Map();
-const workspaceProfileClaimsByLixId = new Map();
 
 export async function captureAppLaunched({
 	trigger = "launch",
@@ -178,7 +55,6 @@ export async function captureTelemetryEvent(event, properties = {}) {
 		}
 
 		const distinctId = await getDistinctId();
-		await identifyTelemetryUser(client, distinctId);
 		client.capture({
 			distinctId,
 			event,
@@ -206,7 +82,6 @@ export async function captureTelemetryException(error, properties = {}) {
 		}
 
 		const distinctId = await getDistinctId();
-		await identifyTelemetryUser(client, distinctId);
 		client.captureException(
 			error,
 			distinctId,
@@ -287,14 +162,6 @@ export function registerTelemetryIpc() {
 			if (!isWorkspaceProfileDue(lastProfiledAt, now)) {
 				return { status: "fresh" };
 			}
-			const claimedAt = workspaceProfileClaimsByLixId.get(lixId);
-			if (
-				typeof claimedAt === "number" &&
-				now - claimedAt < WORKSPACE_PROFILE_CLAIM_TTL_MS
-			) {
-				return { status: "fresh" };
-			}
-			workspaceProfileClaimsByLixId.set(lixId, now);
 			return { status: "due" };
 		},
 	);
@@ -313,24 +180,8 @@ export function registerTelemetryIpc() {
 			[lixId]: new Date().toISOString(),
 		};
 		await persistTelemetryStore(store);
-		workspaceProfileClaimsByLixId.delete(lixId);
 		return { status: "marked" };
 	});
-
-	ipcMain.handle(
-		"telemetry:releaseWorkspaceProfileClaim",
-		async (_event, payload) => {
-			if (!isTelemetryEnabled()) {
-				return { status: "disabled" };
-			}
-			const lixId = normalizeLixId(payload?.lixId);
-			if (!lixId) {
-				return { status: "ignored" };
-			}
-			workspaceProfileClaimsByLixId.delete(lixId);
-			return { status: "released" };
-		},
-	);
 }
 
 export async function shutdownTelemetry(timeoutMs = SHUTDOWN_TIMEOUT_MS) {
@@ -379,28 +230,6 @@ async function createPostHogClient() {
 	return posthogClient;
 }
 
-async function identifyTelemetryUser(client, distinctId) {
-	if (identifiedThisSession) {
-		return;
-	}
-
-	const store = await getOrCreateTelemetryStore();
-	client.identify({
-		distinctId,
-		properties: {
-			app_name: "flashtype",
-			app_version: app.getVersion(),
-			install_created_at: store.createdAt,
-			is_packaged: app.isPackaged,
-			platform: process.platform,
-			platform_arch: process.arch,
-			...systemLocaleProperties(),
-			user_type: "active_install",
-		},
-	});
-	identifiedThisSession = true;
-}
-
 async function getDistinctId() {
 	return (await getOrCreateTelemetryStore()).distinctId;
 }
@@ -422,7 +251,6 @@ async function readEnvVariablesUncached() {
 		PUBLIC_POSTHOG_HOST:
 			readProcessEnv("PUBLIC_POSTHOG_HOST", "POSTHOG_HOST") ??
 			fileEnv?.PUBLIC_POSTHOG_HOST,
-		APP_VERSION: fileEnv?.APP_VERSION ?? app.getVersion(),
 	};
 }
 
@@ -447,8 +275,6 @@ async function readEnvVariablesFile() {
 				typeof env.PUBLIC_POSTHOG_HOST === "string"
 					? env.PUBLIC_POSTHOG_HOST
 					: undefined,
-			APP_VERSION:
-				typeof env.APP_VERSION === "string" ? env.APP_VERSION : undefined,
 		};
 	} catch {
 		return undefined;
@@ -544,13 +370,6 @@ function normalizeTelemetryStore(store) {
 			typeof store?.createdAt === "string"
 				? store.createdAt
 				: new Date().toISOString(),
-		lastWorkspaceActiveAt:
-			typeof store?.lastWorkspaceActiveAt === "string"
-				? store.lastWorkspaceActiveAt
-				: undefined,
-		workspaceActiveAtByWorkspaceId: normalizeWorkspaceActiveAtByWorkspaceId(
-			store?.workspaceActiveAtByWorkspaceId,
-		),
 		workspaceProfiledAtByLixId: normalizeProfiledAtByLixId(
 			store?.workspaceProfiledAtByLixId,
 		),
@@ -655,142 +474,66 @@ function normalizeRendererEventName(event) {
 }
 
 export function sanitizeProperties(properties) {
-	if (typeof properties !== "object" || properties === null) {
+	const sanitized = sanitizeTelemetryValue(properties);
+	if (!sanitized || typeof sanitized !== "object" || Array.isArray(sanitized)) {
 		return {};
-	}
-
-	const sanitized = {};
-	for (const [key, value] of Object.entries(properties)) {
-		if (!PROPERTY_ALLOWLIST.has(key)) {
-			continue;
-		}
-		const normalized = normalizePropertyValue(key, value);
-		if (normalized !== undefined) {
-			sanitized[key] = normalized;
-		}
 	}
 	return sanitized;
 }
 
-function normalizePropertyValue(key, value) {
-	switch (key) {
-		case "extension_counts":
-			return normalizeExtensionCounts(value);
-		case "file_extension":
-		case "largest_extension":
-			return normalizeFileExtension(value);
-		case "extension_kind":
-		case "view_kind":
-			return normalizeViewKind(value);
-		case "launch_source":
-			return normalizeStringFromSet(value, SAFE_LAUNCH_SOURCES);
-		case "open_source":
-			return normalizeStringFromSet(value, SAFE_WORKSPACE_OPEN_SOURCES);
-		case "workspace_id":
-			return normalizeLixId(value);
-		case "largest_extension_share":
-		case "share":
-			return normalizeRatio(value);
-		case "branch_count":
-		case "directory_count":
-		case "extension_count":
-		case "exit_code":
-		case "file_count":
-		case "largest_extension_file_count":
-		case "pending_file_count":
-		case "rank":
-		case "throttle_minutes":
-			return normalizeNonNegativeNumber(value);
-		default:
-			break;
+function sanitizeTelemetryValue(value, depth = 0) {
+	if (depth > 6 || value === undefined || value === null) {
+		return undefined;
 	}
 	if (typeof value === "string") {
-		return normalizeSafeString(value);
+		return normalizeTelemetryString(value);
 	}
-	if (typeof value === "boolean") {
-		return value;
+	if (typeof value === "boolean" || typeof value === "number") {
+		return Number.isFinite(value) || typeof value === "boolean"
+			? value
+			: undefined;
 	}
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value;
+	if (Array.isArray(value)) {
+		return value
+			.map((item) => sanitizeTelemetryValue(item, depth + 1))
+			.filter((item) => item !== undefined)
+			.slice(0, 50);
+	}
+	if (value && typeof value === "object") {
+		const sanitized = {};
+		for (const [rawKey, rawValue] of Object.entries(value)) {
+			const key = normalizeTelemetryKey(rawKey);
+			const sanitizedValue = sanitizeTelemetryValue(rawValue, depth + 1);
+			if (key && sanitizedValue !== undefined) {
+				sanitized[key] = sanitizedValue;
+			}
+		}
+		return Object.keys(sanitized).length > 0 ? sanitized : undefined;
 	}
 	return undefined;
 }
 
-function normalizeExtensionCounts(value) {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+function normalizeTelemetryKey(key) {
+	if (!/^[A-Za-z0-9_$][A-Za-z0-9_$.-]{0,79}$/.test(key)) {
 		return undefined;
 	}
-
-	const normalized = {};
-	for (const [rawExtension, rawCount] of Object.entries(value)) {
-		const extension = normalizeFileExtension(rawExtension);
-		const count = normalizeNonNegativeInteger(rawCount);
-		if (extension && count !== undefined) {
-			normalized[extension] = (normalized[extension] ?? 0) + count;
-		}
-	}
-	return Object.keys(normalized).length > 0 ? normalized : undefined;
+	return key;
 }
 
-function normalizeFileExtension(value) {
-	if (typeof value !== "string") {
+function normalizeTelemetryString(value) {
+	const trimmed = value.trim();
+	if (!trimmed) {
 		return undefined;
 	}
-	const normalized = value.trim().toLowerCase();
-	if (normalized === "none") {
-		return normalized;
-	}
-	return SAFE_FILE_EXTENSIONS.has(normalized) ? normalized : "other";
-}
-
-function normalizeViewKind(value) {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const normalized = value.trim();
-	return SAFE_VIEW_KINDS.has(normalized) ? normalized : "other";
-}
-
-function normalizeStringFromSet(value, allowedValues) {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const normalized = value.trim();
-	return allowedValues.has(normalized) ? normalized : "unknown";
-}
-
-function normalizeRatio(value) {
-	if (typeof value !== "number" || !Number.isFinite(value)) {
-		return undefined;
-	}
-	return value >= 0 && value <= 1 ? value : undefined;
-}
-
-function normalizeNonNegativeNumber(value) {
-	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-		return undefined;
-	}
-	return value;
-}
-
-function normalizeNonNegativeInteger(value) {
+	const scrubbed = scrubPrivatePaths(trimmed).slice(0, 200);
 	if (
-		typeof value !== "number" ||
-		!Number.isFinite(value) ||
-		value < 0 ||
-		!Number.isInteger(value)
+		!scrubbed ||
+		scrubbed === "[redacted_path]" ||
+		/[\\/]/.test(scrubbed)
 	) {
 		return undefined;
 	}
-	return value;
-}
-
-function normalizeSafeString(value) {
-	const normalized = normalizeShortString(value);
-	if (!normalized) {
-		return undefined;
-	}
-	return /[\\/]/.test(normalized) ? undefined : normalized;
+	return scrubbed;
 }
 
 function normalizeLocale(value) {
@@ -830,17 +573,6 @@ function isDistinctIdSampled(distinctId, sampleRate) {
 	return (hash >>> 0) / 0x100000000 < sampleRate;
 }
 
-function normalizeShortString(value) {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const trimmed = value.trim();
-	if (!trimmed) {
-		return undefined;
-	}
-	return trimmed.slice(0, 80);
-}
-
 export function scrubTelemetrySensitiveValues(value, depth = 0) {
 	if (depth > 8) {
 		return undefined;
@@ -862,73 +594,13 @@ export function scrubTelemetrySensitiveValues(value, depth = 0) {
 }
 
 function scrubPrivatePaths(value) {
-	let scrubbed = value;
-	for (const privatePath of getPrivatePathPrefixes()) {
-		scrubbed = scrubPrivatePathPrefix(scrubbed, privatePath);
-		scrubbed = scrubPrivatePathPrefix(
-			scrubbed,
-			`file://${privatePath.replaceAll(path.sep, "/")}`,
-		);
-	}
-	return scrubbed.replaceAll("file://[redacted_path]", "[redacted_path]");
-}
-
-function getPrivatePathPrefixes() {
-	const prefixes = new Set();
-	const homeDir = os.homedir();
-	if (homeDir) {
-		prefixes.add(path.resolve(homeDir));
-	}
-	for (const pathName of ["home", "userData", "temp"]) {
-		try {
-			const prefix = app.getPath(pathName);
-			if (prefix) {
-				prefixes.add(path.resolve(prefix));
-			}
-		} catch {
-			// Some Electron paths are unavailable in unusual runtime phases.
-		}
-	}
-	return [...prefixes];
-}
-
-function scrubPrivatePathPrefix(value, privatePath) {
-	if (!privatePath) {
-		return value;
-	}
-	const normalizedPrivatePath = privatePath.replaceAll("\\", "/");
-	const normalizedValue = value.replaceAll("\\", "/");
-	const startIndex = normalizedValue.indexOf(normalizedPrivatePath);
-	if (startIndex === -1) {
-		return value;
-	}
-
-	let result = "";
-	let cursor = 0;
-	let searchFrom = 0;
-	while (true) {
-		const index = normalizedValue.indexOf(normalizedPrivatePath, searchFrom);
-		if (index === -1) {
-			result += value.slice(cursor);
-			break;
-		}
-		let end = index + normalizedPrivatePath.length;
-		while (
-			end < normalizedValue.length &&
-			!isPathBoundary(normalizedValue[end])
-		) {
-			end += 1;
-		}
-		result += value.slice(cursor, index);
-		result += "[redacted_path]";
-		cursor = end;
-		searchFrom = end;
-	}
-	return result;
-}
-
-function isPathBoundary(character) {
-	return /[\s)"'<>[\]{}]/.test(character);
+	return value
+		.replaceAll(/file:\/\/\/[^\s)"'<>[\]{}]+/g, "[redacted_path]")
+		.replaceAll(
+			/\/(?:Users|Volumes|home|private|tmp|var)\/[^\s)"'<>[\]{}]+/g,
+			"[redacted_path]",
+		)
+		.replaceAll(/[A-Za-z]:\\[^\s)"'<>[\]{}]+/g, "[redacted_path]");
 }
 
 function normalizeLixId(value) {
@@ -954,21 +626,6 @@ function normalizeProfiledAtByLixId(value) {
 			continue;
 		}
 		normalized[lixId] = profiledAt;
-	}
-	return normalized;
-}
-
-function normalizeWorkspaceActiveAtByWorkspaceId(value) {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
-		return {};
-	}
-	const normalized = {};
-	for (const [key, activeAt] of Object.entries(value)) {
-		const workspaceId = normalizeLixId(key);
-		if (!workspaceId || typeof activeAt !== "string") {
-			continue;
-		}
-		normalized[workspaceId] = activeAt;
 	}
 	return normalized;
 }

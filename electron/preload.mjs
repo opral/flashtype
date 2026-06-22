@@ -22,8 +22,6 @@ const telemetry = {
 		ipcRenderer.invoke("telemetry:shouldProfileWorkspace", payload),
 	markWorkspaceProfiled: (payload) =>
 		ipcRenderer.invoke("telemetry:markWorkspaceProfiled", payload),
-	releaseWorkspaceProfileClaim: (payload) =>
-		ipcRenderer.invoke("telemetry:releaseWorkspaceProfileClaim", payload),
 };
 
 const workspace = {
