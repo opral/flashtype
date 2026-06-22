@@ -10,20 +10,8 @@ const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
 const SESSION_REPLAY_SAMPLE_RATE = 0.1;
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
-const RENDERER_EVENT_ALLOWLIST = new Set([
-	"agent launched",
-	"external write reviewed",
-	"file created",
-	"file opened",
-	"file saved",
-	"update installed",
-	"workspace opened",
-	"workspace profiled",
-]);
-
 let envVariablesPromise;
-let telemetryStorePromise;
-let telemetryStore;
+let distinctIdPromise;
 let posthogClient;
 let posthogClientPromise;
 let telemetryIpcRegistered = false;
@@ -104,7 +92,7 @@ export function registerTelemetryIpc() {
 	telemetryIpcRegistered = true;
 
 	ipcMain.handle("telemetry:capture", async (_event, payload) => {
-		const eventName = normalizeRendererEventName(payload?.event);
+		const eventName = normalizeTelemetryString(payload?.event);
 		if (!eventName) {
 			return { status: "ignored" };
 		}
@@ -191,27 +179,32 @@ async function createPostHogClient() {
 }
 
 async function getDistinctId() {
-	return (await getOrCreateTelemetryStore()).distinctId;
+	if (cachedDistinctId) {
+		return cachedDistinctId;
+	}
+	distinctIdPromise ??= readOrCreateDistinctId().finally(() => {
+		distinctIdPromise = undefined;
+	});
+	cachedDistinctId = await distinctIdPromise;
+	return cachedDistinctId;
 }
 
 async function readEnvVariables() {
 	if (envVariablesPromise) {
 		return await envVariablesPromise;
 	}
-	envVariablesPromise = readEnvVariablesUncached();
+	envVariablesPromise = (async () => {
+		const fileEnv = await readEnvVariablesFile();
+		return {
+			PUBLIC_POSTHOG_TOKEN:
+				readProcessEnv("PUBLIC_POSTHOG_TOKEN", "POSTHOG_PROJECT_API_KEY") ??
+				fileEnv?.PUBLIC_POSTHOG_TOKEN,
+			PUBLIC_POSTHOG_HOST:
+				readProcessEnv("PUBLIC_POSTHOG_HOST", "POSTHOG_HOST") ??
+				fileEnv?.PUBLIC_POSTHOG_HOST,
+		};
+	})();
 	return await envVariablesPromise;
-}
-
-async function readEnvVariablesUncached() {
-	const fileEnv = await readEnvVariablesFile();
-	return {
-		PUBLIC_POSTHOG_TOKEN:
-			readProcessEnv("PUBLIC_POSTHOG_TOKEN", "POSTHOG_PROJECT_API_KEY") ??
-			fileEnv?.PUBLIC_POSTHOG_TOKEN,
-		PUBLIC_POSTHOG_HOST:
-			readProcessEnv("PUBLIC_POSTHOG_HOST", "POSTHOG_HOST") ??
-			fileEnv?.PUBLIC_POSTHOG_HOST,
-	};
 }
 
 async function readEnvVariablesFile() {
@@ -251,81 +244,46 @@ function readProcessEnv(...names) {
 	return undefined;
 }
 
-async function getOrCreateTelemetryStore() {
-	if (telemetryStore) {
-		return telemetryStore;
-	}
-	if (telemetryStorePromise) {
-		return await telemetryStorePromise;
-	}
-
-	telemetryStorePromise = getOrCreateTelemetryStoreUncached();
-	telemetryStore = await telemetryStorePromise;
-	return telemetryStore;
-}
-
-async function getOrCreateTelemetryStoreUncached() {
+async function readOrCreateDistinctId() {
 	const userDataPath = app.getPath("userData");
 	const storePath = path.join(userDataPath, TELEMETRY_STORE_FILE);
 
 	await fs.mkdir(userDataPath, { recursive: true });
-	const existingStore = await readTelemetryStore(storePath);
-	if (existingStore?.distinctId) {
-		return normalizeTelemetryStore(existingStore);
+	const existingDistinctId = await readDistinctId(storePath);
+	if (existingDistinctId) {
+		return existingDistinctId;
 	}
 
-	const store = {
-		distinctId: randomUUID(),
-		createdAt: new Date().toISOString(),
-	};
+	const distinctId = randomUUID();
 	try {
-		await writeTelemetryStore(storePath, store, { flag: "wx" });
-		return store;
+		await writeDistinctId(storePath, distinctId, { flag: "wx" });
+		return distinctId;
 	} catch (error) {
 		if (error?.code !== "EEXIST") {
 			throw error;
 		}
-		const racedStore = await readTelemetryStore(storePath);
-		if (racedStore?.distinctId) {
-			return normalizeTelemetryStore(racedStore);
-		}
-		throw error;
+		return (await readDistinctId(storePath)) ?? distinctId;
 	}
 }
 
-async function readTelemetryStore(storePath) {
+async function readDistinctId(storePath) {
 	try {
 		const rawStore = await fs.readFile(storePath, "utf8");
 		const store = JSON.parse(rawStore);
-		if (typeof store === "object" && store !== null) {
-			return store;
-		}
+		return typeof store?.distinctId === "string" && store.distinctId.length > 0
+			? store.distinctId
+			: undefined;
 	} catch {
 		return undefined;
 	}
-	return undefined;
 }
 
-async function writeTelemetryStore(storePath, store, options = {}) {
+async function writeDistinctId(storePath, distinctId, options = {}) {
 	await fs.writeFile(
 		storePath,
-		`${JSON.stringify(normalizeTelemetryStore(store), null, 2)}\n`,
+		`${JSON.stringify({ distinctId }, null, 2)}\n`,
 		options,
 	);
-}
-
-function normalizeTelemetryStore(store) {
-	const distinctId =
-		typeof store?.distinctId === "string" && store.distinctId.length > 0
-			? store.distinctId
-			: randomUUID();
-	return {
-		distinctId,
-		createdAt:
-			typeof store?.createdAt === "string"
-				? store.createdAt
-				: new Date().toISOString(),
-	};
 }
 
 function commonEventProperties() {
@@ -415,14 +373,6 @@ function systemLocaleProperties() {
 		properties.system_language = language;
 	}
 	return properties;
-}
-
-function normalizeRendererEventName(event) {
-	if (typeof event !== "string") {
-		return undefined;
-	}
-	const trimmed = event.trim();
-	return RENDERER_EVENT_ALLOWLIST.has(trimmed) ? trimmed : undefined;
 }
 
 export function sanitizeProperties(properties) {
