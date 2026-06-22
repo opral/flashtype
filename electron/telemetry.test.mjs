@@ -14,19 +14,13 @@ describe("isWorkspaceActiveDue", () => {
 
 	test("is fresh inside the active throttle window", () => {
 		expect(
-			isWorkspaceActiveDue(
-				new Date(NOW - 29 * 60 * 1000).toISOString(),
-				NOW,
-			),
+			isWorkspaceActiveDue(new Date(NOW - 29 * 60 * 1000).toISOString(), NOW),
 		).toBe(false);
 	});
 
 	test("is due once the active throttle window has elapsed", () => {
 		expect(
-			isWorkspaceActiveDue(
-				new Date(NOW - 30 * 60 * 1000).toISOString(),
-				NOW,
-			),
+			isWorkspaceActiveDue(new Date(NOW - 30 * 60 * 1000).toISOString(), NOW),
 		).toBe(true);
 	});
 });
@@ -38,19 +32,13 @@ describe("isWorkspaceProfileDue", () => {
 
 	test("is fresh inside the seven day profile window", () => {
 		expect(
-			isWorkspaceProfileDue(
-				new Date(Date.UTC(2026, 5, 16)).toISOString(),
-				NOW,
-			),
+			isWorkspaceProfileDue(new Date(Date.UTC(2026, 5, 16)).toISOString(), NOW),
 		).toBe(false);
 	});
 
 	test("is due once the seven day profile window has elapsed", () => {
 		expect(
-			isWorkspaceProfileDue(
-				new Date(Date.UTC(2026, 5, 15)).toISOString(),
-				NOW,
-			),
+			isWorkspaceProfileDue(new Date(Date.UTC(2026, 5, 15)).toISOString(), NOW),
 		).toBe(true);
 	});
 });
@@ -112,6 +100,20 @@ describe("sanitizeProperties", () => {
 			reason: "workspace_ready",
 			file_extension: "other",
 			largest_extension: "other",
+		});
+	});
+
+	test("allows launch and workspace open source telemetry", () => {
+		expect(
+			sanitizeProperties({
+				launch_source: "file",
+				open_source: "file_open_event",
+				pending_file_count: 1,
+			}),
+		).toEqual({
+			launch_source: "file",
+			open_source: "file_open_event",
+			pending_file_count: 1,
 		});
 	});
 });

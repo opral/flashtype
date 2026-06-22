@@ -517,7 +517,7 @@ export function FilesView({ context }: FilesViewProps) {
 			)}
 			<div
 				data-testid="files-view-tree-scroll"
-				className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1"
+				className="ph-mask min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1"
 			>
 				<FileTree
 					nodes={nodes}

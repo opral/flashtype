@@ -21,6 +21,7 @@ import {
 	captureWorkspaceProfile,
 	readWorkspaceId,
 } from "./lib/workspace-profile-telemetry";
+import { startPostHogSessionRecording } from "./lib/session-recording";
 
 type Workspace = Awaited<
 	ReturnType<NonNullable<Window["flashtypeDesktop"]>["workspace"]["get"]>
@@ -177,6 +178,9 @@ export const AppRoot = () => {
 					reason,
 					source: "renderer",
 					workspace_id: workspaceId,
+				});
+				void startPostHogSessionRecording().catch((error: unknown) => {
+					console.warn("Failed to start session recording", error);
 				});
 			})().catch((error: unknown) => {
 				console.warn("Failed to capture workspace active telemetry", error);

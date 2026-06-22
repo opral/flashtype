@@ -484,7 +484,7 @@ function TipTapEditorLoadedContent({
 		<div className={`relative min-h-0 ${className ?? ""}`}>
 			<div
 				ref={scrollContainerRef}
-				className="tiptap-container w-full h-full bg-background cursor-text overflow-y-auto"
+				className="ph-mask tiptap-container w-full h-full bg-background cursor-text overflow-y-auto"
 				data-editor-focused={isEditorFocused ? "true" : "false"}
 				onMouseDown={handleSurfacePointerDown}
 			>

@@ -198,6 +198,17 @@ export type DesktopTelemetryApi = {
 	}): Promise<{
 		status: "disabled" | "error" | "ignored" | "queued" | "throttled";
 	}>;
+	getSessionRecordingConfig(): Promise<
+		| {
+				enabled: false;
+		  }
+		| {
+				enabled: true;
+				token: string;
+				host: string;
+				distinctId: string;
+		  }
+	>;
 	shouldProfileWorkspace(payload: {
 		lixId: string;
 	}): Promise<{ status: "disabled" | "due" | "fresh" | "ignored" }>;

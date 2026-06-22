@@ -15,6 +15,8 @@ const app = {
 
 const telemetry = {
 	capture: (payload) => ipcRenderer.invoke("telemetry:capture", payload),
+	getSessionRecordingConfig: () =>
+		ipcRenderer.invoke("telemetry:getSessionRecordingConfig"),
 	shouldProfileWorkspace: (payload) =>
 		ipcRenderer.invoke("telemetry:shouldProfileWorkspace", payload),
 	markWorkspaceProfiled: (payload) =>

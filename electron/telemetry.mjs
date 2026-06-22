@@ -7,6 +7,7 @@ import { PostHog } from "posthog-node";
 const TELEMETRY_STORE_FILE = "telemetry.json";
 const ENV_VARIABLES_FILE = "build/env-variables.mjs";
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
+const SESSION_REPLAY_SAMPLE_RATE = 0.1;
 const WORKSPACE_ACTIVE_THROTTLE_MS = 30 * 60 * 1000;
 const WORKSPACE_PROFILE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const WORKSPACE_PROFILE_CLAIM_TTL_MS = 5 * 60 * 1000;
@@ -37,8 +38,11 @@ const PROPERTY_ALLOWLIST = new Set([
 	"largest_extension",
 	"largest_extension_file_count",
 	"largest_extension_share",
+	"launch_source",
+	"open_source",
 	"outcome",
 	"panel",
+	"pending_file_count",
 	"rank",
 	"reason",
 	"review_action",
@@ -120,6 +124,24 @@ const SAFE_VIEW_KINDS = new Set([
 	"flashtype_terminal",
 ]);
 
+const SAFE_LAUNCH_SOURCES = new Set([
+	"app",
+	"file",
+	"folder",
+	"mixed",
+	"unknown",
+]);
+
+const SAFE_WORKSPACE_OPEN_SOURCES = new Set([
+	"app_restore",
+	"file_launch",
+	"file_open_event",
+	"folder_launch",
+	"open_in_new_window",
+	"workspace_picker",
+	"unknown",
+]);
+
 let envVariablesPromise;
 let telemetryStorePromise;
 let telemetryStore;
@@ -130,8 +152,14 @@ let telemetryIpcRegistered = false;
 let telemetryShutdownStarted = false;
 const workspaceProfileClaimsByLixId = new Map();
 
-export async function captureAppLaunched({ trigger = "launch" } = {}) {
-	return await captureTelemetryEvent("app launched", { trigger });
+export async function captureAppLaunched({
+	trigger = "launch",
+	launchSource = "app",
+} = {}) {
+	return await captureTelemetryEvent("app launched", {
+		trigger,
+		launch_source: launchSource,
+	});
 }
 
 export async function captureWorkspaceActive({
@@ -226,6 +254,26 @@ export function registerTelemetryIpc() {
 			...sanitizeProperties(payload?.properties),
 			source: "renderer",
 		});
+	});
+
+	ipcMain.handle("telemetry:getSessionRecordingConfig", async () => {
+		if (!isTelemetryEnabled()) {
+			return { enabled: false };
+		}
+		const env = await readEnvVariables();
+		if (!env?.PUBLIC_POSTHOG_TOKEN) {
+			return { enabled: false };
+		}
+		const distinctId = await getDistinctId();
+		if (!isDistinctIdSampled(distinctId, SESSION_REPLAY_SAMPLE_RATE)) {
+			return { enabled: false };
+		}
+		return {
+			enabled: true,
+			token: env.PUBLIC_POSTHOG_TOKEN,
+			host: env.PUBLIC_POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST,
+			distinctId,
+		};
 	});
 
 	ipcMain.handle(
@@ -560,6 +608,10 @@ function normalizePropertyValue(key, value) {
 		case "extension_kind":
 		case "view_kind":
 			return normalizeViewKind(value);
+		case "launch_source":
+			return normalizeStringFromSet(value, SAFE_LAUNCH_SOURCES);
+		case "open_source":
+			return normalizeStringFromSet(value, SAFE_WORKSPACE_OPEN_SOURCES);
 		case "workspace_id":
 			return normalizeLixId(value);
 		case "largest_extension_share":
@@ -570,6 +622,7 @@ function normalizePropertyValue(key, value) {
 		case "extension_count":
 		case "file_count":
 		case "largest_extension_file_count":
+		case "pending_file_count":
 		case "rank":
 		case "throttle_minutes":
 			return normalizeNonNegativeNumber(value);
@@ -623,6 +676,14 @@ function normalizeViewKind(value) {
 	return SAFE_VIEW_KINDS.has(normalized) ? normalized : "other";
 }
 
+function normalizeStringFromSet(value, allowedValues) {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+	const normalized = value.trim();
+	return allowedValues.has(normalized) ? normalized : "unknown";
+}
+
 function normalizeRatio(value) {
 	if (typeof value !== "number" || !Number.isFinite(value)) {
 		return undefined;
@@ -665,6 +726,21 @@ function normalizeLocale(value) {
 	return /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/.test(trimmed)
 		? trimmed
 		: undefined;
+}
+
+function isDistinctIdSampled(distinctId, sampleRate) {
+	if (sampleRate <= 0) {
+		return false;
+	}
+	if (sampleRate >= 1) {
+		return true;
+	}
+	let hash = 0x811c9dc5;
+	for (let index = 0; index < distinctId.length; index += 1) {
+		hash ^= distinctId.charCodeAt(index);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0) / 0x100000000 < sampleRate;
 }
 
 function normalizeShortString(value) {
