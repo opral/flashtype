@@ -251,3 +251,13 @@ My recommended first concrete move: add the RocksDB options/open path and extend
 | rocksdb-blob 32 KiB + FastCDC 256/1024/4096 | 6431 ms | 3772 ms | 799 ms | 2609 ms | 2206 ms | 9543 ms | 1.602 GB | 2.8 MB | 1.599 GB | 1,745 | 1,746 |
 
 - 2026-06-21: SQLite baseline interpretation: this is the clearest yes so far for the Downloads-folder goal. The BlobDB candidate is about 2.7x faster on cold open/import, 3.0x faster on warm reopen, 4.0x faster reading all files, 4.8-5.5x faster on the four-largest-file reads, and 5.3x faster on the 16-small-file point-read sample. It also cuts unique CAS chunk rows from 20,223 to 1,745, about an 11.6x reduction, while keeping physical `.lix` size slightly smaller. Current recommendation: BlobDB 32 KiB plus FastCDC 256/1024/4096 KiB is the experiment winner to turn into a real backend/config path.
+- 2026-06-21: Confirmed the Lix branch is already on the latest published `rocksdb` Rust wrapper, `rocksdb 0.24.0`, with `librocksdb-sys 0.17.3+10.4.2`. No further crate bump was available from crates.io.
+- 2026-06-21: Reran the latest implementation benchmark matrix on the sanitized Downloads sample with 3 runs per backend, now including plain RocksDB as the control. SQLite used current/default FastCDC 16/64/256 KiB. Plain RocksDB and BlobDB used FastCDC 256/1024/4096 KiB, with BlobDB min 32 KiB.
+
+| Backend/config | Cold | Warm | CAS lookup | Read all files | Read 4 largest | Repeat 4 largest | Read 16 small | `.lix` total | SST / DB | Blob | CAS chunks | CAS refs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| sqlite current 16/64/256 | 17128 ms | 12099 ms | 2093 ms | 3577 ms | 13133 ms | 12610 ms | 62096 ms | 1.636 GB | 1.636 GB | 0 B | 20,223 | 20,299 |
+| rocksdb + FastCDC 256/1024/4096 | 10609 ms | 7696 ms | 619 ms | 1425 ms | 3092 ms | 2367 ms | 9232 ms | 1.728 GB | 1.728 GB | 0 B | 1,745 | 1,746 |
+| rocksdb-blob 32 KiB + FastCDC 256/1024/4096 | 7653 ms | 3823 ms | 10 ms | 841 ms | 2583 ms | 2281 ms | 14446 ms | 1.602 GB | 2.7 MB | 1.599 GB | 1,745 | 1,746 |
+
+- 2026-06-21: Latest matrix interpretation: BlobDB 32 KiB plus FastCDC 256/1024/4096 remains the strongest candidate for the Downloads-folder goal. It is about 2.2x faster cold and 3.2x faster warm than SQLite current chunking, cuts unique CAS chunk rows by 11.6x, and keeps SST bytes around 2.7 MB. Plain RocksDB also improves over SQLite, but pays about 0.6 seconds in CAS chunk lookup and stores the payload mass in SST files.

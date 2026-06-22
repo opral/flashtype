@@ -31,22 +31,28 @@ The original problem is that the filesystem backend stores file payload chunks i
 
 The experiment tested a filesystem-specialized RocksDB backend, then RocksDB integrated BlobDB for CAS chunk values. BlobDB fits this workload because it keeps large values out of SST/LSM files: SSTs store keys and blob pointers, while payload bytes live in blob files.
 
-The final direct comparison against current SQLite is strong:
+The final direct comparison against current SQLite is strong. The latest run also includes plain RocksDB as a control, using the same large FastCDC profile as BlobDB:
 
-| Backend/config | Cold | Warm | Read all files | Read 4 largest | Repeat 4 largest | Read 16 small | `.lix` total | CAS chunks |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| SQLite current `16/64/256` | 17232 ms | 11506 ms | 3231 ms | 12570 ms | 12230 ms | 50196 ms | 1.636 GB | 20,223 |
-| BlobDB 32 KiB + FastCDC `256/1024/4096` | 6431 ms | 3772 ms | 799 ms | 2609 ms | 2206 ms | 9543 ms | 1.602 GB | 1,745 |
+| Backend/config | Cold | Warm | CAS lookup | Read all files | Read 4 largest | Repeat 4 largest | Read 16 small | `.lix` total | CAS chunks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SQLite current `16/64/256` | 17128 ms | 12099 ms | 2093 ms | 3577 ms | 13133 ms | 12610 ms | 62096 ms | 1.636 GB | 20,223 |
+| Plain RocksDB + FastCDC `256/1024/4096` | 10609 ms | 7696 ms | 619 ms | 1425 ms | 3092 ms | 2367 ms | 9232 ms | 1.728 GB | 1,745 |
+| BlobDB 32 KiB + FastCDC `256/1024/4096` | 7653 ms | 3823 ms | 10 ms | 841 ms | 2583 ms | 2281 ms | 14446 ms | 1.602 GB | 1,745 |
 
 Compared with current SQLite on the sanitized Downloads sample, the BlobDB candidate was:
 
-- 2.7x faster on cold open/import.
-- 3.0x faster on warm reopen.
-- 4.0x faster reading all files.
-- 4.8-5.5x faster reading the four largest files.
-- 5.3x faster on the 16-small-file point-read sample.
+- 2.2x faster on cold open/import.
+- 3.2x faster on warm reopen.
+- 3.0-5.5x faster on the full-corpus and largest-file read benchmarks.
 - 11.6x fewer unique CAS chunk rows.
 - Slightly smaller on disk.
+
+Compared with plain RocksDB on the same large FastCDC profile, BlobDB kept the SST set tiny and improved the core open path:
+
+- 1.4x faster on cold open/import.
+- 2.0x faster on warm reopen.
+- CAS chunk lookup time was effectively negligible: 10 ms vs 619 ms.
+- SST bytes were about 2.7 MiB instead of about 1.728 GB; payload bytes lived in blob files.
 
 ## Corpus And Harness
 
@@ -114,6 +120,8 @@ Implemented in Lix:
 - RocksDB compaction profiling hook.
 - Skip-existing CAS chunk payload writes.
 - Batched CAS chunk existence checks.
+- Same-process RocksDB open sharing with process-local write serialization.
+- Cross-process RocksDB open behavior documented/tested as locked by RocksDB.
 - Read benchmark support.
 - RocksDB Rust wrapper upgraded from `rocksdb 0.22` / RocksDB 8.10 to `rocksdb 0.24` / RocksDB 10.4.2.
 
@@ -516,4 +524,3 @@ batched CAS chunk existence checks
 ```
 
 The strongest evidence is the final direct baseline: the candidate beats current SQLite on open/import, warm reopen, full reads, largest-file reads, small point reads, chunk-row count, and disk size on the motivating corpus.
-
