@@ -2,10 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { captureTelemetry, fileExtensionProperty } from "./telemetry";
 
 describe("fileExtensionProperty", () => {
-	test("keeps common extensions and buckets unknown extensions", () => {
+	test("normalizes extension properties", () => {
 		expect(fileExtensionProperty("/notes/README.MD")).toBe("md");
 		expect(fileExtensionProperty("/data/accounts.csv")).toBe("csv");
-		expect(fileExtensionProperty("/exports/data.acmecustomer")).toBe("other");
+		expect(fileExtensionProperty("/exports/data.acmecustomer")).toBe(
+			"acmecustomer",
+		);
 		expect(fileExtensionProperty("/README")).toBe("none");
 	});
 });

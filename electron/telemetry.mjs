@@ -8,7 +8,6 @@ const TELEMETRY_STORE_FILE = "telemetry.json";
 const ENV_VARIABLES_FILE = "build/env-variables.mjs";
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
 const SESSION_REPLAY_SAMPLE_RATE = 0.1;
-const WORKSPACE_PROFILE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
 const RENDERER_EVENT_ALLOWLIST = new Set([
@@ -143,45 +142,6 @@ export function registerTelemetryIpc() {
 		);
 	});
 
-	ipcMain.handle(
-		"telemetry:shouldProfileWorkspace",
-		async (_event, payload) => {
-			if (!isTelemetryEnabled()) {
-				return { status: "disabled" };
-			}
-			if (!(await getPostHogClient())) {
-				return { status: "disabled" };
-			}
-			const lixId = normalizeLixId(payload?.lixId);
-			if (!lixId) {
-				return { status: "ignored" };
-			}
-			const store = await getOrCreateTelemetryStore();
-			const lastProfiledAt = store.workspaceProfiledAtByLixId?.[lixId];
-			const now = Date.now();
-			if (!isWorkspaceProfileDue(lastProfiledAt, now)) {
-				return { status: "fresh" };
-			}
-			return { status: "due" };
-		},
-	);
-
-	ipcMain.handle("telemetry:markWorkspaceProfiled", async (_event, payload) => {
-		if (!isTelemetryEnabled()) {
-			return { status: "disabled" };
-		}
-		const lixId = normalizeLixId(payload?.lixId);
-		if (!lixId) {
-			return { status: "ignored" };
-		}
-		const store = await getOrCreateTelemetryStore();
-		store.workspaceProfiledAtByLixId = {
-			...(store.workspaceProfiledAtByLixId ?? {}),
-			[lixId]: new Date().toISOString(),
-		};
-		await persistTelemetryStore(store);
-		return { status: "marked" };
-	});
 }
 
 export async function shutdownTelemetry(timeoutMs = SHUTDOWN_TIMEOUT_MS) {
@@ -333,11 +293,6 @@ async function getOrCreateTelemetryStoreUncached() {
 	}
 }
 
-async function persistTelemetryStore(store) {
-	const storePath = path.join(app.getPath("userData"), TELEMETRY_STORE_FILE);
-	await writeTelemetryStore(storePath, store);
-}
-
 async function readTelemetryStore(storePath) {
 	try {
 		const rawStore = await fs.readFile(storePath, "utf8");
@@ -370,9 +325,6 @@ function normalizeTelemetryStore(store) {
 			typeof store?.createdAt === "string"
 				? store.createdAt
 				: new Date().toISOString(),
-		workspaceProfiledAtByLixId: normalizeProfiledAtByLixId(
-			store?.workspaceProfiledAtByLixId,
-		),
 	};
 }
 
@@ -601,39 +553,4 @@ function scrubPrivatePaths(value) {
 			"[redacted_path]",
 		)
 		.replaceAll(/[A-Za-z]:\\[^\s)"'<>[\]{}]+/g, "[redacted_path]");
-}
-
-function normalizeLixId(value) {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const trimmed = value.trim().toLowerCase();
-	return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-		trimmed,
-	)
-		? trimmed
-		: undefined;
-}
-
-function normalizeProfiledAtByLixId(value) {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
-		return {};
-	}
-	const normalized = {};
-	for (const [key, profiledAt] of Object.entries(value)) {
-		const lixId = normalizeLixId(key);
-		if (!lixId || typeof profiledAt !== "string") {
-			continue;
-		}
-		normalized[lixId] = profiledAt;
-	}
-	return normalized;
-}
-
-export function isWorkspaceProfileDue(lastProfiledAt, now = Date.now()) {
-	const lastProfiledTime = Date.parse(lastProfiledAt ?? "");
-	return (
-		!Number.isFinite(lastProfiledTime) ||
-		now - lastProfiledTime >= WORKSPACE_PROFILE_INTERVAL_MS
-	);
 }

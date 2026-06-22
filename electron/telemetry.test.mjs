@@ -2,31 +2,10 @@ import { describe, expect, test } from "vitest";
 import os from "node:os";
 import {
 	beforeSendTelemetryEvent,
-	isWorkspaceProfileDue,
 	sanitizeProperties,
 	scrubTelemetrySensitiveValues,
 	setTelemetrySessionContextForWebContents,
 } from "./telemetry.mjs";
-
-const NOW = Date.UTC(2026, 5, 22);
-
-describe("isWorkspaceProfileDue", () => {
-	test("is due when no prior profile timestamp exists", () => {
-		expect(isWorkspaceProfileDue(undefined, NOW)).toBe(true);
-	});
-
-	test("is fresh inside the seven day profile window", () => {
-		expect(
-			isWorkspaceProfileDue(new Date(Date.UTC(2026, 5, 16)).toISOString(), NOW),
-		).toBe(false);
-	});
-
-	test("is due once the seven day profile window has elapsed", () => {
-		expect(
-			isWorkspaceProfileDue(new Date(Date.UTC(2026, 5, 15)).toISOString(), NOW),
-		).toBe(true);
-	});
-});
 
 describe("sanitizeProperties", () => {
 	test("keeps simple telemetry values", () => {

@@ -2,12 +2,11 @@ import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
 import {
 	captureTelemetryAsync,
-	markWorkspaceProfiled,
 	normalizeTelemetryFileExtension,
-	shouldProfileWorkspace,
 } from "@/lib/telemetry";
 
 const INTERNAL_WORKSPACE_PATH_PREFIX = "/.lix/";
+const WORKSPACE_PROFILE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type WorkspaceProfile = {
 	fileCount: number;
@@ -36,8 +35,7 @@ export async function captureWorkspaceProfile(args: {
 		return;
 	}
 
-	const profileStatus = await shouldProfileWorkspace(workspaceId);
-	if (profileStatus?.status !== "due") {
+	if (!isWorkspaceProfileDue(workspaceId)) {
 		return;
 	}
 
@@ -58,7 +56,25 @@ export async function captureWorkspaceProfile(args: {
 		return;
 	}
 
-	await markWorkspaceProfiled(workspaceId);
+	markWorkspaceProfiled(workspaceId);
+}
+
+function isWorkspaceProfileDue(workspaceId: string) {
+	const lastProfiledAt = Number(
+		localStorage.getItem(workspaceProfileStorageKey(workspaceId)),
+	);
+	return (
+		!Number.isFinite(lastProfiledAt) ||
+		Date.now() - lastProfiledAt >= WORKSPACE_PROFILE_INTERVAL_MS
+	);
+}
+
+function markWorkspaceProfiled(workspaceId: string) {
+	localStorage.setItem(workspaceProfileStorageKey(workspaceId), String(Date.now()));
+}
+
+function workspaceProfileStorageKey(workspaceId: string) {
+	return `flashtype.workspaceProfiledAt.${workspaceId}`;
 }
 
 export function buildWorkspaceProfile(

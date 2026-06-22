@@ -18,10 +18,6 @@ const telemetry = {
 	getClientConfig: () => ipcRenderer.invoke("telemetry:getClientConfig"),
 	setSessionContext: (payload) =>
 		ipcRenderer.invoke("telemetry:setSessionContext", payload),
-	shouldProfileWorkspace: (payload) =>
-		ipcRenderer.invoke("telemetry:shouldProfileWorkspace", payload),
-	markWorkspaceProfiled: (payload) =>
-		ipcRenderer.invoke("telemetry:markWorkspaceProfiled", payload),
 };
 
 const workspace = {

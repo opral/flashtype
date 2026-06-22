@@ -208,12 +208,6 @@ export type DesktopTelemetryApi = {
 	setSessionContext(payload: {
 		sessionId: string;
 	}): Promise<{ status: "ignored" | "set" }>;
-	shouldProfileWorkspace(payload: {
-		lixId: string;
-	}): Promise<{ status: "disabled" | "due" | "fresh" | "ignored" }>;
-	markWorkspaceProfiled(payload: {
-		lixId: string;
-	}): Promise<{ status: "disabled" | "ignored" | "marked" }>;
 };
 
 declare global {
