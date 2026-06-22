@@ -27,12 +27,6 @@ describe("buildWorkspaceProfile", () => {
 			largestExtensionFileCount: 2,
 			largestExtensionShare: 2 / 6,
 		});
-		expect(profile.extensions).toEqual([
-			{ fileExtension: "csv", fileCount: 2, share: 2 / 6, rank: 1 },
-			{ fileExtension: "md", fileCount: 2, share: 2 / 6, rank: 2 },
-			{ fileExtension: "none", fileCount: 1, share: 1 / 6, rank: 3 },
-			{ fileExtension: "tsx", fileCount: 1, share: 1 / 6, rank: 4 },
-		]);
 	});
 
 	test("returns zero counts for an empty or internal-only workspace", () => {
@@ -49,7 +43,6 @@ describe("buildWorkspaceProfile", () => {
 			largestExtension: undefined,
 			largestExtensionFileCount: undefined,
 			largestExtensionShare: undefined,
-			extensions: [],
 		});
 	});
 

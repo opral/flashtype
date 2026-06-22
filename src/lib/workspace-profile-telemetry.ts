@@ -16,14 +16,6 @@ type WorkspaceProfile = {
 	largestExtension?: string;
 	largestExtensionFileCount?: number;
 	largestExtensionShare?: number;
-	extensions: WorkspaceExtensionProfile[];
-};
-
-type WorkspaceExtensionProfile = {
-	fileExtension: string;
-	fileCount: number;
-	share: number;
-	rank: number;
 };
 
 export async function captureWorkspaceProfile(args: {
@@ -70,7 +62,10 @@ function isWorkspaceProfileDue(workspaceId: string) {
 }
 
 function markWorkspaceProfiled(workspaceId: string) {
-	localStorage.setItem(workspaceProfileStorageKey(workspaceId), String(Date.now()));
+	localStorage.setItem(
+		workspaceProfileStorageKey(workspaceId),
+		String(Date.now()),
+	);
 }
 
 function workspaceProfileStorageKey(workspaceId: string) {
@@ -98,38 +93,25 @@ export function buildWorkspaceProfile(
 		(total, count) => total + count,
 		0,
 	);
-	const extensions = Array.from(extensionCounts.entries())
-		.map(([fileExtension, count]) => ({
-			fileExtension,
-			fileCount: count,
-			share: fileCount === 0 ? 0 : count / fileCount,
-		}))
-		.sort((left, right) => {
-			if (right.fileCount !== left.fileCount) {
-				return right.fileCount - left.fileCount;
-			}
-			return left.fileExtension.localeCompare(right.fileExtension);
-		})
-		.map((extension, index) => ({
-			...extension,
-			rank: index + 1,
-		}));
-	const largest = extensions[0];
+	const extensions = Array.from(extensionCounts.entries()).sort((left, right) => {
+		if (right[1] !== left[1]) {
+			return right[1] - left[1];
+		}
+		return left[0].localeCompare(right[0]);
+	});
+	const [largestExtension, largestExtensionFileCount] = extensions[0] ?? [];
 
 	return {
 		fileCount,
 		directoryCount: directories.size,
 		extensionCount: extensions.length,
-		extensionCounts: Object.fromEntries(
-			extensions.map((extension) => [
-				extension.fileExtension,
-				extension.fileCount,
-			]),
-		),
-		largestExtension: largest?.fileExtension,
-		largestExtensionFileCount: largest?.fileCount,
-		largestExtensionShare: largest?.share,
-		extensions,
+		extensionCounts: Object.fromEntries(extensions),
+		largestExtension,
+		largestExtensionFileCount,
+		largestExtensionShare:
+			fileCount > 0 && largestExtensionFileCount !== undefined
+				? largestExtensionFileCount / fileCount
+				: undefined,
 	};
 }
 

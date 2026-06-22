@@ -1,24 +1,8 @@
 import posthog, { type CaptureResult } from "posthog-js";
 
-let postHogTelemetryActivated = false;
-let postHogTelemetryActivationPromise: Promise<void> | null = null;
-let unsubscribeSessionId: (() => void) | undefined;
-
-export async function activatePostHogTelemetry() {
-	if (postHogTelemetryActivated) {
-		return;
-	}
-	if (postHogTelemetryActivationPromise) {
-		return await postHogTelemetryActivationPromise;
-	}
-
-	postHogTelemetryActivationPromise = activatePostHogTelemetryUncached();
-	try {
-		await postHogTelemetryActivationPromise;
-	} finally {
-		postHogTelemetryActivationPromise = null;
-	}
-}
+let activated = false;
+let activationPromise: Promise<boolean> | null = null;
+let sessionContextSynced = false;
 
 export async function capturePostHogWorkspaceActive({
 	reason,
@@ -27,8 +11,7 @@ export async function capturePostHogWorkspaceActive({
 	reason: string;
 	workspaceId?: string;
 }) {
-	await activatePostHogTelemetry();
-	if (!postHogTelemetryActivated) {
+	if (!(await ensurePostHogTelemetry())) {
 		return;
 	}
 
@@ -42,10 +25,20 @@ export async function capturePostHogWorkspaceActive({
 	});
 }
 
-async function activatePostHogTelemetryUncached() {
+async function ensurePostHogTelemetry() {
+	if (activated) {
+		return true;
+	}
+	activationPromise ??= activatePostHogTelemetry().finally(() => {
+		activationPromise = null;
+	});
+	return await activationPromise;
+}
+
+async function activatePostHogTelemetry() {
 	const config = await window.flashtypeDesktop?.telemetry?.getClientConfig();
 	if (!config?.enabled) {
-		return;
+		return false;
 	}
 
 	posthog.init(config.token, {
@@ -71,13 +64,15 @@ async function activatePostHogTelemetryUncached() {
 	if (config.sessionRecordingEnabled) {
 		posthog.startSessionRecording();
 	}
-	postHogTelemetryActivated = true;
+	activated = true;
+	return true;
 }
 
 function syncPostHogSessionContext() {
-	if (unsubscribeSessionId) {
+	if (sessionContextSynced) {
 		return;
 	}
+	sessionContextSynced = true;
 	const publishSessionId = (sessionId: string) => {
 		if (!sessionId) {
 			return;
@@ -87,7 +82,7 @@ function syncPostHogSessionContext() {
 		});
 	};
 	publishSessionId(posthog.get_session_id());
-	unsubscribeSessionId = posthog.onSessionId((sessionId) => {
+	posthog.onSessionId((sessionId) => {
 		publishSessionId(sessionId);
 	});
 }
