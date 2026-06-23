@@ -1,6 +1,7 @@
 import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
+import os from "node:os";
 import path from "node:path";
-import { readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
 
 const LIX_DATABASE_DIR = ".lix";
@@ -27,18 +28,34 @@ export async function ensureLixOpen(window) {
 						"Ephemeral workspaces require at least one source file.",
 					);
 				}
-				const nativeLix = await openLix({
-					backend: new FsBackend({
-						path: workspace.path,
-						storage: isEphemeral ? "memory" : "persistent",
-						filter:
-							includePaths && includePaths.length > 0
-								? { includePaths }
+				const tempLixParent = isEphemeral
+					? await mkdtemp(path.join(os.tmpdir(), "flashtype-lix-"))
+					: undefined;
+				let nativeLix;
+				try {
+					nativeLix = await openLix({
+						backend: new FsBackend({
+							path: workspace.path,
+							lixDir: tempLixParent
+								? path.join(tempLixParent, LIX_DATABASE_DIR)
 								: undefined,
-					}),
-				});
-				await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
-				return createDesktopLixHandle(nativeLix, workspace.path);
+							filter:
+								includePaths && includePaths.length > 0
+									? { includePaths }
+									: undefined,
+						}),
+					});
+					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
+					return createDesktopLixHandle(nativeLix, workspace.path, {
+						tempLixParent,
+					});
+				} catch (error) {
+					await nativeLix?.close().catch(() => {});
+					if (tempLixParent) {
+						await removeTempLixParent(tempLixParent);
+					}
+					throw error;
+				}
 			})();
 			session.lixPromise = openingPromise;
 			openingPromise.catch(() => {
@@ -188,6 +205,10 @@ async function removeLixDatabaseFiles(workspacePath) {
 	});
 }
 
+async function removeTempLixParent(tempLixParent) {
+	await rm(tempLixParent, { force: true, recursive: true }).catch(() => {});
+}
+
 async function checkpointWorkspaceLixDatabase(window) {
 	const { DatabaseSync } = await import("node:sqlite");
 	const database = new DatabaseSync(getWorkspaceLixDatabasePath(window));
@@ -233,8 +254,9 @@ function getOrCreateSession(window) {
 	return session;
 }
 
-function createDesktopLixHandle(nativeLix, workspaceDir) {
+function createDesktopLixHandle(nativeLix, workspaceDir, options = {}) {
 	let operationQueue = Promise.resolve();
+	let tempLixParent = options.tempLixParent;
 
 	async function acquireOperationSlot() {
 		const previous = operationQueue;
@@ -363,7 +385,15 @@ function createDesktopLixHandle(nativeLix, workspaceDir) {
 			});
 		},
 		async close() {
-			await runQueued(() => nativeLix.close());
+			try {
+				await runQueued(() => nativeLix.close());
+			} finally {
+				if (tempLixParent) {
+					const parent = tempLixParent;
+					tempLixParent = undefined;
+					await removeTempLixParent(parent);
+				}
+			}
 		},
 	};
 }

@@ -392,6 +392,17 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 		await expectPathMissing(path.join(directory, "generated.md"));
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
+		await filePage.evaluate(async () => {
+			await window.flashtypeDesktop?.lix.execute({
+				sql: "INSERT INTO lix_file (path, data) VALUES ($1, $2)",
+				params: [
+					"/.lix/app_data/transient-test.bin",
+					new TextEncoder().encode("internal"),
+				],
+			});
+		});
+		await expectPathMissing(path.join(directory, ".lix"));
+		await expectPathMissing(path.join(directory, ".lix_system"));
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -427,9 +438,13 @@ test("launching with multiple standalone markdown files creates one window per f
 		registerRendererConsoleLogging(secondPage);
 
 		await expectWindowCount(electronApp, 2);
-		await expect(firstPage.getByRole("heading", { name: "Alpha" })).toBeVisible();
+		await expect(
+			firstPage.getByRole("heading", { name: "Alpha" }),
+		).toBeVisible();
 		await expect(firstPage.getByText("sibling.md")).toHaveCount(0);
-		await expect(secondPage.getByRole("heading", { name: "Beta" })).toBeVisible();
+		await expect(
+			secondPage.getByRole("heading", { name: "Beta" }),
+		).toBeVisible();
 		await expectPathMissing(path.join(firstDirectory, ".lix"));
 		await expectPathMissing(path.join(secondDirectory, ".lix"));
 	} finally {
