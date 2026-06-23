@@ -4,7 +4,9 @@ import { prepareRelease } from "./release.mjs";
 try {
 	const result = prepareRelease(process.cwd());
 	if (!result) {
-		console.log("No NEXT_RELEASE.md found; no release PR needed.");
+		console.log(
+			"No release notes found in NEXT_RELEASE.md; no release PR needed.",
+		);
 		process.exit(0);
 	}
 	console.log(`version=${result.version}`);

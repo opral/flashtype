@@ -32,7 +32,7 @@
 
 ### Next Release
 
-For a user-facing release, add `NEXT_RELEASE.md` at the repository root. Use `type: major`, `type: minor`, or `type: patch` frontmatter, followed by the exact changelog entry body.
+For a user-facing release, edit `NEXT_RELEASE.md` at the repository root. Use `type: major`, `type: minor`, or `type: patch` frontmatter, followed by the exact changelog entry body. Leave the body empty when no release is pending.
 
 Example:
 
@@ -46,3 +46,5 @@ type: minor
 ```
 
 Do not add `NEXT_RELEASE.md` for repo-only, documentation-only, CI-only, test-only, or chore-only changes.
+
+The generated release PR resets `NEXT_RELEASE.md` back to an empty `type: patch` template.

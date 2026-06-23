@@ -1,7 +1,6 @@
 import {
 	existsSync,
 	readFileSync,
-	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -9,6 +8,10 @@ import { execFileSync } from "node:child_process";
 
 export const CHANGE_TYPES = ["major", "minor", "patch"];
 export const NEXT_RELEASE_PATH = "NEXT_RELEASE.md";
+export const DEFAULT_NEXT_RELEASE_TEXT = `---
+type: patch
+---
+`;
 
 export function readText(root, path) {
 	return readFileSync(join(root, path), "utf8");
@@ -52,10 +55,10 @@ export function loadNextRelease(root) {
 	const path = NEXT_RELEASE_PATH;
 	if (!existsSync(join(root, path))) return null;
 	const text = readText(root, path).replace(/\r\n/g, "\n").trim();
-	const match = text.match(/^---\n([\s\S]*?)\n---\n([\s\S]+)$/);
+	const match = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
 	if (!match) {
 		throw new Error(
-			`${path}: expected frontmatter followed by a changelog body`,
+			`${path}: expected frontmatter followed by an optional changelog body`,
 		);
 	}
 	const metadata = Object.fromEntries(
@@ -77,9 +80,6 @@ export function loadNextRelease(root) {
 	const body = normalizeReleaseBody(match[2]);
 	if (!CHANGE_TYPES.includes(type)) {
 		throw new Error(`${path}: type must be one of ${CHANGE_TYPES.join(", ")}`);
-	}
-	if (!body) {
-		throw new Error(`${path}: changelog body must not be empty`);
 	}
 	return {
 		path,
@@ -120,14 +120,14 @@ export function prepareRelease(
 	{ date = new Date().toISOString().slice(0, 10) } = {},
 ) {
 	const release = loadNextRelease(root);
-	if (!release) {
+	if (!release || !release.body) {
 		return null;
 	}
 	const type = release.type;
 	const version = bumpVersion(currentVersion(root), type);
 	updatePackageVersion(root, version);
 	updateChangelog(root, version, date, release);
-	rmSync(join(root, release.path));
+	writeText(root, NEXT_RELEASE_PATH, DEFAULT_NEXT_RELEASE_TEXT);
 	return { version, type, release };
 }
 
