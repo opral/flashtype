@@ -118,14 +118,14 @@ export function TopBar({
 								className="size-3.25 text-[var(--color-text-secondary)]"
 								strokeWidth={2}
 							/>
-							<span className="max-w-60 truncate">{workspaceName}</span>
+							<span className="ph-mask max-w-60 truncate">{workspaceName}</span>
 						</button>
 						{activeFileName ? (
 							<>
 								<span className="mx-0.5 shrink-0 text-[var(--color-border-panel)]">
 									/
 								</span>
-								<span className="max-w-60 truncate px-1 font-semibold text-[var(--color-text-primary)]">
+								<span className="ph-mask max-w-60 truncate px-1 font-semibold text-[var(--color-text-primary)]">
 									{activeFileName}
 								</span>
 							</>

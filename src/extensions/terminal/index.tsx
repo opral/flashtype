@@ -172,7 +172,7 @@ function TerminalView({
 
 	return (
 		<div
-			className="h-full min-h-0"
+			className="ph-mask h-full min-h-0"
 			style={{ backgroundColor: cssColor("--color-bg-panel", "#ffffff") }}
 		>
 			<div ref={containerRef} className="h-full w-full p-2" />

@@ -277,7 +277,7 @@ function MarkdownReviewOverlay({
 	return (
 		<div className="markdown-review-overlay">
 			<div className="markdown-review-surface">
-				<div className="tiptap-container w-full h-full overflow-y-auto bg-background">
+				<div className="ph-mask tiptap-container w-full h-full overflow-y-auto bg-background">
 					<div
 						className="ProseMirror tiptap w-full mx-auto"
 						dangerouslySetInnerHTML={{ __html: diffHtml }}

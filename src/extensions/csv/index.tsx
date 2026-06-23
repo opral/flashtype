@@ -146,7 +146,7 @@ function CsvReviewOverlay({
 	return (
 		<div className="csv-review-overlay">
 			<div
-				className="csv-review-table"
+				className="ph-mask csv-review-table"
 				dangerouslySetInnerHTML={{ __html: diffHtml }}
 			/>
 			<ExternalWriteReviewControls
@@ -188,7 +188,7 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 	return (
 		<div
 			ref={parentRef}
-			className="h-full min-h-0 flex-1 overflow-auto bg-background"
+			className="ph-mask h-full min-h-0 flex-1 overflow-auto bg-background"
 		>
 			<div style={{ minWidth: totalWidth }} className="relative w-full">
 				<div className="sticky top-0 z-10 flex h-10 w-full border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-panel-muted)] text-[11px] font-bold uppercase tracking-[0.04em] text-[var(--color-text-secondary)]">
@@ -197,7 +197,6 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 							key={header.id}
 							className="flex h-10 items-center border-r border-[var(--color-border-table-grid)] px-4 last:border-r-0"
 							style={columnStyle()}
-							title={String(header.column.columnDef.header ?? "")}
 						>
 							<div className="truncate">
 								{flexRender(
@@ -231,7 +230,6 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 										key={cell.id}
 										className="border-r border-[var(--color-border-table-grid)] px-4 py-0 last:border-r-0"
 										style={columnStyle()}
-										title={String(cell.getValue() ?? "")}
 									>
 										<div
 											className={cellValueClassName(
@@ -285,7 +283,7 @@ function CsvEmptyState({ filePath }: { readonly filePath: string }) {
 					No CSV rows to display.
 				</p>
 				<p>
-					<span className="font-mono text-xs text-[var(--color-text-secondary)]">
+					<span className="ph-mask font-mono text-xs text-[var(--color-text-secondary)]">
 						{filePath}
 					</span>{" "}
 					is empty or does not contain a header row.

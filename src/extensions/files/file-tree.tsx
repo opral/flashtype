@@ -179,9 +179,7 @@ function FileTreeNode({
 					}}
 				>
 					<FileText className="size-3.25 shrink-0" strokeWidth={2} />
-					<span className="min-w-0 flex-1 truncate" title={displayName}>
-						{displayName}
-					</span>
+					<span className="min-w-0 flex-1 truncate">{displayName}</span>
 				</button>
 			</li>
 		);
@@ -219,9 +217,7 @@ function FileTreeNode({
 				}}
 			>
 				<Icon className="size-3.5 shrink-0" strokeWidth={2} />
-				<span className="min-w-0 flex-1 truncate" title={displayName}>
-					{displayName}
-				</span>
+				<span className="min-w-0 flex-1 truncate">{displayName}</span>
 			</button>
 			{isOpen ? (
 				<ul className="space-y-px">

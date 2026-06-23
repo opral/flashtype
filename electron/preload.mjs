@@ -13,6 +13,13 @@ const app = {
 	},
 };
 
+const telemetry = {
+	capture: (payload) => ipcRenderer.invoke("telemetry:capture", payload),
+	getClientConfig: () => ipcRenderer.invoke("telemetry:getClientConfig"),
+	setSessionContext: (payload) =>
+		ipcRenderer.invoke("telemetry:setSessionContext", payload),
+};
+
 const workspace = {
 	get: () => ipcRenderer.invoke("workspace:get"),
 	consumePendingOpenFiles: () =>
@@ -75,6 +82,7 @@ const terminal = {
 contextBridge.exposeInMainWorld("flashtypeDesktop", {
 	app,
 	platform: process.platform,
+	telemetry,
 	lix,
 	terminal,
 	workspace,

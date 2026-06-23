@@ -41,6 +41,7 @@ import {
 } from "@/extension-runtime/external-write-review";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import { qb } from "@/lib/lix-kysely";
+import { captureTelemetry, fileExtensionProperty } from "@/lib/telemetry";
 import {
 	ExtensionHostRegistryProvider,
 	useExtensionHostRegistry,
@@ -65,6 +66,7 @@ import {
 	buildFileExtensionProps,
 	fileExtensionInstanceForKind,
 	FILE_EXTENSION_KIND,
+	TERMINAL_EXTENSION_KIND,
 	activeMarkdownFileIdFromExtensionInstance,
 } from "../extension-runtime/extension-instance-helpers";
 import { findFileHandlerExtension } from "../extension-runtime/file-handlers";
@@ -850,6 +852,11 @@ function LayoutShellContent({
 				findFileHandlerExtension(extensionMap.values(), filePath) ??
 				extensionMap.get(FILE_EXTENSION_KIND);
 			const kind = handler?.kind ?? FILE_EXTENSION_KIND;
+			captureTelemetry("file opened", {
+				file_extension: fileExtensionProperty(filePath),
+				source: "renderer",
+				view_kind: kind,
+			});
 			handleOpenView({
 				panel,
 				kind,
@@ -1021,6 +1028,11 @@ function LayoutShellContent({
 				clearExternalWriteReview(args);
 				return;
 			}
+			captureTelemetry("external write reviewed", {
+				file_extension: fileExtensionProperty(review.path),
+				review_action: "accept",
+				source: "renderer",
+			});
 			void (async () => {
 				if (await isExternalWriteReviewCurrent(review)) {
 					clearExternalWriteReview(args);
@@ -1047,6 +1059,11 @@ function LayoutShellContent({
 				clearExternalWriteReview(args);
 				return;
 			}
+			captureTelemetry("external write reviewed", {
+				file_extension: fileExtensionProperty(review.path),
+				review_action: "reject",
+				source: "renderer",
+			});
 			const { fileId } = args;
 			ignoredExternalWriteReviewFileIdsRef.current.add(fileId);
 			markFlashtypeFileWrite(fileId, review.beforeData);
@@ -1191,6 +1208,18 @@ function LayoutShellContent({
 						? activeCentralEntry.state.filePath
 						: null,
 			});
+			const agent =
+				kind === TERMINAL_EXTENSION_KIND &&
+				typeof state?.flashtype?.icon === "string"
+					? state.flashtype.icon
+					: undefined;
+			if (agent) {
+				captureTelemetry("agent launched", {
+					agent,
+					panel: side,
+					source: "renderer",
+				});
+			}
 			handleOpenView({ panel: side, kind, state, launchArgs, instance });
 		},
 		[activeCentralEntry, handleOpenView, extensionMap],
@@ -1369,6 +1398,10 @@ function LayoutShellContent({
 			.where("path", "=", path)
 			.executeTakeFirstOrThrow();
 		const id = createdFile.id;
+		captureTelemetry("file created", {
+			file_extension: fileExtensionProperty(path),
+			source: "renderer",
+		});
 		handleOpenFile({
 			panel: "central",
 			fileId: id,

@@ -92,7 +92,9 @@ export async function resolveWorkspaceTargets(requestedPaths, options = {}) {
 		const standaloneFileTarget = await resolveStandaloneFile(resolved, options);
 		if (standaloneFileTarget) {
 			if (options.openFilesAsTransient === true) {
-				targets.push(await resolveWorkspaceTarget(standaloneFileTarget, options));
+				targets.push(
+					await resolveWorkspaceTarget(standaloneFileTarget, options),
+				);
 				continue;
 			}
 			if (standaloneFilesInsertIndex === null) {
@@ -145,14 +147,14 @@ export async function setWorkspaceFromTarget(target, window, options = {}) {
 		if (workspaceKey(state.workspace) === workspaceKey(nextWorkspace)) {
 			state.pendingOpenFilePaths = target.pendingOpenFilePaths;
 			applyWindowChrome(window);
-			await options.afterChange?.(state.workspace, window);
+			await options.afterChange?.(state.workspace, window, target);
 			return state.workspace;
 		}
 		await options.beforeChange?.(nextWorkspace, window);
 		state.workspace = nextWorkspace;
 		state.pendingOpenFilePaths = target.pendingOpenFilePaths;
 		applyWindowChrome(window);
-		await options.afterChange?.(state.workspace, window);
+		await options.afterChange?.(state.workspace, window, target);
 		return state.workspace;
 	});
 }

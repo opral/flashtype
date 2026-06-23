@@ -10,6 +10,7 @@ files:
   - build/env-variables.mjs
   - build/icon.png
   - dist/**/*
+  - "!dist/**/*.map"
   - electron/**/*
   - node_modules/**/*
   - "!node_modules/@lix-js/sdk-darwin-arm64/**/*"

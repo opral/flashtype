@@ -16,10 +16,18 @@ import { ErrorFallback } from "./main.error";
 import { V2LayoutShell } from "./shell/layout-shell";
 import { FirstRunScreen } from "./shell/first-run-screen";
 import { openDesktopLix } from "./lib/lix-client";
+import { captureTelemetry } from "./lib/telemetry";
+import {
+	captureWorkspaceProfile,
+	readWorkspaceId,
+} from "./lib/workspace-profile-telemetry";
+import { capturePostHogWorkspaceActive } from "./lib/posthog-client";
 
 type Workspace = Awaited<
 	ReturnType<NonNullable<Window["flashtypeDesktop"]>["workspace"]["get"]>
 >;
+
+const WORKSPACE_ACTIVE_SIGNAL_THROTTLE_MS = 30 * 60 * 1000;
 
 /**
  * The workspace gates the app: without a folder, only the first-run screen
@@ -58,9 +66,16 @@ export const AppRoot = () => {
 	}, [workspace]);
 
 	const openFolderInFlightRef = useRef(false);
+	const lastWorkspaceActiveSignalRef = useRef(0);
+	const workspaceIdRef = useRef<string | undefined>(undefined);
 	const handleInstallUpdate = useCallback(async () => {
+		captureTelemetry("update installed", { source: "renderer" });
 		await window.flashtypeDesktop?.app?.installUpdate();
 	}, []);
+
+	useEffect(() => {
+		workspaceIdRef.current = undefined;
+	}, [workspace]);
 
 	useEffect(() => {
 		const desktopApp = window.flashtypeDesktop?.app;
@@ -146,6 +161,76 @@ export const AppRoot = () => {
 			})();
 		};
 	}, [workspace]);
+
+	const signalWorkspaceActive = useCallback(
+		(reason: string) => {
+			if (!workspace || !lix) return;
+			const now = Date.now();
+			if (
+				reason !== "workspace_ready" &&
+				now - lastWorkspaceActiveSignalRef.current <
+					WORKSPACE_ACTIVE_SIGNAL_THROTTLE_MS
+			) {
+				return;
+			}
+			lastWorkspaceActiveSignalRef.current = now;
+			void (async () => {
+				const workspaceId =
+					workspaceIdRef.current ?? (await readWorkspaceId(lix));
+				workspaceIdRef.current = workspaceId;
+				void capturePostHogWorkspaceActive({ reason, workspaceId }).catch(
+					(error: unknown) => {
+						console.warn("Failed to capture workspace active telemetry", error);
+					},
+				);
+			})().catch((error: unknown) => {
+				console.warn("Failed to capture workspace active telemetry", error);
+			});
+		},
+		[lix, workspace],
+	);
+
+	useEffect(() => {
+		signalWorkspaceActive("workspace_ready");
+	}, [signalWorkspaceActive]);
+
+	useEffect(() => {
+		if (!workspace || !lix) return;
+		void captureWorkspaceProfile({
+			lix,
+			isEphemeralWorkspace: workspace.ephemeral,
+		}).catch((error: unknown) => {
+			console.warn("Failed to capture workspace profile telemetry", error);
+		});
+	}, [lix, workspace]);
+
+	useEffect(() => {
+		if (!workspace || !lix) return;
+		const handleFocus = () => signalWorkspaceActive("window_focused");
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") {
+				signalWorkspaceActive("document_visible");
+			}
+		};
+		const handleInteraction = () => signalWorkspaceActive("user_interaction");
+
+		window.addEventListener("focus", handleFocus);
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		window.addEventListener("pointerdown", handleInteraction, {
+			capture: true,
+		});
+		window.addEventListener("keydown", handleInteraction, { capture: true });
+		return () => {
+			window.removeEventListener("focus", handleFocus);
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+			window.removeEventListener("pointerdown", handleInteraction, {
+				capture: true,
+			});
+			window.removeEventListener("keydown", handleInteraction, {
+				capture: true,
+			});
+		};
+	}, [lix, signalWorkspaceActive, workspace]);
 
 	useEffect(() => {
 		if (!workspace || !lix) return;

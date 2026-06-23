@@ -173,11 +173,49 @@ export type DesktopAppApi = {
 	onUpdateState(listener: (state: DesktopUpdateState) => void): () => void;
 };
 
+export type DesktopTelemetryEventName =
+	| "agent launched"
+	| "external write reviewed"
+	| "file created"
+	| "file opened"
+	| "file saved"
+	| "update installed"
+	| "workspace profiled"
+	| "workspace opened";
+
+export type DesktopTelemetryApi = {
+	capture(payload: {
+		event: DesktopTelemetryEventName;
+		properties?: Record<
+			string,
+			string | number | boolean | Record<string, number> | undefined
+		>;
+	}): Promise<{
+		status: "disabled" | "error" | "ignored" | "queued" | "throttled";
+	}>;
+	getClientConfig(): Promise<
+		| {
+				enabled: false;
+		  }
+		| {
+				enabled: true;
+				token: string;
+				host: string;
+				distinctId: string;
+				sessionRecordingEnabled: boolean;
+		  }
+	>;
+	setSessionContext(payload: {
+		sessionId: string;
+	}): Promise<{ status: "ignored" | "set" }>;
+};
+
 declare global {
 	interface Window {
 		flashtypeDesktop?: {
 			app: DesktopAppApi;
 			platform: string;
+			telemetry: DesktopTelemetryApi;
 			lix: DesktopLixApi;
 			terminal: DesktopTerminalApi;
 			workspace: DesktopWorkspaceApi;

@@ -1,6 +1,10 @@
 import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
 import { markFlashtypeMarkdownWrite } from "../external-write-tracking";
+import {
+	captureTelemetryThrottled,
+	fileExtensionProperty,
+} from "@/lib/telemetry";
 
 export async function upsertMarkdownFile(args: {
 	lix: Lix;
@@ -40,6 +44,10 @@ export async function upsertMarkdownFile(args: {
 			})
 			.where("id", "=", fileId)
 			.execute();
+		captureTelemetryThrottled(`file saved:${fileId}`, "file saved", {
+			file_extension: fileExtensionProperty(resolvedPath),
+			source: "renderer",
+		});
 	} else {
 		if (!createIfMissing) return;
 		markFlashtypeMarkdownWrite(fileId, markdown);
@@ -53,5 +61,9 @@ export async function upsertMarkdownFile(args: {
 				lixcol_metadata: metadata ?? null,
 			})
 			.execute();
+		captureTelemetryThrottled(`file saved:${fileId}`, "file saved", {
+			file_extension: fileExtensionProperty(path ?? `/${fileId}.md`),
+			source: "renderer",
+		});
 	}
 }
