@@ -47,7 +47,7 @@ export async function captureTelemetryEvent(event, properties = {}) {
 			event,
 			properties: {
 				...commonEventProperties(),
-				...sanitizeProperties(properties),
+				...properties,
 			},
 		});
 		return { status: "queued" };
@@ -97,7 +97,7 @@ export function registerTelemetryIpc() {
 			return { status: "ignored" };
 		}
 		return await captureTelemetryEvent(eventName, {
-			...sanitizeProperties(payload?.properties),
+			...(payload?.properties ?? {}),
 			source: "renderer",
 		});
 	});
@@ -328,7 +328,7 @@ function exceptionEventProperties(properties = {}, { sessionId } = {}) {
 	const normalizedSessionId = normalizePostHogSessionId(sessionId);
 	return {
 		...commonEventProperties(),
-		...sanitizeProperties(properties),
+		...properties,
 		...(normalizedSessionId ? { $session_id: normalizedSessionId } : {}),
 	};
 }
@@ -373,53 +373,6 @@ function systemLocaleProperties() {
 		properties.system_language = language;
 	}
 	return properties;
-}
-
-export function sanitizeProperties(properties) {
-	const sanitized = sanitizeTelemetryValue(properties);
-	if (!sanitized || typeof sanitized !== "object" || Array.isArray(sanitized)) {
-		return {};
-	}
-	return sanitized;
-}
-
-function sanitizeTelemetryValue(value, depth = 0) {
-	if (depth > 6 || value === undefined || value === null) {
-		return undefined;
-	}
-	if (typeof value === "string") {
-		return normalizeTelemetryString(value);
-	}
-	if (typeof value === "boolean" || typeof value === "number") {
-		return Number.isFinite(value) || typeof value === "boolean"
-			? value
-			: undefined;
-	}
-	if (Array.isArray(value)) {
-		return value
-			.map((item) => sanitizeTelemetryValue(item, depth + 1))
-			.filter((item) => item !== undefined)
-			.slice(0, 50);
-	}
-	if (value && typeof value === "object") {
-		const sanitized = {};
-		for (const [rawKey, rawValue] of Object.entries(value)) {
-			const key = normalizeTelemetryKey(rawKey);
-			const sanitizedValue = sanitizeTelemetryValue(rawValue, depth + 1);
-			if (key && sanitizedValue !== undefined) {
-				sanitized[key] = sanitizedValue;
-			}
-		}
-		return Object.keys(sanitized).length > 0 ? sanitized : undefined;
-	}
-	return undefined;
-}
-
-function normalizeTelemetryKey(key) {
-	if (!/^[A-Za-z0-9_$][A-Za-z0-9_$.-]{0,79}$/.test(key)) {
-		return undefined;
-	}
-	return key;
 }
 
 function normalizeTelemetryString(value) {
