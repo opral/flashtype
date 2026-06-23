@@ -310,6 +310,85 @@ describe("Keyboard shortcuts (keymap)", () => {
 		expect(buildMarkdownFromEditor(editor)).toBe("- [ ] abc\n- [ ] \n");
 	});
 
+	test("Tab in bullet list indents the current item", () => {
+		const editor = createEditor({
+			type: "doc",
+			content: [
+				{
+					type: "bulletList",
+					content: [
+						{
+							type: "listItem",
+							content: [
+								{
+									type: "paragraph",
+									content: [{ type: "text", text: "parent" }],
+								},
+							],
+						},
+						{
+							type: "listItem",
+							content: [
+								{
+									type: "paragraph",
+									content: [{ type: "text", text: "child" }],
+								},
+							],
+						},
+					],
+				},
+			],
+		});
+
+		setCursorAfterText(editor, "child");
+		sendKey(editor, "Tab");
+
+		expect(buildMarkdownFromEditor(editor)).toBe("- parent\n  - child\n");
+	});
+
+	test("Shift-Tab in nested bullet list outdents the current item", () => {
+		const editor = createEditor({
+			type: "doc",
+			content: [
+				{
+					type: "bulletList",
+					content: [
+						{
+							type: "listItem",
+							content: [
+								{
+									type: "paragraph",
+									content: [{ type: "text", text: "parent" }],
+								},
+								{
+									type: "bulletList",
+									content: [
+										{
+											type: "listItem",
+											content: [
+												{
+													type: "paragraph",
+													content: [{ type: "text", text: "child" }],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+			],
+		});
+
+		setCursorAfterText(editor, "child");
+		sendKey(editor, "Tab", { shift: true });
+
+		expect(buildMarkdownFromEditor(editor)).toBe("- parent\n- child\n");
+		typeText(editor, " updated");
+		expect(buildMarkdownFromEditor(editor)).toBe("- parent\n- child updated\n");
+	});
+
 	test("Enter on empty bullet list item exits the list", () => {
 		const editor = createEditor();
 		typeText(editor, "- ");
@@ -327,17 +406,111 @@ describe("Keyboard shortcuts (keymap)", () => {
 		expect(root.child(1).type.name).toBe("paragraph");
 	});
 
-	test("Backspace on empty bullet list item exits the list", () => {
+	test("Backspace on empty bullet list item removes the empty item", () => {
 		const editor = createEditor();
 		typeText(editor, "- ");
 		typeText(editor, "abc");
 		sendKey(editor, "Enter"); // create empty next item
 		sendKey(editor, "Backspace");
 		const root: any = editor.state.doc;
-		expect(root.childCount).toBe(2);
+		expect(root.childCount).toBe(1);
 		expect(root.child(0).type.name).toBe("bulletList");
 		expect(root.child(0).childCount).toBe(1);
-		expect(root.child(1).type.name).toBe("paragraph");
+		expect(buildMarkdownFromEditor(editor)).toBe("- abc\n");
+	});
+
+	test("double Backspace after empty bullet list item keeps the list intact", () => {
+		const editor = createEditor();
+		typeText(editor, "- ");
+		typeText(editor, "abc");
+		sendKey(editor, "Enter");
+		sendKey(editor, "Backspace");
+		sendKey(editor, "Backspace");
+		const root: any = editor.state.doc;
+		expect(root.childCount).toBe(1);
+		expect(root.child(0).type.name).toBe("bulletList");
+		expect(root.child(0).childCount).toBe(1);
+		expect(buildMarkdownFromEditor(editor)).toBe("- abc\n");
+	});
+
+	test("Backspace on empty nested bullet removes it without flattening parent", () => {
+		const editor = createEditor({
+			type: "doc",
+			content: [
+				{
+					type: "bulletList",
+					content: [
+						{
+							type: "listItem",
+							content: [
+								{
+									type: "paragraph",
+									content: [{ type: "text", text: "Hello world" }],
+								},
+								{
+									type: "bulletList",
+									content: [
+										{
+											type: "listItem",
+											content: [{ type: "paragraph" }],
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+			],
+		});
+
+		const docSize = editor.state.doc.content.size;
+		editor.commands.setTextSelection(docSize - 3);
+		sendKey(editor, "Backspace");
+		sendKey(editor, "Backspace");
+
+		expect(buildMarkdownFromEditor(editor)).toBe("- Hello world\n");
+	});
+
+	test("Backspace on empty list item with nested content keeps nested content", () => {
+		const editor = createEditor({
+			type: "doc",
+			content: [
+				{
+					type: "bulletList",
+					content: [
+						{
+							type: "listItem",
+							content: [
+								{ type: "paragraph" },
+								{
+									type: "bulletList",
+									content: [
+										{
+											type: "listItem",
+											content: [
+												{
+													type: "paragraph",
+													content: [{ type: "text", text: "child" }],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+			],
+		});
+
+		editor.commands.setTextSelection(3);
+		sendKey(editor, "Backspace");
+
+		const root: any = editor.state.doc;
+		const item = root.child(0).child(0);
+		expect(item.childCount).toBe(2);
+		expect(item.child(1).type.name).toBe("bulletList");
+		expect(buildMarkdownFromEditor(editor)).toContain("child");
 	});
 
 	test("Enter on empty ordered list item exits the list", () => {
@@ -354,7 +527,7 @@ describe("Keyboard shortcuts (keymap)", () => {
 		expect(root.child(1).type.name).toBe("paragraph");
 	});
 
-	test("Backspace on empty ordered list item exits the list", () => {
+	test("Backspace on empty ordered list item removes the empty item", () => {
 		const editor = createEditor();
 		typeText(editor, "1. ");
 		typeText(editor, "abc");
@@ -363,7 +536,7 @@ describe("Keyboard shortcuts (keymap)", () => {
 		const root: any = editor.state.doc;
 		expect(root.child(0).type.name).toBe("orderedList");
 		expect(root.child(0).childCount).toBe(1);
-		expect(root.child(1).type.name).toBe("paragraph");
+		expect(buildMarkdownFromEditor(editor)).toBe("1. abc\n");
 	});
 
 	test("Enter on empty todo item exits the list", () => {
@@ -380,7 +553,7 @@ describe("Keyboard shortcuts (keymap)", () => {
 		expect(root.child(1).type.name).toBe("paragraph");
 	});
 
-	test("Backspace on empty todo item exits the list", () => {
+	test("Backspace on empty todo item removes the empty item", () => {
 		const editor = createEditor();
 		typeText(editor, "[] ");
 		typeText(editor, "abc");
@@ -389,7 +562,7 @@ describe("Keyboard shortcuts (keymap)", () => {
 		const root: any = editor.state.doc;
 		expect(root.child(0).type.name).toBe("bulletList");
 		expect(root.child(0).childCount).toBe(1);
-		expect(root.child(1).type.name).toBe("paragraph");
+		expect(buildMarkdownFromEditor(editor)).toBe("- [ ] abc\n");
 	});
 
 	// Why this matters: Top-level ids are used for persistence/threading. Pressing Enter

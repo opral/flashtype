@@ -4,6 +4,7 @@ import {
 	textblockTypeInputRule,
 	wrappingInputRule,
 } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
 
 // Markdown-like typing shortcuts and editor keybindings
 // - "# ": Convert to heading (level by number of #)
@@ -186,6 +187,84 @@ export const MarkdownWcShortcuts = Extension.create({
 			"Cmd-Backspace": deletePreviousWord,
 			"Ctrl-Backspace": deletePreviousWord,
 
+			Tab: () => {
+				const { state } = this.editor;
+				const $from: any = state.selection.$from;
+				for (let d = $from.depth; d > 0; d--) {
+					if ($from.node(d)?.type?.name === "listItem") {
+						return this.editor.chain().focus().sinkListItem("listItem").run();
+					}
+				}
+				return false;
+			},
+
+			"Shift-Tab": () => {
+				const { state } = this.editor;
+				const $from: any = state.selection.$from;
+				let listItemDepth = -1;
+				for (let d = $from.depth; d > 0; d--) {
+					if ($from.node(d)?.type?.name === "listItem") {
+						listItemDepth = d;
+						break;
+					}
+				}
+				if (listItemDepth < 3) return false;
+
+				const listDepth = listItemDepth - 1;
+				const parentListItemDepth = listItemDepth - 2;
+				const listNode = $from.node(listDepth);
+				const listItem = $from.node(listItemDepth);
+				const parentListItem = $from.node(parentListItemDepth);
+				if (
+					(listNode?.type?.name !== "bulletList" &&
+						listNode?.type?.name !== "orderedList") ||
+					parentListItem?.type?.name !== "listItem"
+				) {
+					return false;
+				}
+
+				return this.editor.commands.command(({ tr, dispatch }) => {
+					const listFrom = $from.before(listDepth);
+					const listTo = $from.after(listDepth);
+					const parentListItemTo = $from.after(parentListItemDepth);
+					const listItemIndex = $from.index(listDepth);
+					const offsetInListItem = $from.pos - $from.before(listItemDepth);
+					const beforeItems = [];
+					const afterItems = [];
+					for (let index = 0; index < listNode.childCount; index++) {
+						const child = listNode.child(index);
+						if (index < listItemIndex) beforeItems.push(child);
+						if (index > listItemIndex) afterItems.push(child);
+					}
+
+					if (listNode.childCount === 1) {
+						tr.delete(listFrom, listTo);
+					} else {
+						const replacementLists = [];
+						if (beforeItems.length > 0) {
+							replacementLists.push(
+								listNode.type.create(listNode.attrs, beforeItems),
+							);
+						}
+						if (afterItems.length > 0) {
+							replacementLists.push(
+								listNode.type.create(listNode.attrs, afterItems),
+							);
+						}
+						tr.replaceWith(listFrom, listTo, replacementLists);
+					}
+
+					const mappedInsertPos = tr.mapping.map(parentListItemTo);
+					tr.insert(mappedInsertPos, listItem);
+					const mappedSelectionPos = mappedInsertPos + offsetInListItem;
+					tr.setSelection(
+						TextSelection.near(tr.doc.resolve(mappedSelectionPos)),
+					);
+					if (dispatch) dispatch(tr.scrollIntoView());
+					return true;
+				});
+			},
+
 			Backspace: () => {
 				const { state } = this.editor;
 				const { selection } = state;
@@ -208,7 +287,53 @@ export const MarkdownWcShortcuts = Extension.create({
 				if (listItemDepth < 0) return false;
 				if ($from.node(listItemDepth).firstChild !== para) return false;
 
-				return this.editor.chain().focus().liftListItem("listItem").run();
+				const listDepth = listItemDepth - 1;
+				const listNode = listDepth > 0 ? $from.node(listDepth) : null;
+				const listItem = $from.node(listItemDepth);
+				const listItemIndex = $from.index(listDepth);
+				if (listNode?.childCount > 1 && listItem.childCount === 1) {
+					return this.editor
+						.chain()
+						.focus()
+						.deleteRange({
+							from: $from.before(listItemDepth),
+							to: $from.after(listItemDepth),
+						})
+						.run();
+				}
+				if (
+					listDepth > 1 &&
+					listNode?.childCount === 1 &&
+					listItem.childCount === 1
+				) {
+					return this.editor
+						.chain()
+						.focus()
+						.deleteRange({
+							from: $from.before(listDepth),
+							to: $from.after(listDepth),
+						})
+						.run();
+				}
+				if (
+					listDepth === 1 &&
+					listNode?.childCount === 1 &&
+					listItemIndex === 0 &&
+					listItem.childCount === 1
+				) {
+					return this.editor
+						.chain()
+						.focus()
+						.deleteRange({
+							from: $from.before(listDepth),
+							to: $from.after(listDepth),
+						})
+						.insertContent({ type: "paragraph" })
+						.run();
+				}
+				if (listItem.childCount > 1) return true;
+
+				return false;
 			},
 
 			// Enter in list: create a new list item; for tasks, make it unchecked
