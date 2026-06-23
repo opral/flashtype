@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
+	WORKSPACE_TOO_LARGE_ERROR_CODE,
 	resolveDirectLaunchWorkspaceTargets,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
@@ -32,6 +33,47 @@ describe("workspace resolution", () => {
 		});
 	});
 
+	test("rejects directory workspaces over the size limit", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(directory, { recursive: true });
+		await writeFile(path.join(directory, "large.md"), Buffer.alloc(11));
+
+		await expect(
+			resolveWorkspaceTarget(directory, { maxWorkspaceSizeBytes: 10 }),
+		).rejects.toMatchObject({
+			code: WORKSPACE_TOO_LARGE_ERROR_CODE,
+			workspacePath: directory,
+			maxSizeBytes: 10,
+		});
+	});
+
+	test("allows directory workspaces at the size limit", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(directory, { recursive: true });
+		await writeFile(path.join(directory, "small.md"), Buffer.alloc(10));
+
+		await expect(
+			resolveWorkspaceTarget(directory, { maxWorkspaceSizeBytes: 10 }),
+		).resolves.toEqual({
+			workspace: {
+				ephemeral: false,
+				path: directory,
+				name: "workspace",
+			},
+			pendingOpenFilePaths: [],
+		});
+	});
+
 	test("resolves a file inside a Lix workspace to the workspace root", async () => {
 		const directory = path.join(
 			tmpdir(),
@@ -48,6 +90,28 @@ describe("workspace resolution", () => {
 			ephemeral: false,
 			path: directory,
 			name: "workspace",
+		});
+	});
+
+	test("rejects files that resolve to an oversized Lix workspace root", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const filePath = path.join(directory, "readme.md");
+		await mkdir(path.join(directory, ".lix", ".internal"), { recursive: true });
+		await writeFile(path.join(directory, ".lix", ".internal", "db.sqlite"), "");
+		await writeFile(filePath, "# Hello\n");
+		await writeFile(path.join(directory, "large.md"), Buffer.alloc(11));
+
+		await expect(
+			resolveWorkspaceTarget(filePath, { maxWorkspaceSizeBytes: 10 }),
+		).rejects.toMatchObject({
+			code: WORKSPACE_TOO_LARGE_ERROR_CODE,
+			workspacePath: directory,
+			maxSizeBytes: 10,
 		});
 	});
 

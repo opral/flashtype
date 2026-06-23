@@ -8,10 +8,12 @@ import { fileURLToPath } from "node:url";
 import {
 	applyWorkspaceWindowChrome,
 	getWorkspace,
+	isWorkspaceTooLargeError,
 	registerWorkspaceIpc,
 	resolveDirectLaunchWorkspaceTargets,
 	resolveWorkspaceTargets,
 	setWorkspaceFromTarget,
+	showWorkspaceTooLargeWarning,
 } from "./workspace.mjs";
 import {
 	captureAppLaunched,
@@ -188,6 +190,7 @@ async function openWorkspaceRequests(
 	workspaceRequests,
 	{ requestedSource = "direct_launch" } = {},
 ) {
+	let openedWindowCount = 0;
 	const requestsBySource = new Map();
 	for (const workspaceRequest of workspaceRequests) {
 		const taggedRequest = normalizeWorkspaceOpenRequest(
@@ -200,14 +203,24 @@ async function openWorkspaceRequests(
 	}
 
 	for (const [source, requests] of requestsBySource) {
-		const workspaceTargets =
-			await resolveDirectLaunchWorkspaceTargets(requests);
+		let workspaceTargets;
+		try {
+			workspaceTargets = await resolveDirectLaunchWorkspaceTargets(requests);
+		} catch (error) {
+			if (isWorkspaceTooLargeError(error)) {
+				await showWorkspaceTooLargeWarning(null, error);
+				continue;
+			}
+			throw error;
+		}
 		for (const workspaceTarget of workspaceTargets) {
 			await createMainWindow(
 				withWorkspaceOpenTelemetry(workspaceTarget, source),
 			);
+			openedWindowCount += 1;
 		}
 	}
+	return openedWindowCount;
 }
 
 function createWorkspaceOpenRequest(request, requestedSource) {
@@ -836,7 +849,12 @@ async function startWorkspaceLifecycle() {
 	readyForWorkspaceOpens = true;
 	try {
 		if (taggedWorkspaceRequestsToOpen.length > 0) {
-			await openWorkspaceRequests(taggedWorkspaceRequestsToOpen);
+			const openedWindowCount = await openWorkspaceRequests(
+				taggedWorkspaceRequestsToOpen,
+			);
+			if (openedWindowCount === 0) {
+				await createMainWindow();
+			}
 		} else {
 			await createMainWindow();
 		}

@@ -1,10 +1,13 @@
 import { dialog, ipcMain } from "electron";
 import path from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { lstat, opendir, readFile, stat } from "node:fs/promises";
 
 const LIX_DATABASE_FILE = path.join(".lix", ".internal", "db.sqlite");
 const LEGACY_LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
 const LIX_DATABASE_FILES = [LIX_DATABASE_FILE, LEGACY_LIX_DATABASE_FILE];
+export const MAX_WORKSPACE_SIZE_BYTES = 100 * 1024 * 1024;
+export const WORKSPACE_TOO_LARGE_ERROR_CODE =
+	"ERR_FLASHTYPE_WORKSPACE_TOO_LARGE";
 
 /**
  * The workspace is the folder Flashtype operates on. Each window has at most
@@ -25,40 +28,45 @@ export function getWorkspace(window) {
  */
 export async function resolveWorkspaceTarget(requestedPath, options = {}) {
 	const resolved = path.resolve(requestedPath);
+	let stats = null;
 	try {
-		const stats = await stat(resolved);
-		if (stats.isFile()) {
-			if (options.openFilesAsTransient === true) {
-				const workspace = createTransientDirectoryWorkspace([resolved]);
-				return {
-					workspace,
-					pendingOpenFilePaths:
-						pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
-				};
-			}
-			const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
-			if (!workspaceDir) {
-				const workspace = createTransientDirectoryWorkspace([resolved]);
-				return {
-					workspace,
-					pendingOpenFilePaths:
-						pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
-				};
-			}
-			return {
-				workspace: {
-					ephemeral: false,
-					path: workspaceDir,
-					name: path.basename(workspaceDir),
-				},
-				pendingOpenFilePaths: [
-					toPortableRelativePath(path.relative(workspaceDir, resolved)),
-				],
-			};
-		}
+		stats = await stat(resolved);
 	} catch {
 		// Keep the resolved path for directories and unreadable paths; the lix
 		// backend reports unreadable workspace folders.
+	}
+	if (stats?.isFile()) {
+		if (options.openFilesAsTransient === true) {
+			const workspace = createTransientDirectoryWorkspace([resolved]);
+			return {
+				workspace,
+				pendingOpenFilePaths:
+					pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+			};
+		}
+		const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
+		if (!workspaceDir) {
+			const workspace = createTransientDirectoryWorkspace([resolved]);
+			return {
+				workspace,
+				pendingOpenFilePaths:
+					pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+			};
+		}
+		await assertWorkspaceDirectorySizeWithinLimit(workspaceDir, options);
+		return {
+			workspace: {
+				ephemeral: false,
+				path: workspaceDir,
+				name: path.basename(workspaceDir),
+			},
+			pendingOpenFilePaths: [
+				toPortableRelativePath(path.relative(workspaceDir, resolved)),
+			],
+		};
+	}
+	if (stats?.isDirectory()) {
+		await assertWorkspaceDirectorySizeWithinLimit(resolved, options);
 	}
 	return {
 		workspace: {
@@ -254,6 +262,104 @@ async function resolveWorkspaceSessionEntry(workspaceEntry) {
 		};
 	}
 	return null;
+}
+
+async function assertWorkspaceDirectorySizeWithinLimit(
+	workspaceDir,
+	options = {},
+) {
+	const maxSizeBytes =
+		options.maxWorkspaceSizeBytes ?? MAX_WORKSPACE_SIZE_BYTES;
+	if (
+		typeof maxSizeBytes !== "number" ||
+		!Number.isFinite(maxSizeBytes) ||
+		maxSizeBytes <= 0
+	) {
+		return;
+	}
+	const sizeBytes = await directorySizeBytes(workspaceDir, maxSizeBytes);
+	if (sizeBytes <= maxSizeBytes) {
+		return;
+	}
+	throw createWorkspaceTooLargeError(workspaceDir, maxSizeBytes);
+}
+
+async function directorySizeBytes(directoryPath, stopAfterBytes) {
+	let totalBytes = 0;
+	const pendingDirectories = [directoryPath];
+	while (pendingDirectories.length > 0 && totalBytes <= stopAfterBytes) {
+		const currentDirectory = pendingDirectories.pop();
+		let directory;
+		try {
+			directory = await opendir(currentDirectory);
+		} catch {
+			continue;
+		}
+		for await (const entry of directory) {
+			const entryPath = path.join(currentDirectory, entry.name);
+			let stats;
+			try {
+				stats = await lstat(entryPath);
+			} catch {
+				continue;
+			}
+			if (stats.isSymbolicLink()) {
+				continue;
+			}
+			if (stats.isDirectory()) {
+				pendingDirectories.push(entryPath);
+				continue;
+			}
+			if (stats.isFile()) {
+				totalBytes += stats.size;
+				if (totalBytes > stopAfterBytes) {
+					break;
+				}
+			}
+		}
+	}
+	return totalBytes;
+}
+
+function createWorkspaceTooLargeError(workspaceDir, maxSizeBytes) {
+	const error = new Error(
+		`The folder "${path.basename(workspaceDir) || workspaceDir}" is too large for Flashtype to open. Please open a smaller folder. Flashtype currently supports folders up to ${formatBytes(maxSizeBytes)}.`,
+	);
+	error.code = WORKSPACE_TOO_LARGE_ERROR_CODE;
+	error.workspacePath = workspaceDir;
+	error.maxSizeBytes = maxSizeBytes;
+	return error;
+}
+
+export function isWorkspaceTooLargeError(error) {
+	return error?.code === WORKSPACE_TOO_LARGE_ERROR_CODE;
+}
+
+export async function showWorkspaceTooLargeWarning(window, error) {
+	const message =
+		error instanceof Error
+			? error.message
+			: "This folder is too large for Flashtype to open. Please open a smaller folder.";
+	const options = {
+		type: "warning",
+		title: "Folder too large",
+		message: "Folder too large",
+		detail: message,
+		buttons: ["OK"],
+	};
+	if (window && !window.isDestroyed()) {
+		await dialog.showMessageBox(window, options);
+		return;
+	}
+	await dialog.showMessageBox(options);
+}
+
+function formatBytes(bytes) {
+	const mib = bytes / 1024 / 1024;
+	if (Number.isInteger(mib)) {
+		return `${mib} MB`;
+	}
+	return `${mib.toFixed(1)} MB`;
 }
 
 async function resolveStandaloneFile(resolvedPath, options = {}) {
