@@ -15,7 +15,7 @@ let distinctIdPromise;
 let posthogClient;
 let posthogClientPromise;
 let telemetryIpcRegistered = false;
-let telemetryShutdownStarted = false;
+let telemetryShutdownPromise;
 let latestRendererPostHogSessionId;
 let cachedDistinctId;
 const rendererPostHogSessionIdsByWebContentsId = new Map();
@@ -133,11 +133,11 @@ export function registerTelemetryIpc() {
 }
 
 export async function shutdownTelemetry(timeoutMs = SHUTDOWN_TIMEOUT_MS) {
-	if (telemetryShutdownStarted) {
-		return;
-	}
-	telemetryShutdownStarted = true;
+	telemetryShutdownPromise ??= shutdownTelemetryUncached(timeoutMs);
+	return await telemetryShutdownPromise;
+}
 
+async function shutdownTelemetryUncached(timeoutMs) {
 	try {
 		if (posthogClient) {
 			await posthogClient.shutdown(timeoutMs);

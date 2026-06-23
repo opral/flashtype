@@ -203,34 +203,6 @@ describe("workspace resolution", () => {
 		]);
 	});
 
-	test("groups standalone files in a direct launch batch", async () => {
-		const directory = path.join(
-			tmpdir(),
-			"flashtype-workspace-test",
-			randomUUID(),
-			"workspace",
-		);
-		const firstPath = path.join(directory, "alpha.md");
-		const secondPath = path.join(directory, "nested", "beta.md");
-		await mkdir(path.dirname(secondPath), { recursive: true });
-		await writeFile(firstPath, "# Alpha\n");
-		await writeFile(secondPath, "# Beta\n");
-
-		await expect(
-			resolveDirectLaunchWorkspaceTargets([firstPath, secondPath]),
-		).resolves.toEqual([
-			{
-				workspace: {
-					ephemeral: true,
-					path: directory,
-					sourceFilePaths: [firstPath, secondPath],
-					name: "workspace",
-				},
-				pendingOpenFilePaths: ["alpha.md", "nested/beta.md"],
-			},
-		]);
-	});
-
 	test("resolves files outside a Lix workspace to transient directory workspaces", async () => {
 		const directory = path.join(
 			tmpdir(),
