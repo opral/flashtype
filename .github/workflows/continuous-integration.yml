@@ -42,6 +42,11 @@ jobs:
           node-version: ${{ matrix.version }}
           cache: "pnpm"
 
+      - name: Install native Lix build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev llvm-dev
+
       - name: Validate submodule branches
         run: |
           git submodule foreach '
@@ -126,6 +131,17 @@ jobs:
         with:
           node-version: 22
           cache: "pnpm"
+
+      - name: Configure native Lix build dependencies
+        run: |
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          LLVM_PREFIX="$(brew --prefix llvm)"
+          {
+            echo "LIBCLANG_PATH=$LLVM_PREFIX/lib"
+            echo "LLVM_CONFIG_PATH=$LLVM_PREFIX/bin/llvm-config"
+            echo "DYLD_LIBRARY_PATH=$LLVM_PREFIX/lib:${DYLD_LIBRARY_PATH:-}"
+            echo "DYLD_FALLBACK_LIBRARY_PATH=$LLVM_PREFIX/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+          } >> "$GITHUB_ENV"
 
       - name: Install Rust wasm target
         run: |
