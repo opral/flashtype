@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 - 2026-06-23
+
+### Minor
+
+- Warn before opening folders larger than 100 MB.
+
+### Patch
+
+- Start file tree folders collapsed by default.
+- Fix Markdown list editing with Tab, Shift+Tab, Backspace, and nested bullets.
+- Improve the macOS Dock menu for recent workspaces and active files.
+- Show a clearer autosave hint when pressing Cmd/Ctrl+S.
+- Prevent crash loops after Flashtype fails while reopening previous workspaces.
+
 ## 0.4.0 - 2026-06-19
 
 ### Minor
