@@ -30,8 +30,19 @@
 
 1. `pnpm run ci`
 
-### Changenotes
+### Next Release
 
-Add a `.changenotes/*.md` file for user-facing changes. Use `type: major`, `type: minor`, or `type: patch` frontmatter, followed by changelog-ready prose.
+For a user-facing release, add `NEXT_RELEASE.md` at the repository root. Use `type: major`, `type: minor`, or `type: patch` frontmatter, followed by the exact changelog entry body.
 
-See `.changenotes/README.md` for the exact format. Do not add changenotes for repo-only, documentation-only, CI-only, test-only, or chore-only changes.
+Example:
+
+```md
+---
+type: minor
+---
+
+- Warn before opening folders larger than 100 MB.
+- Fix Markdown list editing with Tab, Shift+Tab, Backspace, and nested bullets.
+```
+
+Do not add `NEXT_RELEASE.md` for repo-only, documentation-only, CI-only, test-only, or chore-only changes.

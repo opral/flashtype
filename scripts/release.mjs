@@ -1,6 +1,5 @@
 import {
 	existsSync,
-	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -9,6 +8,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 export const CHANGE_TYPES = ["major", "minor", "patch"];
+export const NEXT_RELEASE_PATH = "NEXT_RELEASE.md";
 
 export function readText(root, path) {
 	return readFileSync(join(root, path), "utf8");
@@ -48,17 +48,10 @@ export function bumpVersion(version, type) {
 	throw new Error(`Unsupported change type: ${type}`);
 }
 
-export function changeFiles(root) {
-	const dir = join(root, ".changenotes");
-	if (!existsSync(dir)) return [];
-	return readdirSync(dir)
-		.filter((file) => file.endsWith(".md") && file !== "README.md")
-		.map((file) => `.changenotes/${file}`)
-		.sort();
-}
-
-export function parseChange(root, path) {
-	const text = readText(root, path).trim();
+export function loadNextRelease(root) {
+	const path = NEXT_RELEASE_PATH;
+	if (!existsSync(join(root, path))) return null;
+	const text = readText(root, path).replace(/\r\n/g, "\n").trim();
 	const match = text.match(/^---\n([\s\S]*?)\n---\n([\s\S]+)$/);
 	if (!match) {
 		throw new Error(
@@ -81,97 +74,26 @@ export function parseChange(root, path) {
 			}),
 	);
 	const type = metadata.type;
-	const bodyParagraphs = changeBodyParagraphs(match[2]);
+	const body = normalizeReleaseBody(match[2]);
 	if (!CHANGE_TYPES.includes(type)) {
 		throw new Error(`${path}: type must be one of ${CHANGE_TYPES.join(", ")}`);
 	}
-	if (bodyParagraphs.length === 0) {
+	if (!body) {
 		throw new Error(`${path}: changelog body must not be empty`);
 	}
 	return {
 		path,
 		type,
-		body: bodyParagraphs.join("\n\n"),
-		summary: bodyParagraphs[0],
-		details: bodyParagraphs.slice(1),
+		body,
 	};
 }
 
-export function loadChanges(root) {
-	return changeFiles(root).map((path) => parseChange(root, path));
+export function changelogEntry(version, date, release) {
+	return `## ${version} - ${date}\n\n${release.body}\n`;
 }
 
-export function highestChangeType(changes) {
-	if (changes.some((change) => change.type === "major")) return "major";
-	if (changes.some((change) => change.type === "minor")) return "minor";
-	if (changes.some((change) => change.type === "patch")) return "patch";
-	return null;
-}
-
-export function changelogEntry(version, date, changes) {
-	const labels = { major: "Major", minor: "Minor", patch: "Patch" };
-	let entry = `## ${version} - ${date}\n`;
-	for (const type of CHANGE_TYPES) {
-		const typed = changes.filter((change) => change.type === type);
-		if (typed.length === 0) continue;
-		entry += `\n### ${labels[type]}\n\n`;
-		for (const change of typed) {
-			entry += changelogListItem(change);
-		}
-	}
-	return `${entry}\n`;
-}
-
-function changeBodyParagraphs(body) {
-	const paragraphs = [];
-	let lines = [];
-	let inFence = false;
-	for (const line of body.trim().replace(/\r\n/g, "\n").split("\n")) {
-		if (line.trimStart().startsWith("```")) {
-			inFence = !inFence;
-			lines.push(line);
-			continue;
-		}
-		if (!inFence && line.trim() === "") {
-			pushBodyParagraph(paragraphs, lines);
-			lines = [];
-			continue;
-		}
-		lines.push(line);
-	}
-	pushBodyParagraph(paragraphs, lines);
-	return paragraphs;
-}
-
-function pushBodyParagraph(paragraphs, lines) {
-	if (lines.length === 0) return;
-	const hasFence = lines.some((line) => line.trimStart().startsWith("```"));
-	const paragraph = hasFence
-		? lines.join("\n").trim()
-		: lines
-				.map((line) => line.trim())
-				.filter(Boolean)
-				.join(" ");
-	if (paragraph) paragraphs.push(paragraph);
-}
-
-function changelogListItem(change) {
-	const paragraphs = change.summary
-		? [change.summary, ...(change.details ?? [])]
-		: changeBodyParagraphs(change.body);
-	const [summary, ...details] = paragraphs;
-	let item = `- ${summary}\n`;
-	for (const detail of details) {
-		item += `\n${indentChangelogDetail(detail)}\n`;
-	}
-	return item;
-}
-
-function indentChangelogDetail(detail) {
-	return detail
-		.split("\n")
-		.map((line) => `  ${line}`)
-		.join("\n");
+function normalizeReleaseBody(body) {
+	return body.replace(/\r\n/g, "\n").trim();
 }
 
 export function updatePackageVersion(root, version) {
@@ -180,12 +102,12 @@ export function updatePackageVersion(root, version) {
 	writeJson(root, "package.json", packageJson);
 }
 
-export function updateChangelog(root, version, date, changes) {
+export function updateChangelog(root, version, date, release) {
 	const path = "CHANGELOG.md";
 	const existing = existsSync(join(root, path))
 		? readText(root, path).trimEnd()
 		: "# Changelog\n";
-	const entry = changelogEntry(version, date, changes).trimEnd();
+	const entry = changelogEntry(version, date, release).trimEnd();
 	const next =
 		existing.trim() === "# Changelog"
 			? `# Changelog\n\n${entry}\n`
@@ -197,18 +119,16 @@ export function prepareRelease(
 	root,
 	{ date = new Date().toISOString().slice(0, 10) } = {},
 ) {
-	const changes = loadChanges(root);
-	if (changes.length === 0) {
+	const release = loadNextRelease(root);
+	if (!release) {
 		return null;
 	}
-	const type = highestChangeType(changes);
+	const type = release.type;
 	const version = bumpVersion(currentVersion(root), type);
 	updatePackageVersion(root, version);
-	updateChangelog(root, version, date, changes);
-	for (const change of changes) {
-		rmSync(join(root, change.path));
-	}
-	return { version, type, changes };
+	updateChangelog(root, version, date, release);
+	rmSync(join(root, release.path));
+	return { version, type, release };
 }
 
 export function releaseTagForHead(root) {
