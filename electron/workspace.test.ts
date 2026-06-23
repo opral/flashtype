@@ -74,6 +74,34 @@ describe("workspace resolution", () => {
 		});
 	});
 
+	test("excludes .lix directories from the workspace size limit", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, ".lix", ".internal"), {
+			recursive: true,
+		});
+		await writeFile(path.join(directory, "small.md"), Buffer.alloc(10));
+		await writeFile(
+			path.join(directory, ".lix", ".internal", "db.sqlite"),
+			Buffer.alloc(11),
+		);
+
+		await expect(
+			resolveWorkspaceTarget(directory, { maxWorkspaceSizeBytes: 10 }),
+		).resolves.toEqual({
+			workspace: {
+				ephemeral: false,
+				path: directory,
+				name: "workspace",
+			},
+			pendingOpenFilePaths: [],
+		});
+	});
+
 	test("resolves a file inside a Lix workspace to the workspace root", async () => {
 		const directory = path.join(
 			tmpdir(),

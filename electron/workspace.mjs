@@ -296,6 +296,9 @@ async function directorySizeBytes(directoryPath, stopAfterBytes) {
 			continue;
 		}
 		for await (const entry of directory) {
+			if (entry.isDirectory() && entry.name === ".lix") {
+				continue;
+			}
 			const entryPath = path.join(currentDirectory, entry.name);
 			let stats;
 			try {
