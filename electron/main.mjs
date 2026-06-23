@@ -33,10 +33,13 @@ import {
 } from "./launch-args.mjs";
 import {
 	filterExistingWorkspaceEntries,
+	clearWorkspaceSessionBootInProgressSync,
+	markWorkspaceSessionBootInProgressSync,
 	mergeRestoredAndExplicitWorkspaceRequests,
 	normalizeWorkspacePaths,
 	normalizeWorkspaceSessionEntries,
 	readWorkspaceSessionEntries,
+	recoverWorkspaceSessionAfterFailedBootSync,
 	workspaceToSessionEntry,
 	writeWorkspaceSessionEntriesSync,
 } from "./workspace-session.mjs";
@@ -96,6 +99,8 @@ let registerLixIpc = () => {};
 let disposeTerminalIpc = () => {};
 let registerTerminalIpc = () => {};
 let recentWorkspaceEntries = [];
+let workspaceBootRecoveryGuardArmed = false;
+let workspaceBootRecoveryInitialWindowsCreated = false;
 
 if (isHeadless && process.platform === "darwin") {
 	app.dock.hide();
@@ -211,6 +216,41 @@ function createWorkspaceOpenRequest(request, requestedSource) {
 
 function isCrashLikeProcessGoneReason(reason) {
 	return CRASH_LIKE_PROCESS_GONE_REASONS.has(reason);
+}
+
+function shouldUseWorkspaceBootRecoveryGuard() {
+	return app.isPackaged && !isHeadless;
+}
+
+function startWorkspaceBootRecoveryGuard() {
+	if (!shouldUseWorkspaceBootRecoveryGuard()) {
+		return;
+	}
+	const userDataPath = app.getPath("userData");
+	try {
+		if (recoverWorkspaceSessionAfterFailedBootSync(userDataPath)) {
+			console.warn(
+				"Previous Flashtype boot did not complete; reset saved workspace session",
+			);
+		}
+		markWorkspaceSessionBootInProgressSync(userDataPath);
+		workspaceBootRecoveryGuardArmed = true;
+		workspaceBootRecoveryInitialWindowsCreated = false;
+	} catch (error) {
+		console.warn("Failed to update Flashtype workspace boot guard", error);
+	}
+}
+
+function clearWorkspaceBootRecoveryGuard() {
+	if (!workspaceBootRecoveryGuardArmed) {
+		return;
+	}
+	try {
+		clearWorkspaceSessionBootInProgressSync(app.getPath("userData"));
+		workspaceBootRecoveryGuardArmed = false;
+	} catch (error) {
+		console.warn("Failed to clear Flashtype workspace boot guard", error);
+	}
 }
 
 function normalizeWorkspaceOpenRequest(
@@ -671,6 +711,7 @@ async function loadNativeIpcModules() {
 }
 
 async function startWorkspaceLifecycle() {
+	startWorkspaceBootRecoveryGuard();
 	await loadNativeIpcModules();
 	if (isQuitting) {
 		return;
@@ -799,6 +840,7 @@ async function startWorkspaceLifecycle() {
 		} else {
 			await createMainWindow();
 		}
+		workspaceBootRecoveryInitialWindowsCreated = true;
 	} finally {
 		initialWorkspaceOpenInProgress = false;
 	}
@@ -812,7 +854,18 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
 	isQuitting = true;
-	flushOpenWorkspacePaths();
+	if (
+		!workspaceBootRecoveryGuardArmed ||
+		workspaceBootRecoveryInitialWindowsCreated
+	) {
+		flushOpenWorkspacePaths();
+	}
+	if (
+		workspaceBootRecoveryGuardArmed &&
+		workspaceBootRecoveryInitialWindowsCreated
+	) {
+		clearWorkspaceBootRecoveryGuard();
+	}
 	void disposeLixIpc();
 	disposeTerminalIpc();
 });

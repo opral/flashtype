@@ -6,8 +6,11 @@ import { describe, expect, test } from "vitest";
 import {
 	filterExistingWorkspaceEntries,
 	getWorkspaceSessionPath,
+	markWorkspaceSessionBootInProgressSync,
 	mergeRestoredAndExplicitWorkspaceRequests,
 	readWorkspaceSessionEntries,
+	recoverWorkspaceSessionAfterFailedBootSync,
+	WORKSPACE_SESSION_RECOVERY_BACKUP_FILE,
 	writeWorkspaceSessionEntries,
 	writeWorkspaceSessionEntriesSync,
 	WORKSPACE_SESSION_VERSION,
@@ -86,6 +89,51 @@ describe("workspace session store", () => {
 		]);
 
 		await expect(readStore(userDataPath)).resolves.toEqual({
+			version: WORKSPACE_SESSION_VERSION,
+			workspaces: [{ ephemeral: false, path: workspacePath }],
+		});
+	});
+
+	test("boot recovery without guard leaves saved workspace entries alone", async () => {
+		const userDataPath = createUserDataPath();
+		const workspacePath = path.join(userDataPath, "workspace");
+		writeWorkspaceSessionEntriesSync(userDataPath, [
+			{ ephemeral: false, path: workspacePath },
+		]);
+
+		expect(recoverWorkspaceSessionAfterFailedBootSync(userDataPath)).toBe(
+			false,
+		);
+
+		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual([
+			{ ephemeral: false, path: workspacePath },
+		]);
+	});
+
+	test("boot recovery backs up once and clears saved workspace entries", async () => {
+		const userDataPath = createUserDataPath();
+		const workspacePath = path.join(userDataPath, "workspace");
+		writeWorkspaceSessionEntriesSync(userDataPath, [
+			{ ephemeral: false, path: workspacePath },
+		]);
+		markWorkspaceSessionBootInProgressSync(userDataPath);
+
+		expect(recoverWorkspaceSessionAfterFailedBootSync(userDataPath)).toBe(true);
+
+		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual(
+			[],
+		);
+		await expect(readRecoveryBackup(userDataPath)).resolves.toEqual({
+			version: WORKSPACE_SESSION_VERSION,
+			workspaces: [{ ephemeral: false, path: workspacePath }],
+		});
+
+		expect(recoverWorkspaceSessionAfterFailedBootSync(userDataPath)).toBe(true);
+
+		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual(
+			[],
+		);
+		await expect(readRecoveryBackup(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
 			workspaces: [{ ephemeral: false, path: workspacePath }],
 		});
@@ -232,5 +280,14 @@ function createUserDataPath() {
 async function readStore(userDataPath: string): Promise<unknown> {
 	return JSON.parse(
 		await readFile(getWorkspaceSessionPath(userDataPath), "utf8"),
+	);
+}
+
+async function readRecoveryBackup(userDataPath: string): Promise<unknown> {
+	return JSON.parse(
+		await readFile(
+			path.join(userDataPath, WORKSPACE_SESSION_RECOVERY_BACKUP_FILE),
+			"utf8",
+		),
 	);
 }

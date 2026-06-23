@@ -1,8 +1,18 @@
 import fs from "node:fs/promises";
-import { mkdirSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
 export const WORKSPACE_SESSION_FILE = "workspace-session.json";
+export const WORKSPACE_SESSION_RECOVERY_BACKUP_FILE =
+	"workspace-session.recovery-backup.json";
+export const WORKSPACE_SESSION_BOOT_GUARD_FILE =
+	"workspace-session-boot-in-progress";
 export const WORKSPACE_SESSION_VERSION = 3;
 
 export async function readWorkspaceSessionEntries(userDataPath) {
@@ -45,6 +55,35 @@ export function writeWorkspaceSessionEntriesSync(
 		serializeWorkspaceSessionEntries(workspaceEntries),
 		"utf8",
 	);
+}
+
+export function recoverWorkspaceSessionAfterFailedBootSync(userDataPath) {
+	if (!existsSync(getWorkspaceSessionBootGuardPath(userDataPath))) {
+		return false;
+	}
+
+	try {
+		const workspaceSessionPath = getWorkspaceSessionPath(userDataPath);
+		const recoveryBackupPath =
+			getWorkspaceSessionRecoveryBackupPath(userDataPath);
+		if (existsSync(workspaceSessionPath) && !existsSync(recoveryBackupPath)) {
+			copyFileSync(workspaceSessionPath, recoveryBackupPath);
+		}
+	} catch {
+		// Recovery should still break the restore crash loop if backup fails.
+	}
+
+	writeWorkspaceSessionEntriesSync(userDataPath, []);
+	return true;
+}
+
+export function markWorkspaceSessionBootInProgressSync(userDataPath) {
+	mkdirSync(userDataPath, { recursive: true });
+	writeFileSync(getWorkspaceSessionBootGuardPath(userDataPath), "", "utf8");
+}
+
+export function clearWorkspaceSessionBootInProgressSync(userDataPath) {
+	rmSync(getWorkspaceSessionBootGuardPath(userDataPath), { force: true });
 }
 
 export async function filterExistingWorkspaceEntries(workspaceEntries) {
@@ -177,6 +216,14 @@ export function mergeRestoredAndExplicitWorkspaceRequests(
 
 export function getWorkspaceSessionPath(userDataPath) {
 	return path.join(userDataPath, WORKSPACE_SESSION_FILE);
+}
+
+function getWorkspaceSessionRecoveryBackupPath(userDataPath) {
+	return path.join(userDataPath, WORKSPACE_SESSION_RECOVERY_BACKUP_FILE);
+}
+
+function getWorkspaceSessionBootGuardPath(userDataPath) {
+	return path.join(userDataPath, WORKSPACE_SESSION_BOOT_GUARD_FILE);
 }
 
 function normalizeWorkspaceSessionEntry(workspaceEntry) {
