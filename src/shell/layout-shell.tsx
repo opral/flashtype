@@ -162,6 +162,43 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 	return prototype === Object.prototype || prototype === null;
 };
 
+const collectSessionOpenFilePaths = (
+	panels: readonly PanelState[],
+): string[] => {
+	const seen = new Set<string>();
+	const openFilePaths: string[] = [];
+	for (const panel of panels) {
+		for (const view of panel.views) {
+			const filePath = normalizeSessionOpenFilePath(view.state?.filePath);
+			if (!filePath || seen.has(filePath)) {
+				continue;
+			}
+			seen.add(filePath);
+			openFilePaths.push(filePath);
+		}
+	}
+	return openFilePaths;
+};
+
+const normalizeSessionOpenFilePath = (filePath: unknown): string | null => {
+	if (typeof filePath !== "string" || filePath.length === 0) {
+		return null;
+	}
+	const segments = filePath
+		.replaceAll("\\", "/")
+		.replace(/^\/+/, "")
+		.split("/")
+		.filter(Boolean);
+	if (
+		segments.length === 0 ||
+		segments[0] === ".lix" ||
+		segments.some((segment) => segment === "..")
+	) {
+		return null;
+	}
+	return segments.join("/");
+};
+
 const sanitizePanels = (
 	panels: Record<PanelSide, PanelState>,
 ): Record<PanelSide, PanelState> => ({
@@ -1662,6 +1699,17 @@ function LayoutShellContent({
 			filePath: activeFilePath,
 		});
 	}, [activeFilePath]);
+
+	const sessionOpenFilePaths = useMemo(
+		() => collectSessionOpenFilePaths([leftPanel, centralPanel, rightPanel]),
+		[leftPanel, centralPanel, rightPanel],
+	);
+
+	useEffect(() => {
+		void window.flashtypeDesktop?.workspace.setOpenFilePaths({
+			filePaths: sessionOpenFilePaths,
+		});
+	}, [sessionOpenFilePaths]);
 
 	const isLeftFocused = focusedPanel === "left";
 	const isCentralFocused = focusedPanel === "central";

@@ -330,7 +330,7 @@ describe("workspace resolution", () => {
 			workspace: {
 				ephemeral: true,
 				path: directory,
-				sourceFilePaths: [filePath],
+				includePaths: ["readme.md"],
 				name: "workspace",
 			},
 			pendingOpenFilePaths: ["readme.md"],
@@ -357,7 +357,7 @@ describe("workspace resolution", () => {
 				workspace: {
 					ephemeral: true,
 					path: directory,
-					sourceFilePaths: [firstPath, secondPath],
+					includePaths: ["alpha.md", "nested/beta.markdown"],
 					name: "workspace",
 				},
 				pendingOpenFilePaths: ["alpha.md", "nested/beta.markdown"],
@@ -439,7 +439,7 @@ describe("workspace resolution", () => {
 				workspace: {
 					ephemeral: true,
 					path: directory,
-					sourceFilePaths: [firstPath, secondPath],
+					includePaths: ["alpha.txt", "beta.csv"],
 					name: "workspace",
 				},
 				pendingOpenFilePaths: ["alpha.txt", "beta.csv"],
@@ -554,7 +554,7 @@ describe("workspace resolution", () => {
 				ephemeral: true,
 				path: directory,
 				name: "workspace",
-				sourceFilePaths: [openedFilePath],
+				includePaths: ["notes/today.md"],
 			}),
 		).resolves.toMatchObject({
 			file_count: 1,
@@ -562,5 +562,62 @@ describe("workspace resolution", () => {
 			extension_counts: { md: 1 },
 			total_size_mb: 0,
 		});
+	});
+
+	test("restores saved workspace session entries with .lix as tracked", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const filePath = path.join(directory, "docs", "readme.md");
+		await mkdir(path.join(directory, ".lix", ".internal"), { recursive: true });
+		await mkdir(path.dirname(filePath), { recursive: true });
+		await writeFile(path.join(directory, ".lix", ".internal", "db.sqlite"), "");
+		await writeFile(filePath, "# Hello\n");
+
+		await expect(
+			resolveWorkspaceTargets([
+				{ path: directory, openFiles: ["docs/readme.md"] },
+			]),
+		).resolves.toEqual([
+			{
+				workspace: {
+					ephemeral: false,
+					path: directory,
+					name: "workspace",
+				},
+				pendingOpenFilePaths: ["docs/readme.md"],
+			},
+		]);
+	});
+
+	test("restores saved workspace session entries without .lix as ephemeral", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const filePath = path.join(directory, "docs", "readme.md");
+		await mkdir(path.dirname(filePath), { recursive: true });
+		await writeFile(filePath, "# Hello\n");
+
+		await expect(
+			resolveWorkspaceTargets([
+				{ path: directory, openFiles: ["docs/readme.md"] },
+			]),
+		).resolves.toEqual([
+			{
+				workspace: {
+					ephemeral: true,
+					path: directory,
+					includePaths: ["docs/readme.md"],
+					name: "workspace",
+				},
+				pendingOpenFilePaths: ["docs/readme.md"],
+			},
+		]);
 	});
 });

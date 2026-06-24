@@ -13,7 +13,7 @@ export const WORKSPACE_SESSION_RECOVERY_BACKUP_FILE =
 	"workspace-session.recovery-backup.json";
 export const WORKSPACE_SESSION_BOOT_GUARD_FILE =
 	"workspace-session-boot-in-progress";
-export const WORKSPACE_SESSION_VERSION = 3;
+export const WORKSPACE_SESSION_VERSION = 4;
 
 export async function readWorkspaceSessionEntries(userDataPath) {
 	try {
@@ -91,61 +91,38 @@ export async function filterExistingWorkspaceEntries(workspaceEntries) {
 	for (const workspaceEntry of normalizeWorkspaceSessionEntries(
 		workspaceEntries,
 	)) {
-		if (workspaceEntry.ephemeral === false) {
-			try {
-				if ((await fs.stat(workspaceEntry.path)).isDirectory()) {
-					existingWorkspaceEntries.push(workspaceEntry);
-				}
-			} catch {
-				// Ignore stale saved paths; explicit launch paths are handled elsewhere.
+		try {
+			if (!(await fs.stat(workspaceEntry.path)).isDirectory()) {
+				continue;
 			}
+		} catch {
+			// Ignore stale saved paths; explicit launch paths are handled elsewhere.
 			continue;
 		}
 
-		if (workspaceEntry.ephemeral === true) {
-			const sourceFilePaths = [];
-			for (const sourceFilePath of workspaceEntry.sourceFilePaths) {
-				try {
-					if ((await fs.stat(sourceFilePath)).isFile()) {
-						sourceFilePaths.push(sourceFilePath);
-					}
-				} catch {
-					// Drop missing files from a restored transient workspace.
+		const openFiles = [];
+		for (const openFile of workspaceEntry.openFiles) {
+			try {
+				if ((await fs.stat(path.join(workspaceEntry.path, openFile))).isFile()) {
+					openFiles.push(openFile);
 				}
+			} catch {
+				// Drop stale open file paths while preserving the workspace path.
 			}
-			if (sourceFilePaths.length > 0) {
-				existingWorkspaceEntries.push({
-					ephemeral: true,
-					sourceFilePaths,
-				});
-			}
-			continue;
 		}
+		existingWorkspaceEntries.push({ path: workspaceEntry.path, openFiles });
 	}
 	return existingWorkspaceEntries;
 }
 
-export function workspaceToSessionEntry(workspace) {
-	if (!workspace) {
+export function workspaceToSessionEntry(workspace, openFilePaths = []) {
+	if (!workspace || typeof workspace.path !== "string" || workspace.path === "") {
 		return null;
 	}
-	if (workspace.ephemeral === false) {
-		return {
-			ephemeral: false,
-			path: path.resolve(workspace.path),
-		};
-	}
-	if (workspace.ephemeral === true) {
-		const sourceFilePaths = normalizeWorkspacePaths(workspace.sourceFilePaths);
-		if (sourceFilePaths.length === 0) {
-			return null;
-		}
-		return {
-			ephemeral: true,
-			sourceFilePaths,
-		};
-	}
-	return null;
+	return {
+		path: path.resolve(workspace.path),
+		openFiles: normalizeWorkspaceRelativeOpenFiles(openFilePaths),
+	};
 }
 
 export function normalizeWorkspaceSessionEntries(workspaceEntries) {
@@ -192,6 +169,24 @@ export function normalizeWorkspacePaths(workspacePaths) {
 	return normalizedWorkspacePaths;
 }
 
+export function normalizeWorkspaceRelativeOpenFiles(openFiles) {
+	if (!Array.isArray(openFiles)) {
+		return [];
+	}
+
+	const seen = new Set();
+	const normalizedOpenFiles = [];
+	for (const openFile of openFiles) {
+		const normalizedOpenFile = normalizeWorkspaceRelativeOpenFile(openFile);
+		if (!normalizedOpenFile || seen.has(normalizedOpenFile)) {
+			continue;
+		}
+		seen.add(normalizedOpenFile);
+		normalizedOpenFiles.push(normalizedOpenFile);
+	}
+	return normalizedOpenFiles;
+}
+
 export function mergeRestoredAndExplicitWorkspaceRequests(
 	restoredWorkspaceEntries,
 	explicitWorkspacePaths,
@@ -199,7 +194,6 @@ export function mergeRestoredAndExplicitWorkspaceRequests(
 	const normalizedExplicitWorkspacePaths = normalizeWorkspacePaths(
 		explicitWorkspacePaths,
 	);
-	const explicitWorkspacePathSet = new Set(normalizedExplicitWorkspacePaths);
 	const restoredOnlyWorkspaceEntries = normalizeWorkspaceSessionEntries(
 		restoredWorkspaceEntries,
 	).filter(
@@ -207,7 +201,6 @@ export function mergeRestoredAndExplicitWorkspaceRequests(
 			!workspaceEntryOverlapsExplicitPaths(
 				workspaceEntry,
 				normalizedExplicitWorkspacePaths,
-				explicitWorkspacePathSet,
 			),
 	);
 
@@ -230,59 +223,43 @@ function normalizeWorkspaceSessionEntry(workspaceEntry) {
 	if (!workspaceEntry || typeof workspaceEntry !== "object") {
 		return null;
 	}
-	if (workspaceEntry.ephemeral === false) {
-		if (typeof workspaceEntry.path !== "string" || workspaceEntry.path === "") {
-			return null;
-		}
-		return {
-			ephemeral: false,
-			path: path.resolve(workspaceEntry.path),
-		};
+	if (typeof workspaceEntry.path !== "string" || workspaceEntry.path === "") {
+		return null;
 	}
-	if (workspaceEntry.ephemeral === true) {
-		const sourceFilePaths = normalizeWorkspacePaths(
-			workspaceEntry.sourceFilePaths,
-		);
-		if (sourceFilePaths.length === 0) {
-			return null;
-		}
-		return {
-			ephemeral: true,
-			sourceFilePaths,
-		};
+	return {
+		path: path.resolve(workspaceEntry.path),
+		openFiles: normalizeWorkspaceRelativeOpenFiles(workspaceEntry.openFiles),
+	};
+}
+
+function normalizeWorkspaceRelativeOpenFile(openFile) {
+	if (typeof openFile !== "string" || openFile.length === 0) {
+		return null;
 	}
-	return null;
+	const portablePath = openFile.replaceAll("\\", "/").replace(/^\/+/, "");
+	const segments = portablePath.split("/").filter(Boolean);
+	if (segments.length === 0 || segments.some((segment) => segment === "..")) {
+		return null;
+	}
+	if (segments[0] === ".lix") {
+		return null;
+	}
+	return segments.join("/");
 }
 
 function workspaceSessionEntryKey(workspaceEntry) {
-	if (workspaceEntry.ephemeral === true) {
-		return `ephemeral:${workspaceEntry.sourceFilePaths.join("\0")}`;
-	}
-	return `directory:${workspaceEntry.path}`;
+	return workspaceEntry.path;
 }
 
 function workspaceEntryOverlapsExplicitPaths(
 	workspaceEntry,
 	explicitWorkspacePaths,
-	explicitWorkspacePathSet,
 ) {
-	if (workspaceEntry.ephemeral === false) {
-		return explicitWorkspacePaths.some(
-			(explicitWorkspacePath) =>
-				isSamePathOrInside(workspaceEntry.path, explicitWorkspacePath) ||
-				isSamePathOrInside(explicitWorkspacePath, workspaceEntry.path),
-		);
-	}
-	if (workspaceEntry.ephemeral === true) {
-		return workspaceEntry.sourceFilePaths.some(
-			(sourceFilePath) =>
-				explicitWorkspacePathSet.has(sourceFilePath) ||
-				explicitWorkspacePaths.some((explicitWorkspacePath) =>
-					isSamePathOrInside(explicitWorkspacePath, sourceFilePath),
-				),
-		);
-	}
-	return false;
+	return explicitWorkspacePaths.some(
+		(explicitWorkspacePath) =>
+			isSamePathOrInside(workspaceEntry.path, explicitWorkspacePath) ||
+			isSamePathOrInside(explicitWorkspacePath, workspaceEntry.path),
+	);
 }
 
 function isSamePathOrInside(parentPath, childPath) {

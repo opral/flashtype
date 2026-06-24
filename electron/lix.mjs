@@ -1,8 +1,11 @@
 import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
-import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
+import { readFile, rm } from "node:fs/promises";
+import {
+	getWorkspace,
+	getWorkspaceFsBackendOptions,
+	getWorkspaceLixDatabasePath,
+} from "./workspace.mjs";
 
 const LIX_DATABASE_DIR = ".lix";
 const sessions = new Map();
@@ -19,41 +22,16 @@ export async function ensureLixOpen(window) {
 						"No workspace is open. Open a folder before using lix.",
 					);
 				}
-				const isEphemeral = workspace.ephemeral === true;
-				const includePaths = isEphemeral
-					? sourceFilePathsToWorkspaceIncludePaths(workspace)
-					: undefined;
-				if (isEphemeral && includePaths.length === 0) {
-					throw new Error(
-						"Ephemeral workspaces require at least one source file.",
-					);
-				}
-				const tempLixParent = isEphemeral
-					? await mkdtemp(path.join(os.tmpdir(), "flashtype-lix-"))
-					: undefined;
 				let nativeLix;
 				try {
+					const backendOptions = await getWorkspaceFsBackendOptions(window);
 					nativeLix = await openLix({
-						backend: new FsBackend({
-							path: workspace.path,
-							lixDir: tempLixParent
-								? path.join(tempLixParent, LIX_DATABASE_DIR)
-								: undefined,
-							filter:
-								includePaths && includePaths.length > 0
-									? { includePaths }
-									: undefined,
-						}),
+						backend: new FsBackend(backendOptions),
 					});
 					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
-					return createDesktopLixHandle(nativeLix, workspace.path, {
-						tempLixParent,
-					});
+					return createDesktopLixHandle(nativeLix, workspace.path);
 				} catch (error) {
 					await nativeLix?.close().catch(() => {});
-					if (tempLixParent) {
-						await removeTempLixParent(tempLixParent);
-					}
 					throw error;
 				}
 			})();
@@ -67,24 +45,6 @@ export async function ensureLixOpen(window) {
 		outPromise = session.lixPromise;
 	});
 	return await outPromise;
-}
-
-function sourceFilePathsToWorkspaceIncludePaths(workspace) {
-	return (workspace.sourceFilePaths ?? [])
-		.map((sourceFilePath) => {
-			const relativePath = path.relative(workspace.path, sourceFilePath);
-			if (
-				relativePath.startsWith("..") ||
-				path.isAbsolute(relativePath) ||
-				relativePath.length === 0
-			) {
-				throw new Error(
-					`Ephemeral source file must be inside the workspace: ${sourceFilePath}`,
-				);
-			}
-			return relativePath.split(path.sep).filter(Boolean).join("/");
-		})
-		.filter((includePath) => includePath.length > 0);
 }
 
 async function ensureDefaultPluginsInstalledOnCurrentBranch(lix) {
@@ -205,10 +165,6 @@ async function removeLixDatabaseFiles(workspacePath) {
 	});
 }
 
-async function removeTempLixParent(tempLixParent) {
-	await rm(tempLixParent, { force: true, recursive: true }).catch(() => {});
-}
-
 async function checkpointWorkspaceLixDatabase(window) {
 	const { DatabaseSync } = await import("node:sqlite");
 	const database = new DatabaseSync(getWorkspaceLixDatabasePath(window));
@@ -254,9 +210,8 @@ function getOrCreateSession(window) {
 	return session;
 }
 
-function createDesktopLixHandle(nativeLix, workspaceDir, options = {}) {
+function createDesktopLixHandle(nativeLix, workspaceDir) {
 	let operationQueue = Promise.resolve();
-	let tempLixParent = options.tempLixParent;
 
 	async function acquireOperationSlot() {
 		const previous = operationQueue;
@@ -385,15 +340,7 @@ function createDesktopLixHandle(nativeLix, workspaceDir, options = {}) {
 			});
 		},
 		async close() {
-			try {
-				await runQueued(() => nativeLix.close());
-			} finally {
-				if (tempLixParent) {
-					const parent = tempLixParent;
-					tempLixParent = undefined;
-					await removeTempLixParent(parent);
-				}
-			}
+			await runQueued(() => nativeLix.close());
 		},
 	};
 }

@@ -1,7 +1,18 @@
 import { dialog, ipcMain } from "electron";
+import os from "node:os";
 import path from "node:path";
-import { lstat, opendir, readFile, stat } from "node:fs/promises";
+import {
+	cp,
+	lstat,
+	mkdtemp,
+	opendir,
+	readFile,
+	rename,
+	rm,
+	stat,
+} from "node:fs/promises";
 
+const LIX_DIRECTORY_NAME = ".lix";
 const LIX_DATABASE_FILE = path.join(".lix", ".internal", "db.sqlite");
 const LIX_ROCKSDB_DATABASE_DIR = path.join(".lix", ".internal", "rocksdb");
 const LEGACY_LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
@@ -42,17 +53,12 @@ export async function resolveWorkspaceTarget(requestedPath, options = {}) {
 			const workspace = createTransientDirectoryWorkspace([resolved]);
 			return {
 				workspace,
-				pendingOpenFilePaths:
-					pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+				pendingOpenFilePaths: workspace.includePaths,
 			};
 		}
 		await assertWorkspaceDirectorySizeWithinLimit(workspaceDir, options);
 		return {
-			workspace: {
-				ephemeral: false,
-				path: workspaceDir,
-				name: path.basename(workspaceDir),
-			},
+			workspace: createPersistentWorkspace(workspaceDir),
 			pendingOpenFilePaths: [
 				toPortableRelativePath(path.relative(workspaceDir, resolved)),
 			],
@@ -62,11 +68,7 @@ export async function resolveWorkspaceTarget(requestedPath, options = {}) {
 		await assertWorkspaceDirectorySizeWithinLimit(resolved, options);
 	}
 	return {
-		workspace: {
-			ephemeral: false,
-			path: resolved,
-			name: path.basename(resolved),
-		},
+		workspace: createPersistentWorkspace(resolved),
 		pendingOpenFilePaths: [],
 	};
 }
@@ -77,11 +79,7 @@ export async function resolveWorkspaceTargets(requestedPaths, options = {}) {
 	let standaloneFilesInsertIndex = null;
 
 	for (let requestedPath of requestedPaths) {
-		if (
-			requestedPath &&
-			typeof requestedPath === "object" &&
-			typeof requestedPath.ephemeral === "boolean"
-		) {
+		if (isWorkspaceSessionEntryLike(requestedPath)) {
 			const target = await resolveWorkspaceSessionEntry(requestedPath);
 			if (target) {
 				targets.push(target);
@@ -105,8 +103,7 @@ export async function resolveWorkspaceTargets(requestedPaths, options = {}) {
 		const workspace = createTransientDirectoryWorkspace(standaloneFiles);
 		targets.splice(standaloneFilesInsertIndex ?? targets.length, 0, {
 			workspace,
-			pendingOpenFilePaths:
-				pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+			pendingOpenFilePaths: workspace.includePaths,
 		});
 	}
 
@@ -140,6 +137,7 @@ export async function setWorkspaceFromTarget(target, window, options = {}) {
 			return state.workspace;
 		}
 		await options.beforeChange?.(nextWorkspace, window);
+		await disposeExternalLixState(state);
 		state.workspace = nextWorkspace;
 		state.pendingOpenFilePaths = target.pendingOpenFilePaths;
 		applyWindowChrome(window);
@@ -258,7 +256,8 @@ export async function profileWorkspaceFilesystem(workspace) {
 
 async function profileTransientWorkspaceSourceFiles(profile, workspace) {
 	const directories = new Set();
-	for (const sourceFilePath of workspace.sourceFilePaths ?? []) {
+	for (const includePath of workspace.includePaths ?? []) {
+		const sourceFilePath = path.join(workspace.path, includePath);
 		let stats;
 		try {
 			stats = await lstat(sourceFilePath);
@@ -283,6 +282,73 @@ async function profileTransientWorkspaceSourceFiles(profile, workspace) {
 	profile.directory_count = directories.size;
 }
 
+export async function getWorkspaceFsBackendOptions(window) {
+	const workspace = getWorkspace(window);
+	if (!workspace) {
+		throw new Error("No workspace is open. Open a folder before using lix.");
+	}
+	if (workspace.ephemeral === true) {
+		const lixDir = await ensureExternalLixDir(window);
+		const includePaths = Array.isArray(workspace.includePaths)
+			? workspace.includePaths
+			: [];
+		return {
+			path: workspace.path,
+			lixDir,
+			filter:
+				includePaths.length > 0
+					? { includePaths: [...includePaths] }
+					: undefined,
+		};
+	}
+	return { path: workspace.path };
+}
+
+export async function setWorkspaceTrackChanges(window, trackChanges) {
+	const state = getOrCreateWindowState(window);
+	return await enqueueWorkspaceChange(state, async () => {
+		const workspace = state.workspace;
+		if (!workspace) {
+			throw new Error("No workspace is open.");
+		}
+		if (trackChanges && workspace.ephemeral !== true) {
+			return workspace;
+		}
+		if (!trackChanges && workspace.ephemeral === true) {
+			return workspace;
+		}
+		if (trackChanges) {
+			await moveExternalLixBackIntoWorkspace(state);
+			state.workspace = createPersistentWorkspace(workspace.path);
+		} else {
+			await moveWorkspaceLixToExternalStorage(state);
+			state.workspace = createEphemeralWorkspace(workspace.path);
+		}
+		state.pendingOpenFilePaths = [];
+		applyWindowChrome(window);
+		return state.workspace;
+	});
+}
+
+export async function disposeWorkspaceWindowState(windowOrId) {
+	const windowId =
+		typeof windowOrId === "number" ? windowOrId : windowOrId?.id;
+	if (typeof windowId !== "number") {
+		return;
+	}
+	const state = windowStates.get(windowId);
+	windowStates.delete(windowId);
+	await disposeExternalLixState(state);
+}
+
+export async function disposeAllWorkspaceWindowStates() {
+	await Promise.all(
+		[...windowStates.keys()].map((windowId) =>
+			disposeWorkspaceWindowState(windowId),
+		),
+	);
+}
+
 function applyWindowChrome(window) {
 	const workspace = getWorkspace(window);
 	if (!workspace || !window || window.isDestroyed()) {
@@ -294,31 +360,27 @@ function applyWindowChrome(window) {
 }
 
 async function resolveWorkspaceSessionEntry(workspaceEntry) {
-	if (workspaceEntry.ephemeral === false) {
-		return await resolveWorkspaceTarget(workspaceEntry.path);
-	}
-	if (workspaceEntry.ephemeral === true) {
-		const sourceFilePaths = [];
-		for (const sourceFilePath of workspaceEntry.sourceFilePaths ?? []) {
-			try {
-				if ((await stat(sourceFilePath)).isFile()) {
-					sourceFilePaths.push(path.resolve(sourceFilePath));
-				}
-			} catch {
-				// Drop missing files from restored transient workspaces.
-			}
-		}
-		if (sourceFilePaths.length === 0) {
+	const workspacePath = path.resolve(workspaceEntry.path);
+	try {
+		if (!(await stat(workspacePath)).isDirectory()) {
 			return null;
 		}
-		const workspace = createTransientDirectoryWorkspace(sourceFilePaths);
+	} catch {
+		return null;
+	}
+	const pendingOpenFilePaths = Array.isArray(workspaceEntry.openFiles)
+		? workspaceEntry.openFiles
+		: [];
+	if (await hasLixWorkspaceMetadata(workspacePath)) {
 		return {
-			workspace,
-			pendingOpenFilePaths:
-				pendingOpenFilePathsForTransientDirectoryWorkspace(workspace),
+			workspace: createPersistentWorkspace(workspacePath),
+			pendingOpenFilePaths,
 		};
 	}
-	return null;
+	return {
+		workspace: createEphemeralWorkspace(workspacePath, pendingOpenFilePaths),
+		pendingOpenFilePaths,
+	};
 }
 
 async function assertWorkspaceDirectorySizeWithinLimit(
@@ -537,42 +599,184 @@ async function resolveStandaloneFile(resolvedPath) {
 	return workspaceDir ? null : resolvedPath;
 }
 
-function createTransientDirectoryWorkspace(sourceFilePaths) {
-	const normalizedSourceFilePaths = normalizeSourceFilePaths(sourceFilePaths);
-	const workspacePath = deepestCommonParent(
-		normalizedSourceFilePaths.map((sourceFilePath) =>
-			path.dirname(sourceFilePath),
-		),
-	);
+function createPersistentWorkspace(workspacePath) {
+	const resolvedPath = path.resolve(workspacePath);
 	return {
-		ephemeral: true,
-		path: workspacePath,
-		sourceFilePaths: normalizedSourceFilePaths,
-		name: path.basename(workspacePath) || workspacePath,
+		ephemeral: false,
+		path: resolvedPath,
+		name: path.basename(resolvedPath) || resolvedPath,
 	};
 }
 
-function pendingOpenFilePathsForTransientDirectoryWorkspace(workspace) {
-	return (workspace.sourceFilePaths ?? []).map((sourceFilePath) =>
-		toPortableRelativePath(path.relative(workspace.path, sourceFilePath)),
+function createEphemeralWorkspace(workspacePath, includePaths = []) {
+	const resolvedPath = path.resolve(workspacePath);
+	return {
+		ephemeral: true,
+		path: resolvedPath,
+		includePaths: normalizeIncludePaths(includePaths),
+		name: path.basename(resolvedPath) || resolvedPath,
+	};
+}
+
+function normalizeIncludePaths(includePaths) {
+	const seen = new Set();
+	const normalizedIncludePaths = [];
+	for (const includePath of includePaths ?? []) {
+		if (typeof includePath !== "string" || includePath.length === 0) {
+			continue;
+		}
+		const segments = includePath
+			.replaceAll("\\", "/")
+			.replace(/^\/+/, "")
+			.split("/")
+			.filter(Boolean);
+		if (
+			segments.length === 0 ||
+			segments[0] === LIX_DIRECTORY_NAME ||
+			segments.some((segment) => segment === "..")
+		) {
+			continue;
+		}
+		const normalizedIncludePath = segments.join("/");
+		if (
+			normalizedIncludePath.length === 0 ||
+			normalizedIncludePath.endsWith("/")
+		) {
+			continue;
+		}
+		if (seen.has(normalizedIncludePath)) {
+			continue;
+		}
+		seen.add(normalizedIncludePath);
+		normalizedIncludePaths.push(normalizedIncludePath);
+	}
+	return normalizedIncludePaths;
+}
+
+function isWorkspaceSessionEntryLike(value) {
+	return (
+		value &&
+		typeof value === "object" &&
+		typeof value.path === "string" &&
+		Array.isArray(value.openFiles)
 	);
 }
 
-function normalizeSourceFilePaths(sourceFilePaths) {
-	const seen = new Set();
-	const normalizedSourceFilePaths = [];
-	for (const sourceFilePath of sourceFilePaths) {
-		if (typeof sourceFilePath !== "string" || sourceFilePath.length === 0) {
-			continue;
-		}
-		const normalizedSourceFilePath = path.resolve(sourceFilePath);
-		if (seen.has(normalizedSourceFilePath)) {
-			continue;
-		}
-		seen.add(normalizedSourceFilePath);
-		normalizedSourceFilePaths.push(normalizedSourceFilePath);
+async function ensureExternalLixDir(window) {
+	const state = getOrCreateWindowState(window);
+	if (state.externalLixDir) {
+		return state.externalLixDir;
 	}
-	return normalizedSourceFilePaths;
+	await createExternalLixSlot(state);
+	return state.externalLixDir;
+}
+
+async function createExternalLixSlot(state) {
+	if (state.externalLixParent) {
+		await disposeExternalLixState(state);
+	}
+	const externalLixParent = await mkdtemp(
+		path.join(os.tmpdir(), "flashtype-lix-"),
+	);
+	state.externalLixParent = externalLixParent;
+	state.externalLixDir = path.join(externalLixParent, LIX_DIRECTORY_NAME);
+}
+
+async function moveWorkspaceLixToExternalStorage(state) {
+	const workspace = state.workspace;
+	if (!workspace) {
+		throw new Error("No workspace is open.");
+	}
+	await createExternalLixSlot(state);
+	const workspaceLixDir = path.join(workspace.path, LIX_DIRECTORY_NAME);
+	if (await pathExists(workspaceLixDir)) {
+		await movePath(workspaceLixDir, state.externalLixDir);
+	}
+}
+
+async function moveExternalLixBackIntoWorkspace(state) {
+	const workspace = state.workspace;
+	if (!workspace) {
+		throw new Error("No workspace is open.");
+	}
+	const workspaceLixDir = path.join(workspace.path, LIX_DIRECTORY_NAME);
+	const externalLixDir = state.externalLixDir;
+	if (externalLixDir && (await pathExists(externalLixDir))) {
+		if (await pathExists(workspaceLixDir)) {
+			throw new Error(
+				`Cannot turn Track Changes on because ${workspaceLixDir} already exists.`,
+			);
+		}
+		await movePath(externalLixDir, workspaceLixDir);
+	}
+	await disposeExternalLixState(state);
+}
+
+async function disposeExternalLixState(state) {
+	if (!state?.externalLixParent) {
+		return;
+	}
+	const externalLixParent = state.externalLixParent;
+	state.externalLixParent = null;
+	state.externalLixDir = null;
+	await rm(externalLixParent, { force: true, recursive: true }).catch(() => {});
+}
+
+async function movePath(source, target) {
+	try {
+		await rename(source, target);
+		return;
+	} catch (error) {
+		if (error?.code === "ENOENT") {
+			return;
+		}
+		if (error?.code !== "EXDEV") {
+			throw error;
+		}
+	}
+	await cp(source, target, { recursive: true });
+	await rm(source, { force: true, recursive: true });
+}
+
+async function pathExists(filePath) {
+	try {
+		await stat(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function createTransientDirectoryWorkspace(filePaths) {
+	const normalizedFilePaths = normalizeFilePaths(filePaths);
+	const workspacePath = deepestCommonParent(
+		normalizedFilePaths.map((filePath) =>
+			path.dirname(filePath),
+		),
+	);
+	return createEphemeralWorkspace(
+		workspacePath,
+		normalizedFilePaths.map((filePath) =>
+			toPortableRelativePath(path.relative(workspacePath, filePath)),
+		),
+	);
+}
+
+function normalizeFilePaths(filePaths) {
+	const seen = new Set();
+	const normalizedFilePaths = [];
+	for (const filePath of filePaths) {
+		if (typeof filePath !== "string" || filePath.length === 0) {
+			continue;
+		}
+		const normalizedFilePath = path.resolve(filePath);
+		if (seen.has(normalizedFilePath)) {
+			continue;
+		}
+		seen.add(normalizedFilePath);
+		normalizedFilePaths.push(normalizedFilePath);
+	}
+	return normalizedFilePaths;
 }
 
 function toPortableRelativePath(relativePath) {
@@ -618,7 +822,7 @@ function workspaceKey(workspace) {
 		return null;
 	}
 	if (workspace.ephemeral === true) {
-		return `ephemeral:${workspace.sourceFilePaths.join("\0")}`;
+		return `ephemeral:${workspace.path}:${(workspace.includePaths ?? []).join("\0")}`;
 	}
 	return `directory:${workspace.path}`;
 }
@@ -753,11 +957,10 @@ function getOrCreateWindowState(window) {
 	const state = {
 		workspace: null,
 		pendingOpenFilePaths: [],
+		externalLixParent: null,
+		externalLixDir: null,
 		workspaceChangeQueue: Promise.resolve(),
 	};
 	windowStates.set(window.id, state);
-	window.once("closed", () => {
-		windowStates.delete(window.id);
-	});
 	return state;
 }

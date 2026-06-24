@@ -122,13 +122,13 @@ export type DesktopWorkspace =
 			ephemeral: false;
 			path: string;
 			name: string;
-			sourceFilePaths?: never;
+			includePaths?: never;
 	  }
 	| {
 			ephemeral: true;
 			path: string;
 			name: string;
-			sourceFilePaths: string[];
+			includePaths: string[];
 	  };
 
 export type DesktopWorkspaceExtensionProfile = {
@@ -166,6 +166,7 @@ export type DesktopWorkspaceApi = {
 	 */
 	openInNewWindow(payload?: { path: string }): Promise<DesktopWorkspace | null>;
 	setActiveFilePath(payload: { filePath: string | null }): Promise<void>;
+	setOpenFilePaths(payload: { filePaths: string[] }): Promise<void>;
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	getPathForFile(file: File): string;

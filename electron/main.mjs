@@ -7,11 +7,14 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
 	applyWorkspaceWindowChrome,
+	disposeAllWorkspaceWindowStates,
+	disposeWorkspaceWindowState,
 	getWorkspace,
 	isWorkspaceTooLargeError,
 	registerWorkspaceIpc,
 	resolveWorkspaceTargets,
 	setWorkspaceFromTarget,
+	setWorkspaceTrackChanges,
 	showWorkspaceDialog,
 	showWorkspaceTooLargeWarning,
 } from "./workspace.mjs";
@@ -77,6 +80,7 @@ const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
 const closedWorkspaceEntryWindowIds = new Set();
 const activeFilePathsByWindowId = new Map();
+const openFilePathsByWindowId = new Map();
 const pendingWorkspaceOpenRequests = [];
 let readyForWorkspaceOpens = false;
 let initialWorkspaceOpenInProgress = false;
@@ -289,20 +293,11 @@ function resolveWorkspaceRequestSource(workspaceRequest, explicitSourceByPath) {
 	if (!workspaceRequest || typeof workspaceRequest !== "object") {
 		return "unknown";
 	}
-	if (workspaceRequest.ephemeral === false) {
+	if (typeof workspaceRequest.path === "string") {
 		return (
 			explicitSourceByPath.get(path.resolve(workspaceRequest.path)) ??
 			"app_restore"
 		);
-	}
-	if (workspaceRequest.ephemeral === true) {
-		for (const sourceFilePath of workspaceRequest.sourceFilePaths ?? []) {
-			const source = explicitSourceByPath.get(path.resolve(sourceFilePath));
-			if (source) {
-				return source;
-			}
-		}
-		return "app_restore";
 	}
 	return "unknown";
 }
@@ -404,8 +399,11 @@ function createWorkspaceChangeOptions() {
 	return {
 		beforeChange: (_nextWorkspace, window) =>
 			closeLixSession(window, { ignoreOpenError: true }),
-		afterChange: (workspace, window) =>
-			recordOpenWorkspacePath(window, workspace),
+		afterChange: (workspace, window, workspaceTarget) => {
+			recordOpenWorkspacePath(window, workspace, {
+				pendingOpenFilePaths: workspaceTarget?.pendingOpenFilePaths ?? [],
+			});
+		},
 	};
 }
 
@@ -438,6 +436,24 @@ function requestNewFileFromApplicationMenu() {
 		window.focus();
 	}
 	window.webContents.send("workspace:newFile");
+}
+
+async function toggleTrackChangesFromApplicationMenu(trackChanges) {
+	const window = getWorkspaceWindowForFileAction();
+	if (!window || window.isDestroyed() || !getWorkspace(window)) {
+		return null;
+	}
+	await closeLixSession(window, { ignoreOpenError: true });
+	const workspace = await setWorkspaceTrackChanges(window, trackChanges);
+	recordOpenWorkspacePath(window, workspace);
+	persistOpenWorkspacePathsSoon();
+	applyDockWindowChrome(window);
+	updateDockMenu();
+	installApplicationMenu();
+	if (!window.webContents.isDestroyed()) {
+		window.webContents.reload();
+	}
+	return workspace;
 }
 
 async function openWorkspacePathInNewWindow(
@@ -498,14 +514,20 @@ async function openFolderFromApplicationMenu() {
 	return getWorkspace(sourceWindow);
 }
 
-function recordOpenWorkspacePath(window, workspace) {
+function recordOpenWorkspacePath(window, workspace, options = {}) {
 	if (!window || window.isDestroyed() || !workspace) {
 		return;
 	}
-	const workspaceEntry = workspaceToSessionEntry(workspace);
+	const openFilePaths =
+		openFilePathsByWindowId.get(window.id) ??
+		options.openFilePaths ??
+		options.pendingOpenFilePaths ??
+		[];
+	const workspaceEntry = workspaceToSessionEntry(workspace, openFilePaths);
 	if (!workspaceEntry) {
 		return;
 	}
+	openFilePathsByWindowId.set(window.id, workspaceEntry.openFiles);
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 	recordRecentWorkspace(workspace);
@@ -522,6 +544,7 @@ function forgetOpenWorkspacePath(window, { persist = true } = {}) {
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.delete(window.id);
 	activeFilePathsByWindowId.delete(window.id);
+	openFilePathsByWindowId.delete(window.id);
 	if (persist && !isQuitting) {
 		persistOpenWorkspacePathsSoon();
 	}
@@ -543,6 +566,7 @@ function pruneClosedWorkspaceEntries() {
 	for (const windowId of closedWorkspaceEntryWindowIds) {
 		openWorkspaceEntriesByWindowId.delete(windowId);
 		activeFilePathsByWindowId.delete(windowId);
+		openFilePathsByWindowId.delete(windowId);
 	}
 	closedWorkspaceEntryWindowIds.clear();
 }
@@ -651,7 +675,9 @@ async function createMainWindow(workspaceRequest) {
 				: (await resolveWorkspaceTargets([taggedRequest.request]))[0];
 		await setWorkspaceFromTarget(workspaceTarget, window, {
 			afterChange: (workspace, changedWindow) =>
-				recordOpenWorkspacePath(changedWindow, workspace),
+				recordOpenWorkspacePath(changedWindow, workspace, {
+					pendingOpenFilePaths: workspaceTarget?.pendingOpenFilePaths ?? [],
+				}),
 		});
 	} else {
 		applyWorkspaceWindowChrome(window);
@@ -678,11 +704,17 @@ async function createMainWindow(workspaceRequest) {
 		forgetTelemetrySessionContextForWebContents(window.webContents);
 		workspaceWindows.delete(window);
 		forgetClosedWorkspaceIfOtherWindowsRemain(window);
-		void closeLixSession(window, { ignoreOpenError: true });
+		void closeLixSession(window, { ignoreOpenError: true }).finally(() => {
+			void disposeWorkspaceWindowState(window.id);
+		});
 	};
 
 	window.on("closed", cleanupWorkspaceWindow);
 	window.webContents.once("destroyed", cleanupWorkspaceWindow);
+	window.on("focus", () => {
+		installApplicationMenu();
+		updateDockMenu();
+	});
 
 	window.webContents.on(
 		"did-fail-load",
@@ -929,7 +961,9 @@ app.on("before-quit", () => {
 	) {
 		clearWorkspaceBootRecoveryGuard();
 	}
-	void disposeLixIpc();
+	void disposeLixIpc().finally(() => {
+		void disposeAllWorkspaceWindowStates();
+	});
 	disposeTerminalIpc();
 });
 
@@ -1007,6 +1041,27 @@ function registerAppIpc() {
 		}
 		applyDockWindowChrome(window);
 		updateDockMenu();
+	});
+	ipcMain.handle("workspace:setOpenFilePaths", (event, payload) => {
+		const window = BrowserWindow.fromWebContents(event.sender);
+		if (!window || window.isDestroyed()) {
+			return;
+		}
+		const workspace = getWorkspace(window);
+		if (!workspace) {
+			openFilePathsByWindowId.delete(window.id);
+			return;
+		}
+		const filePaths = Array.isArray(payload?.filePaths)
+			? payload.filePaths
+			: [];
+		const workspaceEntry = workspaceToSessionEntry(workspace, filePaths);
+		if (!workspaceEntry) {
+			return;
+		}
+		openFilePathsByWindowId.set(window.id, workspaceEntry.openFiles);
+		openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
+		persistOpenWorkspacePathsSoon();
 	});
 }
 
@@ -1657,6 +1712,8 @@ function installApplicationMenu() {
 
 function buildFileMenu() {
 	const workspaceActionsEnabled = canOpenWorkspaceWindows();
+	const trackingWindow = getWorkspaceWindowForFileAction();
+	const trackingWorkspace = trackingWindow ? getWorkspace(trackingWindow) : null;
 	return {
 		label: "File",
 		submenu: [
@@ -1685,6 +1742,18 @@ function buildFileMenu() {
 					requestNewFileFromApplicationMenu();
 				},
 			},
+			{
+				id: "track-changes",
+				label: "Track Changes",
+				type: "checkbox",
+				enabled: workspaceActionsEnabled && Boolean(trackingWorkspace),
+				checked: trackingWorkspace
+					? trackingWorkspace.ephemeral !== true
+					: false,
+				click: (menuItem) => {
+					void toggleTrackChangesFromApplicationMenu(menuItem.checked);
+				},
+			},
 			{ type: "separator" },
 			{ role: "close" },
 		],
@@ -1695,6 +1764,8 @@ function updateDockMenu() {
 	if (process.platform !== "darwin" || isHeadless || !app.dock) {
 		return;
 	}
+	const trackingWindow = getWorkspaceWindowForFileAction();
+	const trackingWorkspace = trackingWindow ? getWorkspace(trackingWindow) : null;
 
 	app.dock.setMenu(
 		Menu.buildFromTemplate([
@@ -1720,6 +1791,18 @@ function updateDockMenu() {
 					Boolean(getWorkspaceWindowForFileAction()),
 				click: () => {
 					requestNewFileFromApplicationMenu();
+				},
+			},
+			{
+				id: "dock-track-changes",
+				label: "Track Changes",
+				type: "checkbox",
+				enabled: canOpenWorkspaceWindows() && Boolean(trackingWorkspace),
+				checked: trackingWorkspace
+					? trackingWorkspace.ephemeral !== true
+					: false,
+				click: (menuItem) => {
+					void toggleTrackChangesFromApplicationMenu(menuItem.checked);
 				},
 			},
 		]),

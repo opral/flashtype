@@ -5,6 +5,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
+	expectInstalledPluginArchives,
 	launchDevElectronAppWithArgs,
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
@@ -284,6 +285,51 @@ test("opening a folder from first run reuses the empty window", async ({
 		await expectWindowCount(electronApp, 1);
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
 		await expect(page.getByText("marker.md")).toBeVisible();
+	} finally {
+		await closeElectronApp(electronApp);
+	}
+});
+
+test("Track Changes menu toggles workspace .lix storage", async ({
+	browserName: _browserName,
+}, testInfo) => {
+	const workspaceDir = testInfo.outputPath("track-changes-workspace");
+	const filePath = path.join(workspaceDir, "marker.md");
+
+	let electronApp: ElectronApplication | undefined;
+	try {
+		await writeMarkerFile(workspaceDir, "marker.md");
+
+		electronApp = await launchDevElectronAppWithArgs([workspaceDir]);
+		const page = await pageWithTitle(electronApp, path.basename(workspaceDir));
+		registerRendererConsoleLogging(page);
+
+		await expect(page.getByText("marker.md")).toBeVisible();
+		await expectInstalledPluginArchives(workspaceDir);
+		await expectTrackChangesMenuChecked(electronApp, true);
+
+		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
+		await expect(page).toHaveTitle(path.basename(workspaceDir));
+		await expect(page.getByText("marker.md")).toBeVisible();
+		await expectTrackChangesMenuChecked(electronApp, false);
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
+
+		await page.evaluate(async () => {
+			await window.flashtypeDesktop?.lix.execute({
+				sql: "UPDATE lix_file SET data = $1 WHERE path = $2",
+				params: [new TextEncoder().encode("# Updated while off\n"), "/marker.md"],
+			});
+		});
+		await expect
+			.poll(async () => await readFile(filePath, "utf8"))
+			.toBe("# Updated while off\n");
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
+
+		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
+		await expect(page).toHaveTitle(path.basename(workspaceDir));
+		await expect(page.getByText("marker.md")).toBeVisible();
+		await expectTrackChangesMenuChecked(electronApp, true);
+		await expectPathExists(path.join(workspaceDir, ".lix"));
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -710,13 +756,71 @@ async function expectTitleCount(
 		.toBe(count);
 }
 
+async function clickTrackChangesMenuItem(
+	electronApp: ElectronApplication,
+): Promise<void> {
+	await electronApp.evaluate(({ BrowserWindow, Menu }) => {
+		const item = Menu.getApplicationMenu()?.getMenuItemById("track-changes");
+		if (!item || !item.enabled || typeof item.click !== "function") {
+			throw new Error("Track Changes menu item is not available.");
+		}
+		item.click(
+			{ checked: !item.checked } as any,
+			BrowserWindow.getFocusedWindow(),
+			{} as any,
+		);
+	});
+}
+
+async function clickTrackChangesMenuItemAndWaitForReload(
+	electronApp: ElectronApplication,
+	page: Page,
+): Promise<void> {
+	await Promise.all([
+		page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+		clickTrackChangesMenuItem(electronApp),
+	]);
+}
+
+async function expectTrackChangesMenuChecked(
+	electronApp: ElectronApplication,
+	checked: boolean,
+): Promise<void> {
+	await expect
+		.poll(async () =>
+			electronApp.evaluate(({ Menu }) => {
+				return Menu.getApplicationMenu()?.getMenuItemById("track-changes")
+					?.checked;
+			}),
+		)
+		.toBe(checked);
+}
+
+async function expectPathExists(filePath: string): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				await stat(filePath);
+				return true;
+			} catch {
+				return false;
+			}
+		})
+		.toBe(true);
+}
+
 async function expectPathMissing(filePath: string): Promise<void> {
-	try {
-		await stat(filePath);
-		throw new Error(`${filePath} exists`);
-	} catch (error) {
-		expect(error).toMatchObject({ code: "ENOENT" });
-	}
+	await expect
+		.poll(async () => {
+			try {
+				await stat(filePath);
+				return false;
+			} catch (error) {
+				expect(error).toMatchObject({ code: "ENOENT" });
+				return true;
+			}
+		})
+		.toBe(true);
 }
 
 async function writeWorkspaceSession(
@@ -728,10 +832,10 @@ async function writeWorkspaceSession(
 		workspaceSessionPath(userDataDir),
 		`${JSON.stringify(
 			{
-				version: 3,
+				version: 4,
 				workspaces: workspacePaths.map((workspacePath) => ({
-					ephemeral: false,
 					path: workspacePath,
+					openFiles: [],
 				})),
 			},
 			null,
@@ -753,7 +857,6 @@ async function expectWorkspaceSessionPaths(
 				);
 				return Array.isArray(store.workspaces)
 					? store.workspaces
-							.filter((workspace: any) => workspace.ephemeral === false)
 							.map((workspace: any) => workspace.path)
 					: null;
 			} catch {
