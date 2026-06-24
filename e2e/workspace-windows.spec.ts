@@ -839,7 +839,7 @@ async function writeWorkspaceSession(
 				version: 4,
 				workspaces: workspacePaths.map((workspacePath) => ({
 					path: workspacePath,
-					openFiles: [],
+					openFilePaths: [],
 				})),
 			},
 			null,

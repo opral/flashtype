@@ -80,8 +80,8 @@ describe("workspace session store", () => {
 		);
 
 		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual([
-			{ path: workspacePath, openFiles: [] },
-			{ path: sourceRoot, openFiles: ["draft.md", "nested/note.md"] },
+			{ path: workspacePath, openFilePaths: [] },
+			{ path: sourceRoot, openFilePaths: ["draft.md", "nested/note.md"] },
 		]);
 	});
 
@@ -93,7 +93,7 @@ describe("workspace session store", () => {
 		await writeWorkspaceSessionEntries(userDataPath, [
 			{
 				path: workspacePath,
-				openFiles: [
+				openFilePaths: [
 					"/docs/readme.md",
 					"docs\\readme.md",
 					"notes/today.md",
@@ -102,7 +102,7 @@ describe("workspace session store", () => {
 					"",
 				],
 			},
-			{ path: workspacePath, openFiles: ["duplicate.md"] },
+			{ path: workspacePath, openFilePaths: ["duplicate.md"] },
 			{ path: secondWorkspacePath },
 		]);
 
@@ -111,9 +111,9 @@ describe("workspace session store", () => {
 			workspaces: [
 				{
 					path: workspacePath,
-					openFiles: ["docs/readme.md", "notes/today.md"],
+					openFilePaths: ["docs/readme.md", "notes/today.md"],
 				},
-				{ path: secondWorkspacePath, openFiles: [] },
+				{ path: secondWorkspacePath, openFilePaths: [] },
 			],
 		});
 	});
@@ -123,12 +123,12 @@ describe("workspace session store", () => {
 		const workspacePath = path.join(userDataPath, "workspace");
 
 		writeWorkspaceSessionEntriesSync(userDataPath, [
-			{ path: workspacePath, openFiles: ["draft.md"] },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 
 		await expect(readStore(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
-			workspaces: [{ path: workspacePath, openFiles: ["draft.md"] }],
+			workspaces: [{ path: workspacePath, openFilePaths: ["draft.md"] }],
 		});
 	});
 
@@ -136,7 +136,7 @@ describe("workspace session store", () => {
 		const userDataPath = createUserDataPath();
 		const workspacePath = path.join(userDataPath, "workspace");
 		writeWorkspaceSessionEntriesSync(userDataPath, [
-			{ path: workspacePath, openFiles: ["draft.md"] },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 
 		expect(recoverWorkspaceSessionAfterFailedBootSync(userDataPath)).toBe(
@@ -144,7 +144,7 @@ describe("workspace session store", () => {
 		);
 
 		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual([
-			{ path: workspacePath, openFiles: ["draft.md"] },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 	});
 
@@ -152,7 +152,7 @@ describe("workspace session store", () => {
 		const userDataPath = createUserDataPath();
 		const workspacePath = path.join(userDataPath, "workspace");
 		writeWorkspaceSessionEntriesSync(userDataPath, [
-			{ path: workspacePath, openFiles: ["draft.md"] },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 		markWorkspaceSessionBootInProgressSync(userDataPath);
 
@@ -163,7 +163,7 @@ describe("workspace session store", () => {
 		);
 		await expect(readRecoveryBackup(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
-			workspaces: [{ path: workspacePath, openFiles: ["draft.md"] }],
+			workspaces: [{ path: workspacePath, openFilePaths: ["draft.md"] }],
 		});
 
 		expect(recoverWorkspaceSessionAfterFailedBootSync(userDataPath)).toBe(true);
@@ -173,11 +173,11 @@ describe("workspace session store", () => {
 		);
 		await expect(readRecoveryBackup(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
-			workspaces: [{ path: workspacePath, openFiles: ["draft.md"] }],
+			workspaces: [{ path: workspacePath, openFilePaths: ["draft.md"] }],
 		});
 	});
 
-	test("filters stale workspace entries and stale open files", async () => {
+	test("filters stale workspace entries and stale open file paths", async () => {
 		const userDataPath = createUserDataPath();
 		const directoryWorkspacePath = path.join(userDataPath, "directory");
 		const existingFile = path.join(directoryWorkspacePath, "one.md");
@@ -189,12 +189,12 @@ describe("workspace session store", () => {
 			filterExistingWorkspaceEntries([
 				{
 					path: directoryWorkspacePath,
-					openFiles: ["one.md", "missing.md"],
+					openFilePaths: ["one.md", "missing.md"],
 				},
-				{ path: staleWorkspacePath, openFiles: ["missing.md"] },
+				{ path: staleWorkspacePath, openFilePaths: ["missing.md"] },
 			]),
 		).resolves.toEqual([
-			{ path: directoryWorkspacePath, openFiles: ["one.md"] },
+			{ path: directoryWorkspacePath, openFilePaths: ["one.md"] },
 		]);
 	});
 
@@ -206,15 +206,15 @@ describe("workspace session store", () => {
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
 				[
-					{ path: workspacePath, openFiles: ["a.md"] },
-					{ path: workspacePath, openFiles: ["duplicate.md"] },
-					{ path: secondWorkspacePath, openFiles: [] },
+					{ path: workspacePath, openFilePaths: ["a.md"] },
+					{ path: workspacePath, openFilePaths: ["duplicate.md"] },
+					{ path: secondWorkspacePath, openFilePaths: [] },
 				],
 				[],
 			),
 		).toEqual([
-			{ path: workspacePath, openFiles: ["a.md"] },
-			{ path: secondWorkspacePath, openFiles: [] },
+			{ path: workspacePath, openFilePaths: ["a.md"] },
+			{ path: secondWorkspacePath, openFilePaths: [] },
 		]);
 	});
 
@@ -232,13 +232,13 @@ describe("workspace session store", () => {
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
 				[
-					{ path: restoredWorkspacePath, openFiles: ["docs/README.md"] },
-					{ path: unrelatedWorkspacePath, openFiles: ["notes.md"] },
+					{ path: restoredWorkspacePath, openFilePaths: ["docs/README.md"] },
+					{ path: unrelatedWorkspacePath, openFilePaths: ["notes.md"] },
 				],
 				[explicitFilePath],
 			),
 		).toEqual([
-			{ path: unrelatedWorkspacePath, openFiles: ["notes.md"] },
+			{ path: unrelatedWorkspacePath, openFilePaths: ["notes.md"] },
 			explicitFilePath,
 		]);
 	});
@@ -249,7 +249,7 @@ describe("workspace session store", () => {
 
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
-				[{ path: workspacePath, openFiles: ["draft.md"] }],
+				[{ path: workspacePath, openFilePaths: ["draft.md"] }],
 				[workspacePath],
 			),
 		).toEqual([workspacePath]);
@@ -262,7 +262,7 @@ describe("workspace session store", () => {
 
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
-				[{ path: restoredWorkspacePath, openFiles: ["draft.md"] }],
+				[{ path: restoredWorkspacePath, openFilePaths: ["draft.md"] }],
 				[explicitWorkspacePath],
 			),
 		).toEqual([explicitWorkspacePath]);

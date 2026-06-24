@@ -499,7 +499,7 @@ function recordOpenWorkspacePath(window, workspace, options = {}) {
 	if (!workspaceEntry) {
 		return;
 	}
-	openFilePathsByWindowId.set(window.id, workspaceEntry.openFiles);
+	openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 	recordRecentWorkspace(workspace);
@@ -1031,7 +1031,7 @@ function registerAppIpc() {
 		if (!workspaceEntry) {
 			return;
 		}
-		openFilePathsByWindowId.set(window.id, workspaceEntry.openFiles);
+		openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
 		openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 		persistOpenWorkspacePathsSoon();
 	});

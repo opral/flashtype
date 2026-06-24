@@ -375,8 +375,8 @@ async function resolveWorkspaceSessionEntry(workspaceEntry) {
 	} catch {
 		return null;
 	}
-	const pendingOpenFilePaths = Array.isArray(workspaceEntry.openFiles)
-		? workspaceEntry.openFiles
+	const pendingOpenFilePaths = Array.isArray(workspaceEntry.openFilePaths)
+		? workspaceEntry.openFilePaths
 		: [];
 	if (await hasLixWorkspaceMetadata(workspacePath)) {
 		return {
@@ -614,7 +614,7 @@ function isWorkspaceSessionEntryLike(value) {
 		value &&
 		typeof value === "object" &&
 		typeof value.path === "string" &&
-		Array.isArray(value.openFiles)
+		Array.isArray(value.openFilePaths)
 	);
 }
 

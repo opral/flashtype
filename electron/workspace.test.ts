@@ -592,7 +592,7 @@ describe("workspace resolution", () => {
 
 		await expect(
 			resolveWorkspaceTargets([
-				{ path: directory, openFiles: ["docs/readme.md"] },
+				{ path: directory, openFilePaths: ["docs/readme.md"] },
 			]),
 		).resolves.toEqual([
 			{
@@ -619,7 +619,7 @@ describe("workspace resolution", () => {
 
 		await expect(
 			resolveWorkspaceTargets([
-				{ path: directory, openFiles: ["docs/readme.md"] },
+				{ path: directory, openFilePaths: ["docs/readme.md"] },
 			]),
 		).resolves.toEqual([
 			{

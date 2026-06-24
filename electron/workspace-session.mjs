@@ -103,17 +103,19 @@ export async function filterExistingWorkspaceEntries(workspaceEntries) {
 			continue;
 		}
 
-		const openFiles = [];
-		for (const openFile of workspaceEntry.openFiles) {
+		const openFilePaths = [];
+		for (const openFilePath of workspaceEntry.openFilePaths) {
 			try {
-				if ((await fs.stat(path.join(workspaceEntry.path, openFile))).isFile()) {
-					openFiles.push(openFile);
+				if (
+					(await fs.stat(path.join(workspaceEntry.path, openFilePath))).isFile()
+				) {
+					openFilePaths.push(openFilePath);
 				}
 			} catch {
 				// Drop stale open file paths while preserving the workspace path.
 			}
 		}
-		existingWorkspaceEntries.push({ path: workspaceEntry.path, openFiles });
+		existingWorkspaceEntries.push({ path: workspaceEntry.path, openFilePaths });
 	}
 	return existingWorkspaceEntries;
 }
@@ -124,7 +126,7 @@ export function workspaceToSessionEntry(workspace, openFilePaths = []) {
 	}
 	return {
 		path: path.resolve(workspace.path),
-		openFiles: normalizeWorkspaceRelativeOpenFiles(openFilePaths),
+		openFilePaths: normalizeWorkspaceRelativeOpenFilePaths(openFilePaths),
 	};
 }
 
@@ -180,22 +182,23 @@ export function normalizeWorkspacePaths(workspacePaths) {
 	return normalizedWorkspacePaths;
 }
 
-export function normalizeWorkspaceRelativeOpenFiles(openFiles) {
-	if (!Array.isArray(openFiles)) {
+export function normalizeWorkspaceRelativeOpenFilePaths(openFilePaths) {
+	if (!Array.isArray(openFilePaths)) {
 		return [];
 	}
 
 	const seen = new Set();
-	const normalizedOpenFiles = [];
-	for (const openFile of openFiles) {
-		const normalizedOpenFile = normalizeWorkspaceRelativeOpenFile(openFile);
-		if (!normalizedOpenFile || seen.has(normalizedOpenFile)) {
+	const normalizedOpenFilePaths = [];
+	for (const openFilePath of openFilePaths) {
+		const normalizedOpenFilePath =
+			normalizeWorkspaceRelativeOpenFilePath(openFilePath);
+		if (!normalizedOpenFilePath || seen.has(normalizedOpenFilePath)) {
 			continue;
 		}
-		seen.add(normalizedOpenFile);
-		normalizedOpenFiles.push(normalizedOpenFile);
+		seen.add(normalizedOpenFilePath);
+		normalizedOpenFilePaths.push(normalizedOpenFilePath);
 	}
-	return normalizedOpenFiles;
+	return normalizedOpenFilePaths;
 }
 
 export function mergeRestoredAndExplicitWorkspaceRequests(
@@ -239,7 +242,9 @@ function normalizeWorkspaceSessionEntry(workspaceEntry) {
 	}
 	return {
 		path: path.resolve(workspaceEntry.path),
-		openFiles: normalizeWorkspaceRelativeOpenFiles(workspaceEntry.openFiles),
+		openFilePaths: normalizeWorkspaceRelativeOpenFilePaths(
+			workspaceEntry.openFilePaths,
+		),
 	};
 }
 
@@ -251,7 +256,7 @@ function normalizeLegacyWorkspaceSessionEntry(workspaceEntry) {
 		if (typeof workspaceEntry.path !== "string" || workspaceEntry.path === "") {
 			return null;
 		}
-		return { path: path.resolve(workspaceEntry.path), openFiles: [] };
+		return { path: path.resolve(workspaceEntry.path), openFilePaths: [] };
 	}
 	if (workspaceEntry.ephemeral === true) {
 		const sourceFilePaths = normalizeWorkspacePaths(
@@ -265,7 +270,7 @@ function normalizeLegacyWorkspaceSessionEntry(workspaceEntry) {
 		);
 		return {
 			path: workspacePath,
-			openFiles: normalizeWorkspaceRelativeOpenFiles(
+			openFilePaths: normalizeWorkspaceRelativeOpenFilePaths(
 				sourceFilePaths.map((sourceFilePath) =>
 					toPortableRelativePath(path.relative(workspacePath, sourceFilePath)),
 				),
@@ -275,11 +280,11 @@ function normalizeLegacyWorkspaceSessionEntry(workspaceEntry) {
 	return null;
 }
 
-function normalizeWorkspaceRelativeOpenFile(openFile) {
-	if (typeof openFile !== "string" || openFile.length === 0) {
+function normalizeWorkspaceRelativeOpenFilePath(openFilePath) {
+	if (typeof openFilePath !== "string" || openFilePath.length === 0) {
 		return null;
 	}
-	const portablePath = openFile.replaceAll("\\", "/").replace(/^\/+/, "");
+	const portablePath = openFilePath.replaceAll("\\", "/").replace(/^\/+/, "");
 	const segments = portablePath.split("/").filter(Boolean);
 	if (segments.length === 0 || segments.some((segment) => segment === "..")) {
 		return null;
@@ -302,9 +307,9 @@ function mergeWorkspaceSessionEntries(workspaceEntries) {
 			entriesByPath.set(workspaceEntry.path, workspaceEntry);
 			continue;
 		}
-		existing.openFiles = normalizeWorkspaceRelativeOpenFiles([
-			...existing.openFiles,
-			...workspaceEntry.openFiles,
+		existing.openFilePaths = normalizeWorkspaceRelativeOpenFilePaths([
+			...existing.openFilePaths,
+			...workspaceEntry.openFilePaths,
 		]);
 	}
 	return [...entriesByPath.values()];
