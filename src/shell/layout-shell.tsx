@@ -500,7 +500,7 @@ function LayoutShellContent({
 			review: ExternalWriteReview,
 			outcome: "accepted" | "abandoned" | "rejected",
 		) => {
-			captureWorkspaceTelemetry("diff resolved", {
+			captureWorkspaceTelemetry("diff_resolved", {
 				diff_review_id: review.reviewId,
 				file_extension: fileExtensionProperty(review.path),
 				outcome,
@@ -996,7 +996,7 @@ function LayoutShellContent({
 				findFileHandlerExtension(extensionMap.values(), filePath) ?? undefined;
 			const kind = handler?.kind ?? FILE_EXTENSION_KIND;
 			if (trackDocumentOpenAttempt) {
-				captureWorkspaceTelemetry("document open attempted", {
+				captureWorkspaceTelemetry("document_open_attempted", {
 					...documentOpenAttemptTelemetryProperties({ filePath, handler }),
 					document_origin: documentOrigin,
 					source: "renderer",
@@ -1004,7 +1004,7 @@ function LayoutShellContent({
 				});
 			}
 			if (trackDocumentViewed && handler) {
-				captureWorkspaceTelemetry("document viewed", {
+				captureWorkspaceTelemetry("document_viewed", {
 					document_origin: documentOrigin,
 					file_extension: fileExtensionProperty(filePath),
 					source: "renderer",
@@ -1270,7 +1270,7 @@ function LayoutShellContent({
 					if (!diffOpenedReviewIdsRef.current.has(review.reviewId)) {
 						diffOpenedReviewIdsRef.current.add(review.reviewId);
 						openDiffReviewByFileIdRef.current.set(write.fileId, review);
-						captureWorkspaceTelemetry("diff opened", {
+						captureWorkspaceTelemetry("diff_opened", {
 							diff_review_id: review.reviewId,
 							file_extension: fileExtensionProperty(write.path),
 							source: "renderer",
@@ -1428,7 +1428,7 @@ function LayoutShellContent({
 					? state.flashtype.icon
 					: undefined;
 			if (agent) {
-				captureWorkspaceTelemetry("agent opened", {
+				captureWorkspaceTelemetry("agent_opened", {
 					agent,
 					panel: side,
 					source: "renderer",

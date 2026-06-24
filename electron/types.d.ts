@@ -191,15 +191,15 @@ export type DesktopAppApi = {
 };
 
 export type DesktopTelemetryEventName =
-	| "agent opened"
-	| "app opened"
-	| "diff opened"
-	| "diff resolved"
-	| "document open attempted"
-	| "document modified"
-	| "document viewed"
-	| "workspace extension profiled"
-	| "workspace profiled";
+	| "agent_opened"
+	| "app_opened"
+	| "diff_opened"
+	| "diff_resolved"
+	| "document_open_attempted"
+	| "document_modified"
+	| "document_viewed"
+	| "workspace_extension_profiled"
+	| "workspace_profiled";
 
 export type DesktopTelemetryApi = {
 	capture(payload: {

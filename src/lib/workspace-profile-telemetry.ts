@@ -37,7 +37,7 @@ export async function captureWorkspaceProfile(args: { lix: Lix }) {
 
 	const profile = await readWorkspaceProfile(args.lix);
 	try {
-		await captureTelemetryAsync("workspace profiled", {
+		await captureTelemetryAsync("workspace_profiled", {
 			workspace_id: workspaceId,
 			file_count: profile.fileCount,
 			directory_count: profile.directoryCount,
@@ -47,7 +47,7 @@ export async function captureWorkspaceProfile(args: { lix: Lix }) {
 			...workspaceTelemetryProperties(workspaceId),
 		});
 		for (const extensionProfile of profile.extensions ?? []) {
-			await captureTelemetryAsync("workspace extension profiled", {
+			await captureTelemetryAsync("workspace_extension_profiled", {
 				file_extension: extensionProfile.fileExtension,
 				file_count: extensionProfile.fileCount,
 				total_size_mb: extensionProfile.totalSizeMb,

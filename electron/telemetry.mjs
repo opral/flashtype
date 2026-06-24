@@ -21,7 +21,7 @@ let cachedDistinctId;
 const rendererPostHogSessionIdsByWebContentsId = new Map();
 
 export async function captureAppOpened({ entryPoint = "app_direct" } = {}) {
-	return await captureTelemetryEvent("app opened", {
+	return await captureTelemetryEvent("app_opened", {
 		entry_point: entryPoint,
 	});
 }

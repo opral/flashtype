@@ -87,8 +87,8 @@ function captureDocumentModifiedTelemetry({
 	void (async () => {
 		const workspaceId = await readWorkspaceId(lix);
 		captureTelemetryThrottled(
-			`document modified:${fileId}`,
-			"document modified",
+			`document_modified:${fileId}`,
+			"document_modified",
 			{
 				file_extension: fileExtensionProperty(filePath),
 				modified_by: "user",
@@ -97,6 +97,6 @@ function captureDocumentModifiedTelemetry({
 			},
 		);
 	})().catch((error: unknown) => {
-		console.warn("Failed to capture document modified telemetry", error);
+		console.warn("Failed to capture document_modified telemetry", error);
 	});
 }

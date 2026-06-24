@@ -26,7 +26,7 @@ describe("captureTelemetry", () => {
 			},
 		} as unknown as Window["flashtypeDesktop"];
 
-		captureTelemetry("document viewed", { file_extension: "md" });
+		captureTelemetry("document_viewed", { file_extension: "md" });
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		expect(warn).toHaveBeenCalledWith(
