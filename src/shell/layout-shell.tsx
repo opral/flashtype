@@ -1369,19 +1369,20 @@ function LayoutShellContent({
 				);
 			};
 			for (const side of targetPanels) {
-				const removedReviews = panelStatesRef.current[side].views.flatMap(
-					(entry) => {
-						if (!matchesFileView(entry)) return [];
-						const review = entry.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
-						return isExternalWriteReview(review) ? [review] : [];
-					},
-				);
+				const removedReviews = new Map<string, ExternalWriteReview>();
 				setPanelState(side, (current) => {
 					const views = current.views.filter(
 						(entry) => !matchesFileView(entry),
 					);
 					if (views.length === current.views.length) {
 						return current;
+					}
+					for (const entry of current.views) {
+						if (!matchesFileView(entry)) continue;
+						const review = entry.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
+						if (isExternalWriteReview(review)) {
+							removedReviews.set(review.reviewId, review);
+						}
 					}
 					const activeInstance = views.some(
 						(entry) => entry.instance === current.activeInstance,
@@ -1390,7 +1391,7 @@ function LayoutShellContent({
 						: (views[views.length - 1]?.instance ?? null);
 					return { views, activeInstance };
 				});
-				for (const review of removedReviews) {
+				for (const review of removedReviews.values()) {
 					resolveDiffReviewTelemetry(review, "abandoned");
 				}
 			}
