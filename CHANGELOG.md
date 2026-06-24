@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3 - 2026-06-24
+
+- snake_case events
+
 ## 0.5.2 - 2026-06-24
 
 - Raise the folder size warning limit to 500 MB.
