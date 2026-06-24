@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
+	MAX_WORKSPACE_SIZE_BYTES,
 	WORKSPACE_TOO_LARGE_ERROR_CODE,
 	resolveDirectLaunchWorkspaceTargets,
 	resolveWorkspace,
@@ -17,6 +18,10 @@ vi.mock("electron", () => ({
 }));
 
 describe("workspace resolution", () => {
+	test("defaults to a 500 MB workspace size limit", () => {
+		expect(MAX_WORKSPACE_SIZE_BYTES).toBe(500 * 1024 * 1024);
+	});
+
 	test("uses a directory path as the workspace", async () => {
 		const directory = path.join(
 			tmpdir(),

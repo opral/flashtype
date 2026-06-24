@@ -6,6 +6,225 @@
 
 /* App-specific globals can go here later. */
 
+@keyframes flashtype-zap-wipe-top {
+	0% {
+		transform: scaleY(0);
+	}
+	30% {
+		transform: scaleY(1);
+	}
+	97.5% {
+		transform: scaleY(1);
+	}
+	98% {
+		transform: scaleY(0);
+	}
+	100% {
+		transform: scaleY(0);
+	}
+}
+
+@keyframes flashtype-zap-wipe-middle {
+	0%,
+	24% {
+		transform: translateX(-62%);
+	}
+	52% {
+		transform: translateX(0);
+	}
+	97.5% {
+		transform: translateX(0);
+	}
+	98% {
+		transform: translateX(-62%);
+	}
+	100% {
+		transform: translateX(-62%);
+	}
+}
+
+@keyframes flashtype-zap-wipe-bottom {
+	0%,
+	44% {
+		transform: scaleY(0);
+	}
+	78% {
+		transform: scaleY(1);
+	}
+	97.5% {
+		transform: scaleY(1);
+	}
+	98% {
+		transform: scaleY(0);
+	}
+	100% {
+		transform: scaleY(0);
+	}
+}
+
+@keyframes flashtype-zap-fade {
+	0%,
+	82% {
+		opacity: 1;
+	}
+	96%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes flashtype-zap-base-fade {
+	0%,
+	74% {
+		opacity: 0;
+	}
+	84% {
+		opacity: 1;
+	}
+	96% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes flashtype-zap-outline-draw {
+	0% {
+		stroke-dashoffset: 100;
+	}
+	74% {
+		stroke-dashoffset: 0;
+	}
+	100% {
+		stroke-dashoffset: 0;
+	}
+}
+
+.flashtype-zap-build {
+	position: relative;
+	width: var(--flashtype-zap-width, 72px);
+	aspect-ratio: 3 / 4;
+	color: var(--flashtype-zap-color, currentColor);
+	--flashtype-zap-duration: 1.45s;
+	--flashtype-zap-draw-ease: cubic-bezier(0.45, 0, 0.18, 1);
+	clip-path: polygon(
+		56.7% 0%,
+		0% 57.5%,
+		43.3% 57.5%,
+		33.3% 100%,
+		100% 37.5%,
+		53.3% 37.5%
+	);
+	animation: flashtype-zap-fade var(--flashtype-zap-duration) ease-out infinite;
+	will-change: opacity;
+}
+
+.flashtype-zap-build--outline {
+	display: block;
+	overflow: visible;
+	clip-path: none;
+}
+
+.flashtype-zap-build__base,
+.flashtype-zap-build__segment,
+.flashtype-zap-build__wipe {
+	position: absolute;
+}
+
+.flashtype-zap-build__base,
+.flashtype-zap-build__segment {
+	inset: 0;
+}
+
+.flashtype-zap-build__base,
+.flashtype-zap-build__wipe {
+	background: currentColor;
+	backface-visibility: hidden;
+}
+
+.flashtype-zap-build__base {
+	opacity: 0;
+	animation: flashtype-zap-base-fade var(--flashtype-zap-duration) linear
+		infinite;
+}
+
+.flashtype-zap-build__segment--top {
+	clip-path: polygon(56.7% 0%, 0% 57.5%, 43.3% 57.5%, 53.3% 37.5%);
+}
+
+.flashtype-zap-build__segment--middle {
+	clip-path: polygon(43.3% 57.5%, 100% 37.5%, 53.3% 37.5%);
+}
+
+.flashtype-zap-build__segment--bottom {
+	clip-path: polygon(43.3% 57.5%, 33.3% 100%, 100% 37.5%);
+}
+
+.flashtype-zap-build__wipe--top {
+	top: 0;
+	right: 0;
+	left: 0;
+	height: 57.5%;
+	transform: scaleY(0);
+	transform-origin: 50% 0%;
+	animation: flashtype-zap-wipe-top var(--flashtype-zap-duration)
+		var(--flashtype-zap-draw-ease) infinite;
+	will-change: transform;
+}
+
+.flashtype-zap-build__wipe--middle {
+	inset: 0;
+	transform: translateX(-62%);
+	animation: flashtype-zap-wipe-middle var(--flashtype-zap-duration)
+		var(--flashtype-zap-draw-ease) infinite;
+	will-change: transform;
+}
+
+.flashtype-zap-build__wipe--bottom {
+	top: 37.5%;
+	right: 0;
+	left: 0;
+	height: 62.5%;
+	transform: scaleY(0);
+	transform-origin: 50% 0%;
+	animation: flashtype-zap-wipe-bottom var(--flashtype-zap-duration)
+		var(--flashtype-zap-draw-ease) infinite;
+	will-change: transform;
+}
+
+.flashtype-zap-build__outline-base {
+	opacity: 0;
+	animation: flashtype-zap-base-fade var(--flashtype-zap-duration) linear
+		infinite;
+}
+
+.flashtype-zap-build__outline-draw {
+	stroke-dasharray: 100;
+	stroke-dashoffset: 100;
+	animation: flashtype-zap-outline-draw var(--flashtype-zap-duration)
+		var(--flashtype-zap-draw-ease) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.flashtype-zap-build,
+	.flashtype-zap-build__base,
+	.flashtype-zap-build__wipe,
+	.flashtype-zap-build__outline-base,
+	.flashtype-zap-build__outline-draw {
+		animation: none;
+	}
+
+	.flashtype-zap-build__base,
+	.flashtype-zap-build__outline-base {
+		opacity: 1;
+	}
+
+	.flashtype-zap-build__outline-draw {
+		stroke-dashoffset: 0;
+	}
+}
+
 @theme inline {
 	--radius-sm: calc(var(--radius) - 4px);
 

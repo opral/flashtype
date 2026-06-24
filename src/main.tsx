@@ -16,6 +16,7 @@ import { KEY_VALUE_DEFINITIONS } from "./hooks/key-value/schema";
 import { ErrorFallback } from "./main.error";
 import { V2LayoutShell } from "./shell/layout-shell";
 import { FirstRunScreen } from "./shell/first-run-screen";
+import { WorkspaceLoadingScreen } from "./shell/workspace-loading-screen";
 import { openDesktopLix } from "./lib/lix-client";
 import { captureTelemetry } from "./lib/telemetry";
 import {
@@ -46,6 +47,9 @@ export const AppRoot = () => {
 	const [workspaceOpenWarning, setWorkspaceOpenWarning] = useState<
 		string | null
 	>(null);
+	const [openingWorkspaceName, setOpeningWorkspaceName] = useState<
+		string | null | undefined
+	>(undefined);
 	const [isUpdateReady, setIsUpdateReady] = useState(false);
 
 	useEffect(() => {
@@ -105,6 +109,10 @@ export const AppRoot = () => {
 			const desktop = window.flashtypeDesktop;
 			if (!desktop || openFolderInFlightRef.current) return;
 			openFolderInFlightRef.current = true;
+			if (!workspace) {
+				setOpeningWorkspaceName(path ? workspaceNameFromPath(path) : null);
+			}
+			let keepLoadingScreen = false;
 			try {
 				const openPayload = path ? { path } : undefined;
 				const opened = await (workspace
@@ -113,6 +121,8 @@ export const AppRoot = () => {
 				// null = picker canceled; keep the current state.
 				if (!opened || opened.path === workspace?.path) return;
 				if (workspace) return;
+				setOpeningWorkspaceName(opened.name);
+				keepLoadingScreen = true;
 				// When switching, close the running lix before the workspace state
 				// flips: close() lags its IPC, so an unawaited close could race the
 				// new open and kill the fresh instance.
@@ -122,6 +132,7 @@ export const AppRoot = () => {
 				}
 				setWorkspace(opened);
 			} catch (error) {
+				setOpeningWorkspaceName(undefined);
 				if (isWorkspaceTooLargeError(error)) {
 					setWorkspaceOpenWarning(formatWorkspaceOpenWarning(error));
 					return;
@@ -129,6 +140,9 @@ export const AppRoot = () => {
 				setError(error);
 			} finally {
 				openFolderInFlightRef.current = false;
+				if (!keepLoadingScreen) {
+					setOpeningWorkspaceName(undefined);
+				}
 			}
 		},
 		[lix, workspace],
@@ -207,6 +221,7 @@ export const AppRoot = () => {
 
 	useEffect(() => {
 		if (!workspace || !lix) return;
+		setOpeningWorkspaceName(undefined);
 		void captureWorkspaceProfile({
 			lix,
 			isEphemeralWorkspace: workspace.ephemeral,
@@ -275,6 +290,9 @@ export const AppRoot = () => {
 	if (error) return <ErrorFallback error={error} />;
 	if (workspace === undefined) return <BootPlaceholder />;
 	if (workspace === null) {
+		if (openingWorkspaceName !== undefined) {
+			return <WorkspaceLoadingScreen workspaceName={openingWorkspaceName} />;
+		}
 		return (
 			<>
 				<WorkspaceOpenWarningDialog
@@ -289,7 +307,13 @@ export const AppRoot = () => {
 			</>
 		);
 	}
-	if (!lix) return <BootPlaceholder />;
+	if (!lix) {
+		return (
+			<WorkspaceLoadingScreen
+				workspaceName={openingWorkspaceName ?? workspace.name}
+			/>
+		);
+	}
 
 	return (
 		<>
@@ -318,6 +342,15 @@ export const AppRoot = () => {
 
 function BootPlaceholder() {
 	return <div className="h-dvh w-full bg-[var(--color-bg-app)]" />;
+}
+
+function workspaceNameFromPath(path: string): string | null {
+	const name = path
+		.replace(/[\\/]+$/u, "")
+		.split(/[\\/]/u)
+		.pop()
+		?.trim();
+	return name || null;
 }
 
 function WorkspaceOpenWarningDialog({

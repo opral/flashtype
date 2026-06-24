@@ -41,7 +41,7 @@ Example:
 type: minor
 ---
 
-- Warn before opening folders larger than 100 MB.
+- Warn before opening folders larger than 500 MB.
 - Fix Markdown list editing with Tab, Shift+Tab, Backspace, and nested bullets.
 ```
 

@@ -5,7 +5,7 @@ import { lstat, opendir, readFile, stat } from "node:fs/promises";
 const LIX_DATABASE_FILE = path.join(".lix", ".internal", "db.sqlite");
 const LEGACY_LIX_DATABASE_FILE = path.join(".lix", "db.sqlite");
 const LIX_DATABASE_FILES = [LIX_DATABASE_FILE, LEGACY_LIX_DATABASE_FILE];
-export const MAX_WORKSPACE_SIZE_BYTES = 100 * 1024 * 1024;
+export const MAX_WORKSPACE_SIZE_BYTES = 500 * 1024 * 1024;
 export const WORKSPACE_TOO_LARGE_ERROR_CODE =
 	"ERR_FLASHTYPE_WORKSPACE_TOO_LARGE";
 

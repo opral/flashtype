@@ -25,6 +25,7 @@ import {
 	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
 	type ExternalWriteReview,
 } from "@/extension-runtime/external-write-review";
+import { AnimatedZap } from "@/components/animated-zap";
 
 type MarkdownViewProps = {
 	readonly fileId: string;
@@ -516,7 +517,7 @@ function MarkdownLoadingSpinner(): ReactNode {
 	return (
 		<div className="flex h-full items-center justify-center px-3 py-2 text-muted-foreground">
 			<div className="flex items-center gap-2 text-sm">
-				<Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+				<AnimatedZap size={13} tone="muted" className="shrink-0" />
 				<span>Loading editor…</span>
 			</div>
 		</div>
