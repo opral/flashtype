@@ -390,8 +390,12 @@ async function resolveWorkspaceSessionEntry(workspaceEntry) {
 			pendingOpenFilePaths: [],
 		};
 	}
+	const includePaths = uniqueWorkspaceRelativeFilePaths([
+		...pendingOpenFilePaths,
+		...(await collectWorkspaceIncludePaths(workspacePath)),
+	]);
 	return {
-		workspace: createEphemeralWorkspace(workspacePath, pendingOpenFilePaths),
+		workspace: createEphemeralWorkspace(workspacePath, includePaths),
 		pendingOpenFilePaths,
 	};
 }

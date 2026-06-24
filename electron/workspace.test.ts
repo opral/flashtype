@@ -616,6 +616,7 @@ describe("workspace resolution", () => {
 		const filePath = path.join(directory, "docs", "readme.md");
 		await mkdir(path.dirname(filePath), { recursive: true });
 		await writeFile(filePath, "# Hello\n");
+		await writeFile(path.join(directory, "overview.md"), "# Overview\n");
 
 		await expect(
 			resolveWorkspaceTargets([
@@ -626,10 +627,41 @@ describe("workspace resolution", () => {
 				workspace: {
 					ephemeral: true,
 					path: directory,
-					includePaths: ["docs/readme.md"],
+					includePaths: ["docs/readme.md", "overview.md"],
 					name: "workspace",
 				},
 				pendingOpenFilePaths: ["docs/readme.md"],
+			},
+		]);
+	});
+
+	test("restores saved non-Lix directory session entries with all supported files", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, "docs"), { recursive: true });
+		await writeFile(path.join(directory, "marker.md"), "# Marker\n");
+		await writeFile(
+			path.join(directory, "docs", "notes.markdown"),
+			"# Notes\n",
+		);
+		await writeFile(path.join(directory, "data.csv"), "name,value\nA,1\n");
+		await writeFile(path.join(directory, "ignored.txt"), "Ignored\n");
+
+		await expect(
+			resolveWorkspaceTargets([{ path: directory, openFilePaths: [] }]),
+		).resolves.toEqual([
+			{
+				workspace: {
+					ephemeral: true,
+					path: directory,
+					includePaths: ["data.csv", "docs/notes.markdown", "marker.md"],
+					name: "workspace",
+				},
+				pendingOpenFilePaths: [],
 			},
 		]);
 	});

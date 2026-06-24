@@ -442,7 +442,12 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 				params: ["/generated.md", new TextEncoder().encode("# Generated\n")],
 			});
 		});
-		await expectPathMissing(path.join(directory, "generated.md"));
+		await expect
+			.poll(
+				async () =>
+					await readFile(path.join(directory, "generated.md"), "utf8"),
+			)
+			.toBe("# Generated\n");
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
 		await filePage.evaluate(async () => {
