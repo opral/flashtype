@@ -69,6 +69,11 @@ export async function resolveWorkspaceTarget(requestedPath) {
 				pendingOpenFilePaths: [],
 			};
 		}
+		const includePaths = await collectMarkdownIncludePaths(resolved);
+		return {
+			workspace: createEphemeralWorkspace(resolved, includePaths),
+			pendingOpenFilePaths: [],
+		};
 	}
 	return {
 		workspace: createEphemeralWorkspace(resolved),
@@ -298,10 +303,7 @@ export async function getWorkspaceFsBackendOptions(window) {
 		return {
 			path: workspace.path,
 			lixDir,
-			filter:
-				includePaths.length > 0
-					? { includePaths: [...includePaths] }
-					: undefined,
+			filter: { includePaths: [...includePaths] },
 		};
 	}
 	return { path: workspace.path };
@@ -325,7 +327,10 @@ export async function setWorkspaceTrackChanges(window, trackChanges) {
 			state.workspace = createPersistentWorkspace(workspace.path);
 		} else {
 			await moveWorkspaceLixToExternalStorage(state);
-			state.workspace = createEphemeralWorkspace(workspace.path);
+			state.workspace = createEphemeralWorkspace(
+				workspace.path,
+				await collectMarkdownIncludePaths(workspace.path),
+			);
 		}
 		state.pendingOpenFilePaths = [];
 		applyWindowChrome(window);
@@ -486,6 +491,52 @@ function roundMegabytes(bytes) {
 
 function roundKilobytes(bytes) {
 	return Math.round((bytes / 1024) * 100) / 100;
+}
+
+async function collectMarkdownIncludePaths(directoryPath) {
+	const includePaths = [];
+	const pendingDirectories = [directoryPath];
+	while (pendingDirectories.length > 0) {
+		const currentDirectory = pendingDirectories.pop();
+		let directory;
+		try {
+			directory = await opendir(currentDirectory);
+		} catch {
+			continue;
+		}
+		for await (const entry of directory) {
+			if (entry.name === LIX_DIRECTORY_NAME && entry.isDirectory()) {
+				continue;
+			}
+			const entryPath = path.join(currentDirectory, entry.name);
+			let stats;
+			try {
+				stats = await lstat(entryPath);
+			} catch {
+				continue;
+			}
+			if (stats.isSymbolicLink()) {
+				continue;
+			}
+			if (stats.isDirectory()) {
+				if (entry.name !== LIX_DIRECTORY_NAME) {
+					pendingDirectories.push(entryPath);
+				}
+				continue;
+			}
+			if (stats.isFile() && isMarkdownFileName(entry.name)) {
+				includePaths.push(
+					toPortableRelativePath(path.relative(directoryPath, entryPath)),
+				);
+			}
+		}
+	}
+	includePaths.sort();
+	return includePaths;
+}
+
+function isMarkdownFileName(fileName) {
+	return fileName.endsWith(".md") || fileName.endsWith(".markdown");
 }
 
 async function resolveStandaloneFile(resolvedPath) {

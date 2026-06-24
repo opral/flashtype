@@ -47,7 +47,43 @@ describe("workspace resolution", () => {
 			workspace: {
 				ephemeral: true,
 				path: directory,
-				includePaths: [],
+				includePaths: ["large.md"],
+				name: "workspace",
+			},
+			pendingOpenFilePaths: [],
+		});
+	});
+
+	test("opens non-Lix directories with recursive exact markdown include paths", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, "docs", "nested"), { recursive: true });
+		await mkdir(path.join(directory, ".lix"), { recursive: true });
+		await writeFile(path.join(directory, "z.md"), "# Z\n");
+		await writeFile(path.join(directory, "alpha.markdown"), "# Alpha\n");
+		await writeFile(path.join(directory, "docs", "readme.md"), "# Docs\n");
+		await writeFile(
+			path.join(directory, "docs", "nested", "guide.markdown"),
+			"# Guide\n",
+		);
+		await writeFile(path.join(directory, "docs", "upper.MD"), "# Upper\n");
+		await writeFile(path.join(directory, "notes.txt"), "Notes\n");
+		await writeFile(path.join(directory, ".lix", "ignored.md"), "# Ignored\n");
+
+		await expect(resolveWorkspaceTarget(directory)).resolves.toEqual({
+			workspace: {
+				ephemeral: true,
+				path: directory,
+				includePaths: [
+					"alpha.markdown",
+					"docs/nested/guide.markdown",
+					"docs/readme.md",
+					"z.md",
+				],
 				name: "workspace",
 			},
 			pendingOpenFilePaths: [],
