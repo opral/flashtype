@@ -3,6 +3,7 @@ import { qb } from "@/lib/lix-kysely";
 import {
 	captureTelemetryAsync,
 	normalizeTelemetryFileExtension,
+	workspaceTelemetryProperties,
 } from "@/lib/telemetry";
 
 const INTERNAL_WORKSPACE_PATH_PREFIX = "/.lix/";
@@ -13,15 +14,18 @@ type WorkspaceProfile = {
 	directoryCount: number;
 	extensionCount: number;
 	extensionCounts: Record<string, number>;
-	largestExtension?: string;
-	largestExtensionFileCount?: number;
-	largestExtensionShare?: number;
+	totalSizeMb?: number;
+	extensions?: WorkspaceExtensionProfile[];
 };
 
-export async function captureWorkspaceProfile(args: {
-	lix: Lix;
-	isEphemeralWorkspace: boolean;
-}) {
+type WorkspaceExtensionProfile = {
+	fileExtension: string;
+	fileCount: number;
+	totalSizeMb: number;
+	medianFileSizeKb: number;
+};
+
+export async function captureWorkspaceProfile(args: { lix: Lix }) {
 	const workspaceId = await readWorkspaceId(args.lix);
 	if (!workspaceId) {
 		return;
@@ -31,8 +35,7 @@ export async function captureWorkspaceProfile(args: {
 		return;
 	}
 
-	const filePaths = await readWorkspaceFilePaths(args.lix);
-	const profile = buildWorkspaceProfile(filePaths);
+	const profile = await readWorkspaceProfile(args.lix);
 	try {
 		await captureTelemetryAsync("workspace profiled", {
 			workspace_id: workspaceId,
@@ -40,11 +43,18 @@ export async function captureWorkspaceProfile(args: {
 			directory_count: profile.directoryCount,
 			extension_count: profile.extensionCount,
 			extension_counts: profile.extensionCounts,
-			largest_extension: profile.largestExtension,
-			largest_extension_file_count: profile.largestExtensionFileCount,
-			largest_extension_share: profile.largestExtensionShare,
-			is_ephemeral_workspace: args.isEphemeralWorkspace,
+			total_size_mb: profile.totalSizeMb,
+			...workspaceTelemetryProperties(workspaceId),
 		});
+		for (const extensionProfile of profile.extensions ?? []) {
+			await captureTelemetryAsync("workspace extension profiled", {
+				file_extension: extensionProfile.fileExtension,
+				file_count: extensionProfile.fileCount,
+				total_size_mb: extensionProfile.totalSizeMb,
+				median_file_size_kb: extensionProfile.medianFileSizeKb,
+				...workspaceTelemetryProperties(workspaceId),
+			});
+		}
 	} finally {
 		markWorkspaceProfiled(workspaceId);
 	}
@@ -92,25 +102,15 @@ export function buildWorkspaceProfile(
 		(total, count) => total + count,
 		0,
 	);
-	const extensions = Array.from(extensionCounts.entries()).sort((left, right) => {
-		if (right[1] !== left[1]) {
-			return right[1] - left[1];
-		}
-		return left[0].localeCompare(right[0]);
-	});
-	const [largestExtension, largestExtensionFileCount] = extensions[0] ?? [];
-
 	return {
 		fileCount,
 		directoryCount: directories.size,
-		extensionCount: extensions.length,
-		extensionCounts: Object.fromEntries(extensions),
-		largestExtension,
-		largestExtensionFileCount,
-		largestExtensionShare:
-			fileCount > 0 && largestExtensionFileCount !== undefined
-				? largestExtensionFileCount / fileCount
-				: undefined,
+		extensionCount: extensionCounts.size,
+		extensionCounts: Object.fromEntries(
+			Array.from(extensionCounts.entries()).sort((left, right) =>
+				left[0].localeCompare(right[0]),
+			),
+		),
 	};
 }
 
@@ -123,6 +123,33 @@ export async function readWorkspaceId(lix: Lix) {
 	return typeof row?.value === "string" && row.value.length > 0
 		? row.value
 		: undefined;
+}
+
+async function readWorkspaceProfile(lix: Lix): Promise<WorkspaceProfile> {
+	const filesystemProfile = await window.flashtypeDesktop?.workspace
+		.profile()
+		.catch((error: unknown) => {
+			console.warn("Failed to profile workspace filesystem", error);
+			return null;
+		});
+	if (filesystemProfile) {
+		return {
+			fileCount: filesystemProfile.file_count,
+			directoryCount: filesystemProfile.directory_count,
+			extensionCount: filesystemProfile.extension_count,
+			extensionCounts: filesystemProfile.extension_counts,
+			totalSizeMb: filesystemProfile.total_size_mb,
+			extensions: filesystemProfile.extensions.map((extension) => ({
+				fileExtension: extension.file_extension,
+				fileCount: extension.file_count,
+				totalSizeMb: extension.total_size_mb,
+				medianFileSizeKb: extension.median_file_size_kb,
+			})),
+		};
+	}
+
+	const filePaths = await readWorkspaceFilePaths(lix);
+	return buildWorkspaceProfile(filePaths);
 }
 
 async function readWorkspaceFilePaths(lix: Lix) {
@@ -142,7 +169,7 @@ function extensionFromPath(path: string) {
 	const fileName = path.split("/").pop() ?? path;
 	const match = fileName.match(/\.([^./]+)$/);
 	if (!match?.[1]) {
-		return "none";
+		return "(none)";
 	}
 	return normalizeTelemetryFileExtension(match[1]);
 }

@@ -3,7 +3,6 @@ import { test, expect, vi } from "vitest";
 import { qb } from "@/lib/lix-kysely";
 import {
 	render,
-	renderHook,
 	screen,
 	waitFor,
 	act,
@@ -34,6 +33,20 @@ async function actAndFlush(callback: () => void | Promise<void>) {
 	});
 }
 
+function renderUseKeyValue(
+	key: string,
+	wrapper: React.ComponentType<{ children: React.ReactNode }>,
+	opts?: Parameters<typeof useKeyValue>[1],
+) {
+	const resultRef: { current: unknown } = { current: null };
+	function TestComponent() {
+		resultRef.current = useKeyValue(key, opts);
+		return null;
+	}
+	render(<TestComponent />, { wrapper });
+	return resultRef;
+}
+
 test("reads a global, untracked key (test fixture)", async () => {
 	const testKey = nextTestKey("flashtype_test_untracked");
 	const defs = withKeyDef(testKey, {
@@ -61,17 +74,14 @@ test("reads a global, untracked key (test fixture)", async () => {
 		.execute();
 
 	let hookResult: { current: unknown } = { current: null };
-
 	await act(async () => {
-		const { result } = renderHook(() => useKeyValue(testKey), {
-			wrapper,
-		});
-		hookResult = result as unknown as { current: unknown };
+		hookResult = renderUseKeyValue(testKey, wrapper);
 	});
 
-	await waitFor(() =>
-		expect(Array.isArray(hookResult.current as any)).toBe(true),
-	);
+	await waitFor(() => {
+		const [value] = hookResult.current as any;
+		expect(value).toBe("alpha");
+	});
 
 	const [value] = hookResult.current as any;
 	expect(value).toBe("alpha");
@@ -94,10 +104,7 @@ test("writes and reads a global, untracked key (test fixture)", async () => {
 
 	let resultRef: { current: unknown } = { current: null };
 	await act(async () => {
-		const { result } = renderHook(() => useKeyValue(testKey), {
-			wrapper,
-		});
-		resultRef = result as unknown as { current: unknown };
+		resultRef = renderUseKeyValue(testKey, wrapper);
 	});
 
 	// Wait for hook to initialize
@@ -107,6 +114,7 @@ test("writes and reads a global, untracked key (test fixture)", async () => {
 
 	await actAndFlush(async () => {
 		await (resultRef.current as any)?.[1]("beta");
+		await new Promise((resolve) => setTimeout(resolve, 0));
 	});
 
 	await waitFor(() => expect((resultRef.current as any)?.[0]).toBe("beta"));
@@ -134,8 +142,7 @@ test("writes and reads a tracked key on active branch", async () => {
 
 	let hookResult: { current: unknown } = { current: null };
 	await act(async () => {
-		const { result } = renderHook(() => useKeyValue(TEST_KEY), { wrapper });
-		hookResult = result as unknown as { current: unknown };
+		hookResult = renderUseKeyValue(TEST_KEY, wrapper);
 	});
 
 	// Wait for hook to initialize
@@ -147,6 +154,7 @@ test("writes and reads a tracked key on active branch", async () => {
 
 	await actAndFlush(async () => {
 		await (hookResult.current as any)[1]("hello");
+		await new Promise((resolve) => setTimeout(resolve, 0));
 	});
 
 	await waitFor(() => {
@@ -180,8 +188,7 @@ test("writes and reads an untracked key on active branch", async () => {
 
 	let hookResult: { current: unknown } = { current: null };
 	await act(async () => {
-		const { result } = renderHook(() => useKeyValue(testKey), { wrapper });
-		hookResult = result as unknown as { current: unknown };
+		hookResult = renderUseKeyValue(testKey, wrapper);
 	});
 
 	await waitFor(() =>
@@ -189,6 +196,8 @@ test("writes and reads an untracked key on active branch", async () => {
 	);
 	await actAndFlush(async () => {
 		await (hookResult.current as any)[1]("local");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await new Promise((resolve) => setTimeout(resolve, 0));
 	});
 	await waitFor(() => expect((hookResult.current as any)[0]).toBe("local"));
 
@@ -243,8 +252,7 @@ test("reads explicit global key when active branch has same key", async () => {
 
 	let hookResult: { current: unknown } = { current: null };
 	await act(async () => {
-		const { result } = renderHook(() => useKeyValue(testKey), { wrapper });
-		hookResult = result as unknown as { current: unknown };
+		hookResult = renderUseKeyValue(testKey, wrapper);
 	});
 
 	await waitFor(() =>
@@ -309,8 +317,7 @@ test("re-renders when key value changes externally", async () => {
 
 	let resultRef: { current: unknown } = { current: null };
 	await act(async () => {
-		const { result } = renderHook(() => useKeyValue(TEST_KEY), { wrapper });
-		resultRef = result as unknown as { current: unknown };
+		resultRef = renderUseKeyValue(TEST_KEY, wrapper);
 	});
 	// wait for initial suspense resolution
 	await waitFor(() =>
@@ -470,8 +477,7 @@ test("returns optimistic value immediately when setter is called", async () => {
 
 	let hookResult: { current: unknown } = { current: null };
 	await act(async () => {
-		const { result } = renderHook(() => useKeyValue(TEST_KEY), { wrapper });
-		hookResult = result as unknown as { current: unknown };
+		hookResult = renderUseKeyValue(TEST_KEY, wrapper);
 	});
 
 	await waitFor(() =>
@@ -483,7 +489,7 @@ test("returns optimistic value immediately when setter is called", async () => {
 		pending = (hookResult.current as any)[1]("value-1");
 	});
 
-	expect((hookResult.current as any)[0]).toBe("value-1");
+	await waitFor(() => expect((hookResult.current as any)[0]).toBe("value-1"));
 
 	await actAndFlush(async () => {
 		await pending;

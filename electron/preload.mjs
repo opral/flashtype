@@ -24,6 +24,7 @@ const workspace = {
 	get: () => ipcRenderer.invoke("workspace:get"),
 	consumePendingOpenFiles: () =>
 		ipcRenderer.invoke("workspace:consumePendingOpenFiles"),
+	profile: () => ipcRenderer.invoke("workspace:profile"),
 	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
 	openInNewWindow: (payload) =>
 		ipcRenderer.invoke("workspace:openInNewWindow", payload),

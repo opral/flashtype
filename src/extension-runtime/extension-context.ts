@@ -24,7 +24,15 @@ export function useExtensionContext({
 	const setterRef = useRef<
 		Record<string, (count: number | null | undefined) => void>
 	>({});
-	const contextRef = useRef<Record<string, ExtensionContext>>({});
+	const contextRef = useRef<
+		Record<
+			string,
+			{
+				readonly baseContext: ExtensionContext;
+				readonly context: ExtensionContext;
+			}
+		>
+	>({});
 
 	useEffect(() => {
 		setBadgeCounts((prev) => {
@@ -83,11 +91,12 @@ export function useExtensionContext({
 			const isActiveView = panel.activeInstance === instance.instance;
 			if (
 				cached &&
-				cached.setTabBadgeCount === setCount &&
-				cached.isPanelFocused === focusValue &&
-				cached.isActiveView === isActiveView
+				cached.baseContext === baseContext &&
+				cached.context.setTabBadgeCount === setCount &&
+				cached.context.isPanelFocused === focusValue &&
+				cached.context.isActiveView === isActiveView
 			) {
-				return cached;
+				return cached.context;
 			}
 
 			const next: ExtensionContext = {
@@ -96,7 +105,7 @@ export function useExtensionContext({
 				isActiveView,
 				isPanelFocused: focusValue,
 			};
-			contextRef.current[instance.instance] = next;
+			contextRef.current[instance.instance] = { baseContext, context: next };
 			return next;
 		},
 		[baseContext, getBadgeSetter, isFocused, panel.activeInstance],

@@ -10,7 +10,7 @@ import { createReactExtensionDefinition } from "../../extension-runtime/react-ex
 import { qb } from "@/lib/lix-kysely";
 import { FILES_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
-import { captureTelemetry, fileExtensionProperty } from "@/lib/telemetry";
+import type { Lix } from "@/lib/lix-types";
 
 type FilesViewProps = {
 	readonly context?: ExtensionContext;
@@ -34,6 +34,17 @@ export function FilesView({ context }: FilesViewProps) {
 	const entries = useQuery<FilesystemEntryRow>((lix) =>
 		selectFilesystemEntries(lix),
 	);
+	return <FilesViewContent context={context} lix={lix} entries={entries} />;
+}
+
+function FilesViewContent({
+	context,
+	lix,
+	entries,
+}: FilesViewProps & {
+	readonly lix: Lix;
+	readonly entries: FilesystemEntryRow[];
+}) {
 	const nodes = useMemo(() => buildFilesystemTree(entries ?? []), [entries]);
 	const creatingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
@@ -153,10 +164,6 @@ export function FilesView({ context }: FilesViewProps) {
 				if (!id) {
 					throw new Error(`created file id not found for path '${path}'`);
 				}
-				captureTelemetry("file created", {
-					file_extension: fileExtensionProperty(path),
-					source: "renderer",
-				});
 				setPendingPaths((prev) => [...prev, path]);
 				setSelectedPath(path);
 				setSelectedFileId(id);
@@ -167,6 +174,7 @@ export function FilesView({ context }: FilesViewProps) {
 					filePath: path,
 					state: { focusOnLoad: true },
 					focus: true,
+					documentOrigin: "new",
 				});
 			} catch (error) {
 				console.error("Failed to create file", error);
@@ -431,11 +439,6 @@ export function FilesView({ context }: FilesViewProps) {
 							data: new TextEncoder().encode(content),
 						})
 						.execute();
-					captureTelemetry("file created", {
-						file_extension: fileExtensionProperty(filePath),
-						source: "renderer",
-					});
-
 					// Open the first dropped file
 					if (file === markdownFiles[0]) {
 						const newFile = await qb(lix)
@@ -449,6 +452,7 @@ export function FilesView({ context }: FilesViewProps) {
 								panel: "central",
 								fileId: newFile.id as string,
 								filePath,
+								documentOrigin: "new",
 							});
 						}
 					}

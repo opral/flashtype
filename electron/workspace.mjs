@@ -226,6 +226,82 @@ export function consumePendingOpenFiles(window) {
 	return pendingOpenFilePaths ?? [];
 }
 
+export async function profileWorkspaceFilesystem(workspace) {
+	if (!workspace) {
+		return null;
+	}
+	const profile = createEmptyWorkspaceFilesystemProfile();
+	if (workspace.ephemeral === true) {
+		await profileTransientWorkspaceSourceFiles(profile, workspace);
+		return finalizeWorkspaceFilesystemProfile(profile);
+	}
+	const pendingDirectories = [workspace.path];
+	while (pendingDirectories.length > 0) {
+		const currentDirectory = pendingDirectories.pop();
+		let directory;
+		try {
+			directory = await opendir(currentDirectory);
+		} catch {
+			continue;
+		}
+		for await (const entry of directory) {
+			if (entry.isDirectory() && entry.name === ".lix") {
+				continue;
+			}
+			const entryPath = path.join(currentDirectory, entry.name);
+			let stats;
+			try {
+				stats = await lstat(entryPath);
+			} catch {
+				continue;
+			}
+			if (stats.isSymbolicLink()) {
+				continue;
+			}
+			if (stats.isDirectory()) {
+				profile.directory_count += 1;
+				pendingDirectories.push(entryPath);
+				continue;
+			}
+			if (stats.isFile()) {
+				addFileToWorkspaceFilesystemProfile(
+					profile,
+					extensionFromPath(entry.name),
+					stats.size,
+				);
+			}
+		}
+	}
+	return finalizeWorkspaceFilesystemProfile(profile);
+}
+
+async function profileTransientWorkspaceSourceFiles(profile, workspace) {
+	const directories = new Set();
+	for (const sourceFilePath of workspace.sourceFilePaths ?? []) {
+		let stats;
+		try {
+			stats = await lstat(sourceFilePath);
+		} catch {
+			continue;
+		}
+		if (!stats.isFile() || stats.isSymbolicLink()) {
+			continue;
+		}
+		const relativePath = toPortableRelativePath(
+			path.relative(workspace.path, sourceFilePath),
+		);
+		for (const directory of parentDirectories(relativePath)) {
+			directories.add(directory);
+		}
+		addFileToWorkspaceFilesystemProfile(
+			profile,
+			extensionFromPath(sourceFilePath),
+			stats.size,
+		);
+	}
+	profile.directory_count = directories.size;
+}
+
 function applyWindowChrome(window) {
 	const workspace = getWorkspace(window);
 	if (!workspace || !window || window.isDestroyed()) {
@@ -363,6 +439,109 @@ function formatBytes(bytes) {
 		return `${mib} MB`;
 	}
 	return `${mib.toFixed(1)} MB`;
+}
+
+function createEmptyWorkspaceFilesystemProfile() {
+	return {
+		file_count: 0,
+		directory_count: 0,
+		extension_count: 0,
+		extension_counts: {},
+		total_size_mb: 0,
+		extensionSizeBytes: new Map(),
+		extensionFileSizesBytes: new Map(),
+	};
+}
+
+function addFileToWorkspaceFilesystemProfile(profile, extension, sizeBytes) {
+	profile.file_count += 1;
+	profile.extension_counts[extension] =
+		(profile.extension_counts[extension] ?? 0) + 1;
+	profile.extensionSizeBytes.set(
+		extension,
+		(profile.extensionSizeBytes.get(extension) ?? 0) + sizeBytes,
+	);
+	const fileSizes = profile.extensionFileSizesBytes.get(extension) ?? [];
+	fileSizes.push(sizeBytes);
+	profile.extensionFileSizesBytes.set(extension, fileSizes);
+}
+
+function finalizeWorkspaceFilesystemProfile(profile) {
+	const sortedExtensions = Object.keys(profile.extension_counts).sort(
+		(left, right) => left.localeCompare(right),
+	);
+	const extensionCounts = {};
+	const extensions = [];
+	let totalSizeBytes = 0;
+	for (const extension of sortedExtensions) {
+		const fileCount = profile.extension_counts[extension] ?? 0;
+		const totalExtensionSizeBytes =
+			profile.extensionSizeBytes.get(extension) ?? 0;
+		totalSizeBytes += totalExtensionSizeBytes;
+		extensionCounts[extension] = fileCount;
+		extensions.push({
+			file_extension: extension,
+			file_count: fileCount,
+			total_size_mb: roundMegabytes(totalExtensionSizeBytes),
+			median_file_size_kb: roundKilobytes(
+				median(profile.extensionFileSizesBytes.get(extension) ?? []),
+			),
+		});
+	}
+	return {
+		file_count: profile.file_count,
+		directory_count: profile.directory_count,
+		extension_count: sortedExtensions.length,
+		extension_counts: extensionCounts,
+		total_size_mb: roundMegabytes(totalSizeBytes),
+		extensions,
+	};
+}
+
+function extensionFromPath(fileName) {
+	const match = fileName.match(/\.([^./]+)$/);
+	if (!match?.[1]) {
+		return "(none)";
+	}
+	return normalizeFileExtension(match[1]);
+}
+
+function normalizeFileExtension(extension) {
+	const normalized = extension.trim().toLowerCase();
+	return /^[a-z0-9][a-z0-9+_-]{0,15}$/.test(normalized) ? normalized : "other";
+}
+
+function parentDirectories(relativePath) {
+	const parts = relativePath.split("/").filter(Boolean);
+	const fileName = parts.pop();
+	if (!fileName) {
+		return [];
+	}
+	const directories = [];
+	for (let index = 1; index <= parts.length; index += 1) {
+		directories.push(parts.slice(0, index).join("/"));
+	}
+	return directories;
+}
+
+function median(values) {
+	if (values.length === 0) {
+		return 0;
+	}
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	if (sorted.length % 2 === 1) {
+		return sorted[middle] ?? 0;
+	}
+	return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+function roundMegabytes(bytes) {
+	return Math.round((bytes / 1024 / 1024) * 100) / 100;
+}
+
+function roundKilobytes(bytes) {
+	return Math.round((bytes / 1024) * 100) / 100;
 }
 
 async function resolveStandaloneFile(resolvedPath, options = {}) {
@@ -527,6 +706,12 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 
 	ipcMain.handle("workspace:consumePendingOpenFiles", (event) => {
 		return consumePendingOpenFiles(getWindowForEvent(event));
+	});
+
+	ipcMain.handle("workspace:profile", async (event) => {
+		return await profileWorkspaceFilesystem(
+			getWorkspace(getWindowForEvent(event)),
+		);
 	});
 
 	ipcMain.handle("workspace:open", async (event, payload) => {

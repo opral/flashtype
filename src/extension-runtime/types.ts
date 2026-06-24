@@ -123,6 +123,10 @@ export interface ExtensionContext {
 		readonly launchArgs?: ExtensionLaunchArgs;
 		readonly focus?: boolean;
 		readonly pending?: boolean;
+		readonly documentOrigin?: "existing" | "new";
+		readonly trackTelemetry?: boolean;
+		readonly trackDocumentOpenAttempt?: boolean;
+		readonly trackDocumentViewed?: boolean;
 	}) => void;
 	readonly acceptExternalWriteReview?: (args: {
 		readonly fileId: string;

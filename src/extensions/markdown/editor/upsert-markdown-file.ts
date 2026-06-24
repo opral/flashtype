@@ -4,7 +4,9 @@ import { markFlashtypeMarkdownWrite } from "../external-write-tracking";
 import {
 	captureTelemetryThrottled,
 	fileExtensionProperty,
+	workspaceTelemetryProperties,
 } from "@/lib/telemetry";
+import { readWorkspaceId } from "@/lib/workspace-profile-telemetry";
 
 export async function upsertMarkdownFile(args: {
 	lix: Lix;
@@ -35,19 +37,23 @@ export async function upsertMarkdownFile(args: {
 		markFlashtypeMarkdownWrite(fileId, markdown);
 		const resolvedPath = path ?? existing.path ?? `/${fileId}.md`;
 		const resolvedMetadata = metadata ?? existing.lixcol_metadata ?? null;
+		const updateValues: {
+			data: Uint8Array;
+			path?: string;
+			lixcol_metadata?: any;
+		} = { data };
+		if (path !== undefined && resolvedPath !== existing.path) {
+			updateValues.path = resolvedPath;
+		}
+		if (metadata !== undefined && metadata !== existing.lixcol_metadata) {
+			updateValues.lixcol_metadata = resolvedMetadata;
+		}
 		await db
 			.updateTable("lix_file")
-			.set({
-				path: resolvedPath,
-				data,
-				lixcol_metadata: resolvedMetadata,
-			})
+			.set(updateValues)
 			.where("id", "=", fileId)
 			.execute();
-		captureTelemetryThrottled(`file saved:${fileId}`, "file saved", {
-			file_extension: fileExtensionProperty(resolvedPath),
-			source: "renderer",
-		});
+		captureDocumentModifiedTelemetry({ lix, fileId, filePath: resolvedPath });
 	} else {
 		if (!createIfMissing) return;
 		markFlashtypeMarkdownWrite(fileId, markdown);
@@ -61,9 +67,36 @@ export async function upsertMarkdownFile(args: {
 				lixcol_metadata: metadata ?? null,
 			})
 			.execute();
-		captureTelemetryThrottled(`file saved:${fileId}`, "file saved", {
-			file_extension: fileExtensionProperty(path ?? `/${fileId}.md`),
-			source: "renderer",
+		captureDocumentModifiedTelemetry({
+			lix,
+			fileId,
+			filePath: path ?? `/${fileId}.md`,
 		});
 	}
+}
+
+function captureDocumentModifiedTelemetry({
+	lix,
+	fileId,
+	filePath,
+}: {
+	readonly lix: Lix;
+	readonly fileId: string;
+	readonly filePath: string;
+}) {
+	void (async () => {
+		const workspaceId = await readWorkspaceId(lix);
+		captureTelemetryThrottled(
+			`document modified:${fileId}`,
+			"document modified",
+			{
+				file_extension: fileExtensionProperty(filePath),
+				modified_by: "user",
+				source: "renderer",
+				...workspaceTelemetryProperties(workspaceId),
+			},
+		);
+	})().catch((error: unknown) => {
+		console.warn("Failed to capture document modified telemetry", error);
+	});
 }

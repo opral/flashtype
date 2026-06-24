@@ -8,7 +8,6 @@ import {
 	resetLixRepository,
 } from "./lix.mjs";
 import { createOwnedHandleStore } from "./ipc-owned-handles.mjs";
-import { captureTelemetryEvent } from "./telemetry.mjs";
 
 const observeHandles = createOwnedHandleStore("observe");
 const observeTraceMeta = createOwnedHandleStore("observe trace");
@@ -260,7 +259,6 @@ export function registerLixIpc(resolveWindowForEvent) {
 	ipcMain.handle("lix:createBranch", async (event, payload) => {
 		const lix = await ensureLixOpenForEvent(event);
 		const branch = await lix.createBranch(payload?.options ?? {});
-		void captureTelemetryEvent("branch created", { source: "main" });
 		return branch;
 	});
 
@@ -269,7 +267,6 @@ export function registerLixIpc(resolveWindowForEvent) {
 		const result = await lix.switchBranch({
 			branchId: String(payload?.branchId ?? ""),
 		});
-		void captureTelemetryEvent("branch switched", { source: "main" });
 		return result;
 	});
 

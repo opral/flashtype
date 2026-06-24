@@ -8,16 +8,20 @@ import {
 	consumeRecentFlashtypeFileWrite,
 	hashFileData,
 } from "@/extension-runtime/external-write-tracking";
+import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 
 type ReviewableFileSnapshot = {
 	id: string;
 	path: string;
 	hash: string;
+	data: Uint8Array;
 };
 
 export type ExternalFileWrite = {
 	fileId: string;
 	path: string;
+	beforeData: Uint8Array;
+	afterData: Uint8Array;
 };
 
 const REVIEWABLE_FILE_EXTENSION_CLAUSE =
@@ -38,7 +42,7 @@ export function ExternalWriteDetector({
 	onExternalWrites: (writes: ExternalFileWrite[]) => void;
 }) {
 	const lix = useLix();
-	const lastHashesRef = useRef(new Map<string, string>());
+	const lastSnapshotsRef = useRef(new Map<string, ReviewableFileSnapshot>());
 	const hasInitialSnapshotRef = useRef(false);
 
 	useEffect(() => {
@@ -50,23 +54,28 @@ export function ExternalWriteDetector({
 			const reviewableRows = rowObjects
 				.map(readReviewableFileSnapshot)
 				.filter((row): row is ReviewableFileSnapshot => row !== null);
-			const nextHashes = new Map<string, string>();
+			const nextSnapshots = new Map<string, ReviewableFileSnapshot>();
 			const externalWrites: ExternalFileWrite[] = [];
 
 			for (const row of reviewableRows) {
-				nextHashes.set(row.id, row.hash);
+				nextSnapshots.set(row.id, row);
 				if (!hasInitialSnapshotRef.current) continue;
 
-				const previousHash = lastHashesRef.current.get(row.id);
-				if (!previousHash || previousHash === row.hash) continue;
+				const previous = lastSnapshotsRef.current.get(row.id);
+				if (!previous || previous.hash === row.hash) continue;
 
 				if (consumeRecentFlashtypeFileWrite(row.id, row.hash)) {
 					continue;
 				}
-				externalWrites.push({ fileId: row.id, path: row.path });
+				externalWrites.push({
+					fileId: row.id,
+					path: row.path,
+					beforeData: previous.data,
+					afterData: row.data,
+				});
 			}
 
-			lastHashesRef.current = nextHashes;
+			lastSnapshotsRef.current = nextSnapshots;
 			if (!hasInitialSnapshotRef.current) {
 				hasInitialSnapshotRef.current = true;
 				return;
@@ -142,5 +151,10 @@ function readReviewableFileSnapshot(
 		id,
 		path,
 		hash: hashFileData(data),
+		data: cloneBytes(decodeFileDataToBytes(data)),
 	};
+}
+
+function cloneBytes(bytes: Uint8Array): Uint8Array {
+	return new Uint8Array(bytes);
 }

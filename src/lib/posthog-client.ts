@@ -4,38 +4,17 @@ let activated = false;
 let activationPromise: Promise<boolean> | null = null;
 let sessionContextSynced = false;
 
-export async function capturePostHogWorkspaceActive({
-	reason,
-	workspaceId,
-}: {
-	reason: string;
-	workspaceId?: string;
-}) {
-	if (!(await ensurePostHogTelemetry())) {
-		return;
-	}
-
-	syncPostHogSessionContext();
-	posthog.capture("workspace active", {
-		reason,
-		source: "renderer",
-		telemetry_client: "posthog-js",
-		throttle_minutes: 30,
-		workspace_id: workspaceId,
-	});
-}
-
-async function ensurePostHogTelemetry() {
+export async function activatePostHogRecording() {
 	if (activated) {
 		return true;
 	}
-	activationPromise ??= activatePostHogTelemetry().finally(() => {
+	activationPromise ??= activatePostHogRecordingUncached().finally(() => {
 		activationPromise = null;
 	});
 	return await activationPromise;
 }
 
-async function activatePostHogTelemetry() {
+async function activatePostHogRecordingUncached() {
 	const config = await window.flashtypeDesktop?.telemetry?.getClientConfig();
 	if (!config?.enabled) {
 		return false;
@@ -46,19 +25,15 @@ async function activatePostHogTelemetry() {
 		defaults: "2026-05-30",
 		autocapture: false,
 		capture_pageview: false,
-		disable_session_recording: true,
+		disable_session_recording: !config.sessionRecordingEnabled,
 		before_send: (event) => scrubPostHogEvent(event),
 		session_recording: {
 			maskAllInputs: true,
-			maskTextSelector: ".ph-mask",
+			maskTextSelector: "*",
+			blockSelector: ".ph-no-capture",
 		},
 	});
 	posthog.identify(config.distinctId);
-	posthog.startExceptionAutocapture({
-		capture_unhandled_errors: true,
-		capture_unhandled_rejections: true,
-		capture_console_errors: false,
-	});
 	syncPostHogSessionContext();
 
 	if (config.sessionRecordingEnabled) {

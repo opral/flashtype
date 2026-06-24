@@ -97,6 +97,8 @@ describe("FilesView", () => {
 		});
 		await waitForFilesViewReady(utils!);
 
+		await waitForFilesViewReady(utils!);
+
 		const initialRows = await qb(lix)
 			.selectFrom("lix_file")
 			.select(["id", "path"])
@@ -135,6 +137,7 @@ describe("FilesView", () => {
 				filePath: "/notes.md",
 				state: { focusOnLoad: true },
 				focus: true,
+				documentOrigin: "new",
 			});
 		});
 
@@ -214,6 +217,8 @@ describe("FilesView", () => {
 				</LixProvider>,
 			);
 		});
+		await waitForFilesViewReady(utils!);
+
 		await waitForFilesViewReady(utils!);
 
 		await act(async () => {
@@ -661,6 +666,8 @@ describe("FilesView", () => {
 		});
 		await waitForFilesViewReady(utils!);
 
+		await waitForFilesViewReady(utils!);
+
 		await act(async () => {
 			fireEvent.keyDown(document, { key: ".", metaKey: true });
 		});
@@ -708,6 +715,8 @@ describe("FilesView", () => {
 				</LixProvider>,
 			);
 		});
+		await waitForFilesViewReady(utils!);
+
 		await waitForFilesViewReady(utils!);
 
 		await act(async () => {
@@ -762,6 +771,8 @@ describe("FilesView", () => {
 		});
 		await waitForFilesViewReady(utils!);
 
+		await waitForFilesViewReady(utils!);
+
 		await act(async () => {
 			fireEvent.keyDown(document, { key: ".", ctrlKey: true });
 		});
@@ -793,6 +804,8 @@ describe("FilesView", () => {
 				</LixProvider>,
 			);
 		});
+		await waitForFilesViewReady(utils!);
+
 		await waitForFilesViewReady(utils!);
 
 		await act(async () => {
@@ -831,6 +844,8 @@ describe("FilesView", () => {
 				</LixProvider>,
 			);
 		});
+		await waitForFilesViewReady(utils!);
+
 		await waitForFilesViewReady(utils!);
 
 		await act(async () => {

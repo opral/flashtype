@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,6 +6,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
 	MAX_WORKSPACE_SIZE_BYTES,
 	WORKSPACE_TOO_LARGE_ERROR_CODE,
+	profileWorkspaceFilesystem,
 	resolveDirectLaunchWorkspaceTargets,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
@@ -430,5 +431,122 @@ describe("workspace resolution", () => {
 				pendingOpenFilePaths: ["alpha.txt", "beta.csv"],
 			},
 		]);
+	});
+
+	test("profiles workspace filesystem sizes by extension without reading Lix blobs", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, "docs"), { recursive: true });
+		await mkdir(path.join(directory, "data"), { recursive: true });
+		await mkdir(path.join(directory, ".lix", ".internal"), {
+			recursive: true,
+		});
+		await writeFile(path.join(directory, "README.md"), Buffer.alloc(1024));
+		await writeFile(
+			path.join(directory, "docs", "guide.MD"),
+			Buffer.alloc(3072),
+		);
+		await writeFile(
+			path.join(directory, "data", "book.xlsx"),
+			Buffer.alloc(2048),
+		);
+		await writeFile(path.join(directory, "LICENSE"), Buffer.alloc(512));
+		await writeFile(
+			path.join(directory, ".lix", ".internal", "db.sqlite"),
+			Buffer.alloc(10_000),
+		);
+
+		const profile = await profileWorkspaceFilesystem({
+			ephemeral: false,
+			path: directory,
+			name: "workspace",
+		});
+
+		expect(profile).toEqual({
+			file_count: 4,
+			directory_count: 2,
+			extension_count: 3,
+			extension_counts: {
+				"(none)": 1,
+				md: 2,
+				xlsx: 1,
+			},
+			total_size_mb: 0.01,
+			extensions: [
+				{
+					file_extension: "(none)",
+					file_count: 1,
+					total_size_mb: 0,
+					median_file_size_kb: 0.5,
+				},
+				{
+					file_extension: "md",
+					file_count: 2,
+					total_size_mb: 0,
+					median_file_size_kb: 2,
+				},
+				{
+					file_extension: "xlsx",
+					file_count: 1,
+					total_size_mb: 0,
+					median_file_size_kb: 2,
+				},
+			],
+		});
+	});
+
+	test("skips symbolic links while profiling workspace filesystem", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(directory, { recursive: true });
+		const realFilePath = path.join(directory, "real.md");
+		await writeFile(realFilePath, Buffer.alloc(1024));
+		await symlink(realFilePath, path.join(directory, "linked.md"));
+
+		await expect(
+			profileWorkspaceFilesystem({
+				ephemeral: false,
+				path: directory,
+				name: "workspace",
+			}),
+		).resolves.toMatchObject({
+			file_count: 1,
+			extension_counts: { md: 1 },
+		});
+	});
+
+	test("profiles transient workspaces from source files only", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const openedFilePath = path.join(directory, "notes", "today.md");
+		await mkdir(path.dirname(openedFilePath), { recursive: true });
+		await writeFile(openedFilePath, Buffer.alloc(1024));
+		await writeFile(path.join(directory, "ignored.xlsx"), Buffer.alloc(4096));
+
+		await expect(
+			profileWorkspaceFilesystem({
+				ephemeral: true,
+				path: directory,
+				name: "workspace",
+				sourceFilePaths: [openedFilePath],
+			}),
+		).resolves.toMatchObject({
+			file_count: 1,
+			directory_count: 1,
+			extension_counts: { md: 1 },
+			total_size_mb: 0,
+		});
 	});
 });
