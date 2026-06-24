@@ -4,8 +4,11 @@ import path from "node:path";
 
 const packagedAppPath = path.resolve("release/mac-arm64/Flashtype.app");
 const installedAppPath = "/Applications/Flashtype.app";
+const installedAppProcessPathPrefix = `${installedAppPath}/Contents/`;
 const lsregisterPath =
 	"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+const quitTimeoutMs = 15_000;
+const quitPollIntervalMs = 250;
 
 if (process.platform !== "darwin") {
 	console.error("install:mac can only run on macOS.");
@@ -23,6 +26,7 @@ try {
 		allowFailure: true,
 		stdio: "ignore",
 	});
+	await waitForInstalledAppProcessesToExit();
 
 	console.log(`Removing ${installedAppPath}...`);
 	await rm(installedAppPath, { recursive: true, force: true });
@@ -72,5 +76,76 @@ function run(command, args, { allowFailure = false, stdio = "inherit" } = {}) {
 			}
 			reject(new Error(`${command} exited with code ${code ?? 1}`));
 		});
+	});
+}
+
+async function waitForInstalledAppProcessesToExit() {
+	const deadline = Date.now() + quitTimeoutMs;
+	while (true) {
+		const processes = await findInstalledAppProcesses();
+		if (processes.length === 0) {
+			return;
+		}
+
+		if (Date.now() >= deadline) {
+			const processList = processes
+				.map(({ pid, command }) => `${pid} ${command}`)
+				.join("\n");
+			throw new Error(
+				`Timed out waiting for Flashtype to quit. Still running:\n${processList}`,
+			);
+		}
+
+		await sleep(Math.min(quitPollIntervalMs, deadline - Date.now()));
+	}
+}
+
+async function findInstalledAppProcesses() {
+	const output = await capture("/bin/ps", ["-ww", "-axo", "pid=,command="]);
+	const processes = [];
+	for (const line of output.split("\n")) {
+		const match = line.match(/^\s*(\d+)\s+(.*)$/);
+		if (!match) {
+			continue;
+		}
+		const [, pid, command] = match;
+		if (command.includes(installedAppProcessPathPrefix)) {
+			processes.push({ pid, command });
+		}
+	}
+	return processes;
+}
+
+function capture(command, args) {
+	return new Promise((resolve, reject) => {
+		const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+		let stdout = "";
+		let stderr = "";
+		child.stdout.setEncoding("utf8");
+		child.stderr.setEncoding("utf8");
+		child.stdout.on("data", (chunk) => {
+			stdout += chunk;
+		});
+		child.stderr.on("data", (chunk) => {
+			stderr += chunk;
+		});
+		child.on("error", reject);
+		child.on("exit", (code) => {
+			if (code === 0) {
+				resolve(stdout);
+				return;
+			}
+			reject(
+				new Error(
+					`${command} exited with code ${code ?? 1}${stderr ? `: ${stderr}` : ""}`,
+				),
+			);
+		});
+	});
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => {
+		setTimeout(resolve, ms);
 	});
 }
