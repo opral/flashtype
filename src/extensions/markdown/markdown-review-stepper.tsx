@@ -110,6 +110,11 @@ export type MarkdownReviewStepperProps = {
 	readonly onResolve: (
 		resolution: GranularReviewResolution,
 	) => Promise<GranularReviewResolutionOutcome>;
+	/**
+	 * Reports whether the buffer currently holds partial decisions (some
+	 * decided, some pending) so the shell can guard against discarding them.
+	 */
+	readonly onPendingDecisionsChange?: (hasPendingDecisions: boolean) => void;
 };
 
 export function MarkdownReviewStepper({
@@ -121,6 +126,7 @@ export function MarkdownReviewStepper({
 	isActive,
 	diffContainerRef,
 	onResolve,
+	onPendingDecisionsChange,
 }: MarkdownReviewStepperProps) {
 	const changes = plan.changes;
 	const [state, dispatch] = useReducer(
@@ -147,6 +153,15 @@ export function MarkdownReviewStepper({
 	const activeChange = changes[state.activeIndex];
 	const usedRemainingRef = useRef(false);
 	const pendingCount = state.decisions.filter((d) => d === "pending").length;
+	const decidedCount = total - pendingCount;
+	const hasPartialDecisions =
+		decidedCount > 0 && pendingCount > 0 && !state.applying;
+
+	// Surface partial-decision state to the shell's abandonment guard.
+	useEffect(() => {
+		onPendingDecisionsChange?.(hasPartialDecisions);
+		return () => onPendingDecisionsChange?.(false);
+	}, [hasPartialDecisions, onPendingDecisionsChange]);
 
 	const submit = useCallback(() => {
 		if (submittedRef.current) return;

@@ -228,6 +228,20 @@ export type DesktopTelemetryApi = {
 	}): Promise<{ status: "ignored" | "set" }>;
 };
 
+export type DesktopReviewGuardCloseQuery = {
+	queryId: number;
+};
+
+export type DesktopReviewGuardApi = {
+	onCloseQuery(
+		listener: (query: DesktopReviewGuardCloseQuery) => void,
+	): () => void;
+	respondClose(payload: {
+		queryId: number;
+		decision: "allow" | "cancel";
+	}): void;
+};
+
 declare global {
 	interface Window {
 		flashtypeDesktop?: {
@@ -237,6 +251,7 @@ declare global {
 			lix: DesktopLixApi;
 			terminal: DesktopTerminalApi;
 			workspace: DesktopWorkspaceApi;
+			reviewGuard: DesktopReviewGuardApi;
 		};
 	}
 }

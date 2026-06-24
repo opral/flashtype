@@ -59,6 +59,20 @@ const lix = {
 	close: () => ipcRenderer.invoke("lix:close"),
 };
 
+const reviewGuard = {
+	// The main process asks, on window close, whether a partially-decided review
+	// would be lost. The renderer answers with respondClose({ queryId, decision }).
+	onCloseQuery: (listener) => {
+		const wrapped = (_event, payload) => listener(payload);
+		ipcRenderer.on("review-guard:query-close", wrapped);
+		return () => {
+			ipcRenderer.off("review-guard:query-close", wrapped);
+		};
+	},
+	respondClose: (payload) =>
+		ipcRenderer.send("review-guard:close-decision", payload),
+};
+
 const terminal = {
 	create: (payload) => ipcRenderer.invoke("terminal:create", payload),
 	write: (payload) => ipcRenderer.invoke("terminal:write", payload),
@@ -87,4 +101,5 @@ contextBridge.exposeInMainWorld("flashtypeDesktop", {
 	lix,
 	terminal,
 	workspace,
+	reviewGuard,
 });

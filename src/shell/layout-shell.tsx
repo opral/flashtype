@@ -35,6 +35,11 @@ import {
 } from "./external-write-detector";
 import { getExternalWriteReview } from "./external-write-review-history";
 import { applyGranularReviewResolution } from "./external-write-review-resolution";
+import {
+	createReviewGuardRegistry,
+	type ReviewGuard,
+} from "./external-write-review-guard";
+import { ExternalWriteReviewAbandonDialog } from "./external-write-review-abandon-dialog";
 import { markFlashtypeFileWrite } from "@/extension-runtime/external-write-tracking";
 import {
 	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
@@ -1263,7 +1268,10 @@ function LayoutShellContent({
 				return "accepted_existing";
 			}
 			const result = await applyGranularReviewResolution(lix, resolution);
-			if (result.outcome === "applied" || result.outcome === "accepted_existing") {
+			if (
+				result.outcome === "applied" ||
+				result.outcome === "accepted_existing"
+			) {
 				if (review) {
 					resolveDiffReviewTelemetry(
 						review,
@@ -1285,6 +1293,85 @@ function LayoutShellContent({
 			resolveDiffReviewTelemetry,
 		],
 	);
+
+	const reviewGuardRegistryRef = useRef(createReviewGuardRegistry());
+	const [abandonDialog, setAbandonDialog] = useState<{
+		readonly guard: ReviewGuard;
+		readonly continuation: () => void;
+		readonly onCancel?: () => void;
+	} | null>(null);
+
+	const registerExternalWriteReviewGuard = useCallback(
+		(guard: ReviewGuard) => reviewGuardRegistryRef.current.register(guard),
+		[],
+	);
+
+	// Answer the Electron main process's window-close query: prompt only when a
+	// review holds partial decisions, otherwise allow the close immediately.
+	useEffect(() => {
+		const desktop = window.flashtypeDesktop;
+		if (!desktop?.reviewGuard) return;
+		return desktop.reviewGuard.onCloseQuery(({ queryId }) => {
+			const respond = (decision: "allow" | "cancel") =>
+				desktop.reviewGuard.respondClose({ queryId, decision });
+			const pending = reviewGuardRegistryRef.current.pendingGuard();
+			if (!pending) {
+				respond("allow");
+				return;
+			}
+			setAbandonDialog({
+				guard: pending,
+				continuation: () => respond("allow"),
+				onCancel: () => respond("cancel"),
+			});
+		});
+	}, []);
+
+	// Run a destructive view/window action, but first prompt to keep or discard a
+	// partially-decided review if the action would destroy it.
+	const runWithReviewAbandonGuard = useCallback(
+		(affectedReviewIds: readonly string[], continuation: () => void) => {
+			const pending = reviewGuardRegistryRef.current.pendingGuard();
+			if (pending && affectedReviewIds.includes(pending.reviewId)) {
+				setAbandonDialog({ guard: pending, continuation });
+				return;
+			}
+			continuation();
+		},
+		[],
+	);
+
+	const closeAbandonDialog = useCallback(() => {
+		abandonDialog?.onCancel?.();
+		setAbandonDialog(null);
+	}, [abandonDialog]);
+
+	const handleAbandonKeepProposed = useCallback(() => {
+		const dialog = abandonDialog;
+		setAbandonDialog(null);
+		if (!dialog) return;
+		// Keep the proposed (after) changes by accepting the whole review, then
+		// continue the original destructive action.
+		handleAcceptExternalWriteReview({
+			fileId: dialog.guard.fileId,
+			reviewId: dialog.guard.reviewId,
+		});
+		dialog.continuation();
+	}, [abandonDialog, handleAcceptExternalWriteReview]);
+
+	const handleAbandonRejectAll = useCallback(() => {
+		const dialog = abandonDialog;
+		setAbandonDialog(null);
+		if (!dialog) return;
+		void (async () => {
+			// Only continue the destructive action once the before-state write lands.
+			await handleRejectExternalWriteReview({
+				fileId: dialog.guard.fileId,
+				reviewId: dialog.guard.reviewId,
+			});
+			dialog.continuation();
+		})();
+	}, [abandonDialog, handleRejectExternalWriteReview]);
 
 	const handleExternalFileWrites = useCallback(
 		(writes: ExternalFileWrite[]) => {
@@ -1817,6 +1904,64 @@ function LayoutShellContent({
 		[leftPanel, centralPanel, rightPanel, setPanelState],
 	);
 
+	// User-initiated destructive actions route through the abandonment guard so a
+	// partially-decided review prompts before its overlay is destroyed. Internal
+	// programmatic closes (e.g. after a resolution) call the handlers directly and
+	// are intentionally not guarded.
+	const collectReviewIds = useCallback(
+		(predicate: (entry: ExtensionInstance) => boolean): string[] => {
+			const ids = new Set<string>();
+			for (const side of ["left", "central", "right"] as PanelSide[]) {
+				for (const entry of panelStatesRef.current[side].views) {
+					if (!predicate(entry)) continue;
+					const review = entry.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
+					if (isExternalWriteReview(review)) ids.add(review.reviewId);
+				}
+			}
+			return [...ids];
+		},
+		[],
+	);
+
+	const guardedCloseView = useCallback(
+		(args: {
+			panel?: PanelSide;
+			instance?: string;
+			kind?: ExtensionKind;
+			focus?: boolean;
+		}) => {
+			const affected = collectReviewIds((entry) => {
+				if (args.instance) return entry.instance === args.instance;
+				if (args.kind) return entry.kind === args.kind;
+				return false;
+			});
+			runWithReviewAbandonGuard(affected, () => handleCloseView(args));
+		},
+		[collectReviewIds, runWithReviewAbandonGuard, handleCloseView],
+	);
+
+	const guardedCloseFileViews = useCallback(
+		(args: { panel?: PanelSide; fileId: string }) => {
+			const affected = collectReviewIds(
+				(entry) => entry.state?.fileId === args.fileId,
+			);
+			runWithReviewAbandonGuard(affected, () => handleCloseFileViews(args));
+		},
+		[collectReviewIds, runWithReviewAbandonGuard, handleCloseFileViews],
+	);
+
+	const guardedMoveViewToPanel = useCallback(
+		(targetPanel: PanelSide, instance?: string) => {
+			const affected = collectReviewIds((entry) =>
+				instance ? entry.instance === instance : false,
+			);
+			runWithReviewAbandonGuard(affected, () =>
+				handleMoveViewToPanel(targetPanel, instance),
+			);
+		},
+		[collectReviewIds, runWithReviewAbandonGuard, handleMoveViewToPanel],
+	);
+
 	const handleResizePanel = useCallback(
 		(side: PanelSide, size: number) => {
 			const panel =
@@ -1845,28 +1990,30 @@ function LayoutShellContent({
 		() => ({
 			openExtension: handleOpenView,
 			openFile: handleOpenFile,
-			closeExtension: handleCloseView,
-			closeFileViews: handleCloseFileViews,
+			closeExtension: guardedCloseView,
+			closeFileViews: guardedCloseFileViews,
 			setTabBadgeCount: () => {},
-			moveExtensionToPanel: handleMoveViewToPanel,
+			moveExtensionToPanel: guardedMoveViewToPanel,
 			resizePanel: handleResizePanel,
 			focusPanel: focusPanel,
 			acceptExternalWriteReview: handleAcceptExternalWriteReview,
 			rejectExternalWriteReview: handleRejectExternalWriteReview,
 			resolveExternalWriteReviewGranular:
 				handleResolveExternalWriteReviewGranular,
+			registerExternalWriteReviewGuard,
 			lix,
 		}),
 		[
 			handleOpenView,
 			handleOpenFile,
-			handleCloseView,
-			handleCloseFileViews,
-			handleMoveViewToPanel,
+			guardedCloseView,
+			guardedCloseFileViews,
+			guardedMoveViewToPanel,
 			handleResizePanel,
 			handleAcceptExternalWriteReview,
 			handleRejectExternalWriteReview,
 			handleResolveExternalWriteReviewGranular,
+			registerExternalWriteReviewGuard,
 			focusPanel,
 			lix,
 		],
@@ -2032,6 +2179,12 @@ function LayoutShellContent({
 			onDragEnd={handleDragEnd}
 		>
 			<ExternalWriteDetector onExternalWrites={handleExternalFileWrites} />
+			<ExternalWriteReviewAbandonDialog
+				open={abandonDialog !== null}
+				onKeepReviewing={closeAbandonDialog}
+				onKeepProposed={handleAbandonKeepProposed}
+				onRejectAll={handleAbandonRejectAll}
+			/>
 			<div
 				className="relative flex flex-col bg-[var(--color-bg-app)] text-[var(--color-text-primary)]"
 				style={{

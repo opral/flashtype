@@ -4,6 +4,7 @@ import type {
 	GranularReviewResolution,
 	GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
+import type { ReviewGuard } from "@/shell/external-write-review-guard";
 
 /**
  * Union of registry keys for views available in the layout.
@@ -143,6 +144,9 @@ export interface ExtensionContext {
 	readonly resolveExternalWriteReviewGranular?: (
 		resolution: GranularReviewResolution,
 	) => Promise<GranularReviewResolutionOutcome>;
+	readonly registerExternalWriteReviewGuard?: (
+		guard: ReviewGuard,
+	) => () => void;
 	readonly closeExtension?: (args: {
 		readonly panel?: PanelSide;
 		readonly instance?: string;

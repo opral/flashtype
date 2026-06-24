@@ -53,6 +53,7 @@ import {
 	recentWorkspaceEntryFromWorkspace,
 	writeRecentWorkspaceEntriesSync,
 } from "./recent-workspaces.mjs";
+import { createWindowCloseGuard } from "./window-close-guard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -73,6 +74,11 @@ const CRASH_LIKE_PROCESS_GONE_REASONS = new Set([
 	"launch-failed",
 	"oom",
 ]);
+const windowCloseGuard = createWindowCloseGuard();
+const pendingCloseQueries = new Map();
+let nextCloseQueryId = 1;
+const REVIEW_GUARD_CLOSE_TIMEOUT_MS = 4000;
+
 const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
 const closedWorkspaceEntryWindowIds = new Set();
@@ -102,6 +108,61 @@ let registerTerminalIpc = () => {};
 let recentWorkspaceEntries = [];
 let workspaceBootRecoveryGuardArmed = false;
 let workspaceBootRecoveryInitialWindowsCreated = false;
+
+// Renderer-mediated window close guard. The main process prevents the first
+// close, asks the renderer whether a partially-decided Markdown review would be
+// lost, and only proceeds once the renderer reports the user chose to leave.
+ipcMain.on("review-guard:close-decision", (_event, payload) => {
+	const queryId = payload?.queryId;
+	const settle = pendingCloseQueries.get(queryId);
+	if (!settle) return;
+	settle(payload?.decision === "allow" ? "allow" : "cancel");
+});
+
+function guardWindowCloseEvent(window, event) {
+	const { allow, ask } = windowCloseGuard.handleCloseRequest(window.id);
+	if (allow) return;
+	event.preventDefault();
+	if (!ask) return;
+	void (async () => {
+		const decision = await queryRendererCloseDecision(window);
+		const { closeNow } = windowCloseGuard.resolveDecision(window.id, decision);
+		if (closeNow && !window.isDestroyed()) {
+			window.close();
+		}
+	})();
+}
+
+function queryRendererCloseDecision(window) {
+	return new Promise((resolve) => {
+		if (window.isDestroyed() || window.webContents.isDestroyed()) {
+			resolve("allow");
+			return;
+		}
+		const queryId = nextCloseQueryId;
+		nextCloseQueryId += 1;
+		let settled = false;
+		const settle = (decision) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			pendingCloseQueries.delete(queryId);
+			resolve(decision);
+		};
+		// Never trap the user: if the renderer cannot answer, allow the close.
+		const timer = setTimeout(
+			() => settle("allow"),
+			REVIEW_GUARD_CLOSE_TIMEOUT_MS,
+		);
+		pendingCloseQueries.set(queryId, settle);
+		window.webContents.once("destroyed", () => settle("allow"));
+		try {
+			window.webContents.send("review-guard:query-close", { queryId });
+		} catch {
+			settle("allow");
+		}
+	});
+}
 
 if (isHeadless && process.platform === "darwin") {
 	app.dock.hide();
@@ -552,12 +613,14 @@ async function createMainWindow(workspaceRequest) {
 		if (showFallback !== undefined) {
 			clearTimeout(showFallback);
 		}
+		windowCloseGuard.forget(window.id);
 		forgetTelemetrySessionContextForWebContents(window.webContents);
 		workspaceWindows.delete(window);
 		forgetClosedWorkspaceIfOtherWindowsRemain(window);
 		void closeLixSession(window, { ignoreOpenError: true });
 	};
 
+	window.on("close", (event) => guardWindowCloseEvent(window, event));
 	window.on("closed", cleanupWorkspaceWindow);
 	window.webContents.once("destroyed", cleanupWorkspaceWindow);
 

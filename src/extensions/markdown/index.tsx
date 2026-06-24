@@ -29,6 +29,7 @@ import {
 } from "@/extension-runtime/external-write-review";
 import { planGranularReview } from "./granular-review-plan";
 import { MarkdownReviewStepper } from "./markdown-review-stepper";
+import type { ReviewGuard } from "@/shell/external-write-review-guard";
 import { AnimatedZap } from "@/components/animated-zap";
 
 type MarkdownViewProps = {
@@ -50,6 +51,7 @@ type MarkdownViewProps = {
 	readonly onResolveReviewDiff?: (
 		resolution: GranularReviewResolution,
 	) => Promise<GranularReviewResolutionOutcome>;
+	readonly onRegisterReviewGuard?: (guard: ReviewGuard) => () => void;
 };
 
 type HistoricalMarkdownBlockRow = {
@@ -78,6 +80,7 @@ export function MarkdownView({
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
 	onResolveReviewDiff,
+	onRegisterReviewGuard,
 }: MarkdownViewProps) {
 	return (
 		<Suspense fallback={<MarkdownLoadingSpinner />}>
@@ -92,6 +95,7 @@ export function MarkdownView({
 				onAcceptReviewDiff={onAcceptReviewDiff}
 				onRejectReviewDiff={onRejectReviewDiff}
 				onResolveReviewDiff={onResolveReviewDiff}
+				onRegisterReviewGuard={onRegisterReviewGuard}
 			/>
 		</Suspense>
 	);
@@ -123,6 +127,7 @@ function MarkdownViewLoaded({
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
 	onResolveReviewDiff,
+	onRegisterReviewGuard,
 }: Omit<MarkdownViewProps, "fileId"> & {
 	readonly fileRow: MarkdownFileRow | undefined;
 }) {
@@ -181,6 +186,7 @@ function MarkdownViewLoaded({
 									onAccept={onAcceptReviewDiff}
 									onReject={onRejectReviewDiff}
 									onResolve={onResolveReviewDiff}
+									onRegisterReviewGuard={onRegisterReviewGuard}
 								/>
 							</Suspense>
 						) : null}
@@ -263,6 +269,7 @@ function MarkdownReviewOverlay({
 	onAccept,
 	onReject,
 	onResolve,
+	onRegisterReviewGuard,
 }: {
 	readonly fileId: string;
 	readonly reviewDiff: MarkdownReviewDiff;
@@ -283,10 +290,12 @@ function MarkdownReviewOverlay({
 	readonly onResolve?: (
 		resolution: GranularReviewResolution,
 	) => Promise<GranularReviewResolutionOutcome>;
+	readonly onRegisterReviewGuard?: (guard: ReviewGuard) => () => void;
 }) {
 	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
 	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
 	const diffContainerRef = useRef<HTMLDivElement | null>(null);
+	const pendingDecisionsRef = useRef(false);
 	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
 		const beforeSnapshotsAvailable =
 			beforeBlocks !== undefined &&
@@ -336,6 +345,23 @@ function MarkdownReviewOverlay({
 
 	const rejectReview = () => void onReject?.({ fileId, reviewId });
 
+	const isGranular = !snapshotsLoading && eligibility?.status === "safe";
+
+	// Register a partial-decision guard with the shell while the granular
+	// stepper is mounted so destructive actions can prompt before discarding.
+	useEffect(() => {
+		if (!isGranular || !onRegisterReviewGuard) return;
+		const unregister = onRegisterReviewGuard({
+			reviewId,
+			fileId,
+			hasPendingDecisions: () => pendingDecisionsRef.current,
+		});
+		return () => {
+			pendingDecisionsRef.current = false;
+			unregister();
+		};
+	}, [isGranular, onRegisterReviewGuard, reviewId, fileId]);
+
 	// Decide the surface only once preflight is known: never render classic
 	// controls and then morph them into the granular stepper.
 	const controls = snapshotsLoading ? null : eligibility?.status === "safe" ? (
@@ -348,6 +374,9 @@ function MarkdownReviewOverlay({
 			isActive={isActive}
 			diffContainerRef={diffContainerRef}
 			onResolve={onResolve!}
+			onPendingDecisionsChange={(hasPending) => {
+				pendingDecisionsRef.current = hasPending;
+			}}
 		/>
 	) : (
 		<ExternalWriteReviewControls
@@ -629,6 +658,7 @@ export const extension = createReactExtensionDefinition({
 				onAcceptReviewDiff={context.acceptExternalWriteReview}
 				onRejectReviewDiff={context.rejectExternalWriteReview}
 				onResolveReviewDiff={context.resolveExternalWriteReviewGranular}
+				onRegisterReviewGuard={context.registerExternalWriteReviewGuard}
 			/>
 		</LixProvider>
 	),
