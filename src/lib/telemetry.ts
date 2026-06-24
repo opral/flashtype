@@ -8,11 +8,7 @@ type TelemetryEventName = NonNullable<
 
 type TelemetryProperties = Record<
 	string,
-	| string
-	| number
-	| boolean
-	| Record<string, number>
-	| undefined
+	string | number | boolean | Record<string, string | number> | undefined
 >;
 
 const throttledTelemetryEvents = new Map<string, number>();
@@ -58,14 +54,21 @@ export function fileExtensionProperty(filePath: string | null | undefined) {
 	const fileName = filePath.split("/").pop() ?? filePath;
 	const match = fileName.match(/\.([^./]+)$/);
 	if (!match?.[1]) {
-		return "none";
+		return "(none)";
 	}
 	return normalizeTelemetryFileExtension(match[1]);
 }
 
 export function normalizeTelemetryFileExtension(extension: string) {
 	const normalized = extension.trim().toLowerCase();
-	return /^[a-z0-9][a-z0-9+_-]{0,15}$/.test(normalized)
-		? normalized
-		: "other";
+	return /^[a-z0-9][a-z0-9+_-]{0,15}$/.test(normalized) ? normalized : "other";
+}
+
+export function workspaceTelemetryProperties(workspaceId: string | undefined) {
+	return workspaceId
+		? {
+				workspace_id: workspaceId,
+				$groups: { workspace: workspaceId },
+			}
+		: {};
 }

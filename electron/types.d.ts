@@ -131,10 +131,27 @@ export type DesktopWorkspace =
 			sourceFilePaths: string[];
 	  };
 
+export type DesktopWorkspaceExtensionProfile = {
+	file_extension: string;
+	file_count: number;
+	total_size_mb: number;
+	median_file_size_kb: number;
+};
+
+export type DesktopWorkspaceProfile = {
+	file_count: number;
+	directory_count: number;
+	extension_count: number;
+	extension_counts: Record<string, number>;
+	total_size_mb: number;
+	extensions: DesktopWorkspaceExtensionProfile[];
+};
+
 export type DesktopWorkspaceApi = {
 	get(): Promise<DesktopWorkspace | null>;
 	/** Returns workspace-relative file paths queued for editor opening. */
 	consumePendingOpenFiles(): Promise<string[]>;
+	profile(): Promise<DesktopWorkspaceProfile | null>;
 	/**
 	 * Opens a workspace. With a path (e.g. from a dropped folder) it adopts it
 	 * directly; without one it shows the native directory picker. Resolves to
@@ -174,21 +191,22 @@ export type DesktopAppApi = {
 };
 
 export type DesktopTelemetryEventName =
-	| "agent launched"
-	| "external write reviewed"
-	| "file created"
-	| "file opened"
-	| "file saved"
-	| "update installed"
-	| "workspace profiled"
-	| "workspace opened";
+	| "agent opened"
+	| "app opened"
+	| "diff opened"
+	| "diff resolved"
+	| "document open attempted"
+	| "document modified"
+	| "document viewed"
+	| "workspace extension profiled"
+	| "workspace profiled";
 
 export type DesktopTelemetryApi = {
 	capture(payload: {
 		event: DesktopTelemetryEventName;
 		properties?: Record<
 			string,
-			string | number | boolean | Record<string, number> | undefined
+			string | number | boolean | Record<string, string | number> | undefined
 		>;
 	}): Promise<{
 		status: "disabled" | "error" | "ignored" | "queued" | "throttled";

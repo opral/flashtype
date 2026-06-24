@@ -310,16 +310,15 @@ test("replace entire document with paste (TipTap + Lix)", async () => {
 		},
 	});
 
+	const expectedMarkdown = ensureTrailingNewline(
+		"# New Document\n\nCompletely new content",
+	);
 	const mdAfter = await waitForMarkdown(
 		lix,
 		fileId,
-		(markdown) =>
-			markdown ===
-			ensureTrailingNewline("# New Document\n\nCompletely new content"),
+		(markdown) => markdown === expectedMarkdown,
 	);
-	expect(mdAfter).toBe(
-		ensureTrailingNewline("# New Document\n\nCompletely new content"),
-	);
+	expect(mdAfter).toBe(expectedMarkdown);
 	editor.destroy();
 });
 

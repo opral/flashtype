@@ -18,14 +18,11 @@ describe("buildWorkspaceProfile", () => {
 			directoryCount: 4,
 			extensionCount: 4,
 			extensionCounts: {
+				"(none)": 1,
 				csv: 2,
 				md: 2,
-				none: 1,
 				tsx: 1,
 			},
-			largestExtension: "csv",
-			largestExtensionFileCount: 2,
-			largestExtensionShare: 2 / 6,
 		});
 	});
 
@@ -40,9 +37,6 @@ describe("buildWorkspaceProfile", () => {
 			directoryCount: 0,
 			extensionCount: 0,
 			extensionCounts: {},
-			largestExtension: undefined,
-			largestExtensionFileCount: undefined,
-			largestExtensionShare: undefined,
 		});
 	});
 
@@ -54,8 +48,8 @@ describe("buildWorkspaceProfile", () => {
 		]);
 
 		expect(profile.extensionCounts).toEqual({
+			"(none)": 1,
 			gz: 1,
-			none: 1,
 			other: 1,
 		});
 	});

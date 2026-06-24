@@ -16,9 +16,8 @@ import {
 	showWorkspaceTooLargeWarning,
 } from "./workspace.mjs";
 import {
-	captureAppLaunched,
+	captureAppOpened,
 	captureTelemetryException,
-	captureTelemetryEvent,
 	forgetTelemetrySessionContextForWebContents,
 	getTelemetrySessionIdForWebContents,
 	registerTelemetryIpc,
@@ -214,9 +213,7 @@ async function openWorkspaceRequests(
 			throw error;
 		}
 		for (const workspaceTarget of workspaceTargets) {
-			await createMainWindow(
-				withWorkspaceOpenTelemetry(workspaceTarget, source),
-			);
+			await createMainWindow(workspaceTarget);
 			openedWindowCount += 1;
 		}
 	}
@@ -279,50 +276,7 @@ function normalizeWorkspaceOpenRequest(
 		return workspaceRequest;
 	}
 
-	if (
-		workspaceRequest &&
-		typeof workspaceRequest === "object" &&
-		typeof workspaceRequest.telemetryOpenSource === "string"
-	) {
-		return createWorkspaceOpenRequest(
-			workspaceRequest,
-			workspaceRequest.telemetryOpenSource,
-		);
-	}
-
 	return createWorkspaceOpenRequest(workspaceRequest, fallbackSource);
-}
-
-function withWorkspaceOpenTelemetry(workspaceTarget, requestedSource) {
-	if (!workspaceTarget) {
-		return workspaceTarget;
-	}
-	const pendingFileCount = Array.isArray(workspaceTarget.pendingOpenFilePaths)
-		? workspaceTarget.pendingOpenFilePaths.length
-		: 0;
-	return {
-		...workspaceTarget,
-		telemetryOpenSource: resolveTelemetryOpenSource(
-			requestedSource,
-			pendingFileCount,
-		),
-		telemetryPendingFileCount: pendingFileCount,
-	};
-}
-
-function resolveTelemetryOpenSource(requestedSource, pendingFileCount) {
-	switch (requestedSource) {
-		case "app_restore":
-		case "file_open_event":
-		case "open_in_new_window":
-		case "workspace_picker":
-			return requestedSource;
-		case "file_launch":
-		case "folder_launch":
-			return requestedSource;
-		default:
-			return pendingFileCount > 0 ? "file_launch" : "folder_launch";
-	}
 }
 
 function resolveWorkspaceRequestSource(workspaceRequest, explicitSourceByPath) {
@@ -353,9 +307,9 @@ function resolveWorkspaceRequestSource(workspaceRequest, explicitSourceByPath) {
 	return "unknown";
 }
 
-async function inferLaunchSourceFromPaths(workspacePaths) {
+async function inferEntryPointFromPaths(workspacePaths) {
 	if (workspacePaths.length === 0) {
-		return "app";
+		return "app_direct";
 	}
 
 	let hasFile = false;
@@ -374,13 +328,13 @@ async function inferLaunchSourceFromPaths(workspacePaths) {
 	}
 
 	if (hasFile && (hasFolder || hasUnknown)) {
-		return "mixed";
+		return "unknown";
 	}
 	if (hasFile) {
-		return "file";
+		return "finder_file";
 	}
 	if (hasFolder) {
-		return hasUnknown ? "mixed" : "folder";
+		return hasUnknown ? "unknown" : "open_folder";
 	}
 	return "unknown";
 }
@@ -422,7 +376,7 @@ function focusMostRecentWorkspaceWindow() {
 	return true;
 }
 
-function recordOpenWorkspacePath(window, workspace, telemetry = {}) {
+function recordOpenWorkspacePath(window, workspace) {
 	if (!window || window.isDestroyed() || !workspace) {
 		return;
 	}
@@ -430,29 +384,12 @@ function recordOpenWorkspacePath(window, workspace, telemetry = {}) {
 	if (!workspaceEntry) {
 		return;
 	}
-	const previousWorkspaceEntry = openWorkspaceEntriesByWindowId.get(window.id);
-	const workspaceAlreadyOpen = areWorkspaceSessionEntriesEqual(
-		previousWorkspaceEntry,
-		workspaceEntry,
-	);
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 	recordRecentWorkspace(workspace);
-	if (!workspaceAlreadyOpen) {
-		void captureTelemetryEvent("workspace opened", {
-			is_ephemeral_workspace: workspace.ephemeral === true,
-			open_source: telemetry.openSource ?? "unknown",
-			pending_file_count: telemetry.pendingFileCount ?? 0,
-			source: "main",
-		});
-	}
 	void syncMacOSDockRecentWorkspaceDocuments();
 	persistOpenWorkspacePathsSoon();
 	updateDockMenu();
-}
-
-function areWorkspaceSessionEntriesEqual(left, right) {
-	return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
 function forgetOpenWorkspacePath(window, { persist = true } = {}) {
@@ -589,16 +526,9 @@ async function createMainWindow(workspaceRequest) {
 			taggedRequest.request?.pendingOpenFilePaths
 				? taggedRequest.request
 				: (await resolveWorkspaceTargets([taggedRequest.request]))[0];
-		const telemetryWorkspaceTarget = withWorkspaceOpenTelemetry(
-			workspaceTarget,
-			taggedRequest.requestedSource,
-		);
-		await setWorkspaceFromTarget(telemetryWorkspaceTarget, window, {
+		await setWorkspaceFromTarget(workspaceTarget, window, {
 			afterChange: (workspace, changedWindow) =>
-				recordOpenWorkspacePath(changedWindow, workspace, {
-					openSource: telemetryWorkspaceTarget.telemetryOpenSource,
-					pendingFileCount: telemetryWorkspaceTarget.telemetryPendingFileCount,
-				}),
+				recordOpenWorkspacePath(changedWindow, workspace),
 		});
 	} else {
 		applyWorkspaceWindowChrome(window);
@@ -734,23 +664,13 @@ async function startWorkspaceLifecycle() {
 	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender), {
 		beforeChange: (_nextWorkspace, window) =>
 			closeLixSession(window, { ignoreOpenError: true }),
-		afterChange: (workspace, window, workspaceTarget) => {
-			const telemetryWorkspaceTarget = withWorkspaceOpenTelemetry(
-				workspaceTarget,
-				"workspace_picker",
-			);
-			recordOpenWorkspacePath(window, workspace, {
-				openSource: telemetryWorkspaceTarget.telemetryOpenSource,
-				pendingFileCount: telemetryWorkspaceTarget.telemetryPendingFileCount,
-			});
-		},
+		afterChange: (workspace, window) =>
+			recordOpenWorkspacePath(window, workspace),
 		openInNewWindow: async (requestedPath) => {
 			const workspaceTarget = (
 				await resolveDirectLaunchWorkspaceTargets([requestedPath])
 			)[0];
-			const window = await createMainWindow(
-				withWorkspaceOpenTelemetry(workspaceTarget, "open_in_new_window"),
-			);
+			const window = await createMainWindow(workspaceTarget);
 			return getWorkspace(window);
 		},
 	});
@@ -802,12 +722,16 @@ async function startWorkspaceLifecycle() {
 	const pendingWorkspaceOpenRequestsToProcess = [
 		...pendingWorkspaceOpenRequests,
 	];
-	const launchSource = pendingWorkspaceOpenRequestsToProcess.some(
+	const hasFileOpenEvent = pendingWorkspaceOpenRequestsToProcess.some(
 		(request) => request.requestedSource === "file_open_event",
-	)
-		? "file"
-		: await inferLaunchSourceFromPaths(initialLaunchWorkspacePaths);
-	void captureAppLaunched({ launchSource });
+	);
+	const entryPoint = hasFileOpenEvent
+		? "finder_file"
+		: initialLaunchWorkspacePaths.length === 0 &&
+			  restorableSavedWorkspaceEntries.length > 0
+			? "restored_session"
+			: await inferEntryPointFromPaths(initialLaunchWorkspacePaths);
+	void captureAppOpened({ entryPoint });
 	const explicitWorkspaceSourceByPath = new Map();
 	for (const workspacePath of initialLaunchWorkspacePaths) {
 		explicitWorkspaceSourceByPath.set(

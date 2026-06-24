@@ -7,7 +7,7 @@ import { PostHog } from "posthog-node";
 const TELEMETRY_STORE_FILE = "telemetry.json";
 const ENV_VARIABLES_FILE = "build/env-variables.mjs";
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
-const SESSION_REPLAY_SAMPLE_RATE = 0.1;
+const DEV_TELEMETRY_DISTINCT_ID = "dev:mode";
 const SHUTDOWN_TIMEOUT_MS = 2_000;
 
 let envVariablesPromise;
@@ -20,13 +20,9 @@ let latestRendererPostHogSessionId;
 let cachedDistinctId;
 const rendererPostHogSessionIdsByWebContentsId = new Map();
 
-export async function captureAppLaunched({
-	trigger = "launch",
-	launchSource = "app",
-} = {}) {
-	return await captureTelemetryEvent("app launched", {
-		trigger,
-		launch_source: launchSource,
+export async function captureAppOpened({ entryPoint = "app_direct" } = {}) {
+	return await captureTelemetryEvent("app opened", {
+		entry_point: entryPoint,
 	});
 }
 
@@ -116,10 +112,7 @@ export function registerTelemetryIpc() {
 			token: env.PUBLIC_POSTHOG_TOKEN,
 			host: env.PUBLIC_POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST,
 			distinctId,
-			sessionRecordingEnabled: isDistinctIdSampled(
-				distinctId,
-				SESSION_REPLAY_SAMPLE_RATE,
-			),
+			sessionRecordingEnabled: true,
 		};
 	});
 
@@ -129,7 +122,6 @@ export function registerTelemetryIpc() {
 			payload?.sessionId,
 		);
 	});
-
 }
 
 export async function shutdownTelemetry(timeoutMs = SHUTDOWN_TIMEOUT_MS) {
@@ -182,11 +174,29 @@ async function getDistinctId() {
 	if (cachedDistinctId) {
 		return cachedDistinctId;
 	}
+	const developmentDistinctId = getDevelopmentTelemetryDistinctId({
+		isPackaged: app.isPackaged === true,
+		enableDevTelemetry: process.env.FLASHTYPE_ENABLE_DEV_TELEMETRY,
+	});
+	if (developmentDistinctId) {
+		cachedDistinctId = developmentDistinctId;
+		return cachedDistinctId;
+	}
 	distinctIdPromise ??= readOrCreateDistinctId().finally(() => {
 		distinctIdPromise = undefined;
 	});
 	cachedDistinctId = await distinctIdPromise;
 	return cachedDistinctId;
+}
+
+export function getDevelopmentTelemetryDistinctId({
+	isPackaged,
+	enableDevTelemetry,
+}) {
+	if (isPackaged === true) {
+		return undefined;
+	}
+	return enableDevTelemetry === "1" ? DEV_TELEMETRY_DISTINCT_ID : undefined;
 }
 
 async function readEnvVariables() {
@@ -295,6 +305,8 @@ function commonEventProperties() {
 		platform: process.platform,
 		platform_arch: process.arch,
 		...systemLocaleProperties(),
+		schema_version: 2,
+		telemetry_environment: app?.isPackaged === true ? "production" : "dev",
 		telemetry_client: "electron-main",
 		uptime_seconds: Math.floor(process.uptime()),
 	};
@@ -384,11 +396,7 @@ function normalizeTelemetryString(value) {
 		return undefined;
 	}
 	const scrubbed = scrubPrivatePaths(trimmed).slice(0, 200);
-	if (
-		!scrubbed ||
-		scrubbed === "[redacted_path]" ||
-		/[\\/]/.test(scrubbed)
-	) {
+	if (!scrubbed || scrubbed === "[redacted_path]" || /[\\/]/.test(scrubbed)) {
 		return undefined;
 	}
 	return scrubbed;
@@ -414,21 +422,6 @@ function normalizePostHogSessionId(value) {
 	)
 		? trimmed
 		: undefined;
-}
-
-function isDistinctIdSampled(distinctId, sampleRate) {
-	if (sampleRate <= 0) {
-		return false;
-	}
-	if (sampleRate >= 1) {
-		return true;
-	}
-	let hash = 0x811c9dc5;
-	for (let index = 0; index < distinctId.length; index += 1) {
-		hash ^= distinctId.charCodeAt(index);
-		hash = Math.imul(hash, 0x01000193);
-	}
-	return (hash >>> 0) / 0x100000000 < sampleRate;
 }
 
 export function scrubTelemetrySensitiveValues(value, depth = 0) {

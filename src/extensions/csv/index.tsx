@@ -77,7 +77,20 @@ function CsvViewContent({ fileId, ...props }: CsvViewProps) {
 			.where("id", "=", fileId)
 			.limit(1),
 	);
+	return (
+		<CsvViewData
+			fileRow={fileRow}
+			{...props}
+		/>
+	);
+}
 
+function CsvViewData({
+	fileRow,
+	...props
+}: Omit<CsvViewProps, "fileId"> & {
+	readonly fileRow?: CsvFileRow | undefined;
+}) {
 	if (!fileRow) {
 		return (
 			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">

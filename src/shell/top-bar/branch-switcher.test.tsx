@@ -166,13 +166,12 @@ describe("BranchSwitcher", () => {
 			fireEvent.click(deleteItem);
 		});
 
+		const triggerAfterDelete = await screen.findByRole("button", {
+			name: "Select branch",
+		});
 		await act(async () => {
-			fireEvent.pointerDown(
-				screen.getByRole("button", { name: "Select branch" }),
-			);
-			fireEvent.pointerUp(
-				screen.getByRole("button", { name: "Select branch" }),
-			);
+			fireEvent.pointerDown(triggerAfterDelete);
+			fireEvent.pointerUp(triggerAfterDelete);
 		});
 
 		await waitFor(() => {

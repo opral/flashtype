@@ -41,7 +41,13 @@ import {
 } from "@/extension-runtime/external-write-review";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import { qb } from "@/lib/lix-kysely";
-import { captureTelemetry, fileExtensionProperty } from "@/lib/telemetry";
+import {
+	captureTelemetry,
+	fileExtensionProperty,
+	normalizeTelemetryFileExtension,
+	workspaceTelemetryProperties,
+} from "@/lib/telemetry";
+import { readWorkspaceId } from "@/lib/workspace-profile-telemetry";
 import {
 	ExtensionHostRegistryProvider,
 	useExtensionHostRegistry,
@@ -69,7 +75,10 @@ import {
 	TERMINAL_EXTENSION_KIND,
 	activeMarkdownFileIdFromExtensionInstance,
 } from "../extension-runtime/extension-instance-helpers";
-import { findFileHandlerExtension } from "../extension-runtime/file-handlers";
+import {
+	fileExtensionFromPath,
+	findFileHandlerExtension,
+} from "../extension-runtime/file-handlers";
 import {
 	coerceFlashtypeUiState,
 	DEFAULT_FLASHTYPE_UI_STATE,
@@ -307,6 +316,29 @@ function fileBytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 	return true;
 }
 
+function documentOpenAttemptTelemetryProperties({
+	filePath,
+	handler,
+}: {
+	readonly filePath: string;
+	readonly handler: ExtensionDefinition | undefined;
+}) {
+	const fileExtension = fileExtensionFromPath(filePath);
+	if (handler) {
+		return {
+			document_open_result: "viewed",
+			file_extension: fileExtensionProperty(filePath),
+		};
+	}
+	return {
+		document_open_result: "unsupported",
+		file_extension: fileExtension
+			? normalizeTelemetryFileExtension(fileExtension)
+			: "(none)",
+		unsupported_reason: fileExtension ? "no_renderer" : "no_extension",
+	};
+}
+
 function isPanelShortcutBlockedTarget(target: EventTarget | null): boolean {
 	if (!target || !(target instanceof HTMLElement)) {
 		return false;
@@ -407,7 +439,111 @@ function LayoutShellContent({
 	const leftPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const rightPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const ignoredExternalWriteReviewFileIdsRef = useRef(new Set<string>());
+	const diffOpenedReviewIdsRef = useRef(new Set<string>());
+	const diffResolvedReviewIdsRef = useRef(new Set<string>());
+	const openDiffReviewByFileIdRef = useRef(
+		new Map<string, ExternalWriteReview>(),
+	);
+	const workspaceIdRef = useRef<string | undefined>(undefined);
+	const panelStatesRef = useRef({
+		left: leftPanel,
+		central: centralPanel,
+		right: rightPanel,
+	});
 	const viewHostRegistry = useExtensionHostRegistry();
+
+	const captureWorkspaceTelemetry = useCallback(
+		(
+			event: Parameters<typeof captureTelemetry>[0],
+			properties: Parameters<typeof captureTelemetry>[1] = {},
+		) => {
+			void (async () => {
+				const workspaceId =
+					workspaceIdRef.current ?? (await readWorkspaceId(lix));
+				workspaceIdRef.current = workspaceId;
+				captureTelemetry(event, {
+					...properties,
+					...workspaceTelemetryProperties(workspaceId),
+				});
+			})().catch((error: unknown) => {
+				console.warn("Failed to capture workspace telemetry", error);
+			});
+		},
+		[lix],
+	);
+
+	useEffect(() => {
+		workspaceIdRef.current = undefined;
+	}, [lix]);
+
+	useEffect(() => {
+		panelStatesRef.current = {
+			left: leftPanel,
+			central: centralPanel,
+			right: rightPanel,
+		};
+	}, [leftPanel, centralPanel, rightPanel]);
+
+	const claimDiffReviewResolution = useCallback(
+		(review: ExternalWriteReview) => {
+			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) {
+				return false;
+			}
+			diffResolvedReviewIdsRef.current.add(review.reviewId);
+			return true;
+		},
+		[],
+	);
+
+	const captureDiffResolvedTelemetry = useCallback(
+		(
+			review: ExternalWriteReview,
+			outcome: "accepted" | "abandoned" | "rejected",
+		) => {
+			captureWorkspaceTelemetry("diff resolved", {
+				diff_review_id: review.reviewId,
+				file_extension: fileExtensionProperty(review.path),
+				outcome,
+				source: "renderer",
+			});
+		},
+		[captureWorkspaceTelemetry],
+	);
+
+	const resolveDiffReviewTelemetry = useCallback(
+		(
+			review: ExternalWriteReview,
+			outcome: "accepted" | "abandoned" | "rejected",
+		) => {
+			if (!claimDiffReviewResolution(review)) {
+				return false;
+			}
+			const openReview = openDiffReviewByFileIdRef.current.get(review.fileId);
+			if (openReview?.reviewId === review.reviewId) {
+				openDiffReviewByFileIdRef.current.delete(review.fileId);
+			}
+			captureDiffResolvedTelemetry(review, outcome);
+			return true;
+		},
+		[claimDiffReviewResolution, captureDiffResolvedTelemetry],
+	);
+
+	const getOpenExternalWriteReviewForFile = useCallback((fileId: string) => {
+		const activeReview = openDiffReviewByFileIdRef.current.get(fileId);
+		if (activeReview) {
+			return activeReview;
+		}
+		const panels = panelStatesRef.current;
+		for (const panelState of [panels.central, panels.left, panels.right]) {
+			for (const view of panelState.views) {
+				const review = view.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
+				if (isExternalWriteReview(review) && review.fileId === fileId) {
+					return review;
+				}
+			}
+		}
+		return null;
+	}, []);
 
 	const activeInstances = useMemo(() => {
 		const keys = new Set<string>();
@@ -839,6 +975,10 @@ function LayoutShellContent({
 			launchArgs,
 			focus = true,
 			pending = false,
+			documentOrigin = "existing",
+			trackTelemetry = true,
+			trackDocumentOpenAttempt = trackTelemetry,
+			trackDocumentViewed = trackTelemetry,
 		}: {
 			panel: PanelSide;
 			fileId: string;
@@ -847,16 +987,30 @@ function LayoutShellContent({
 			launchArgs?: ExtensionLaunchArgs;
 			focus?: boolean;
 			pending?: boolean;
+			documentOrigin?: "existing" | "new";
+			trackTelemetry?: boolean;
+			trackDocumentOpenAttempt?: boolean;
+			trackDocumentViewed?: boolean;
 		}) => {
 			const handler =
-				findFileHandlerExtension(extensionMap.values(), filePath) ??
-				extensionMap.get(FILE_EXTENSION_KIND);
+				findFileHandlerExtension(extensionMap.values(), filePath) ?? undefined;
 			const kind = handler?.kind ?? FILE_EXTENSION_KIND;
-			captureTelemetry("file opened", {
-				file_extension: fileExtensionProperty(filePath),
-				source: "renderer",
-				view_kind: kind,
-			});
+			if (trackDocumentOpenAttempt) {
+				captureWorkspaceTelemetry("document open attempted", {
+					...documentOpenAttemptTelemetryProperties({ filePath, handler }),
+					document_origin: documentOrigin,
+					source: "renderer",
+					view_kind: kind,
+				});
+			}
+			if (trackDocumentViewed && handler) {
+				captureWorkspaceTelemetry("document viewed", {
+					document_origin: documentOrigin,
+					file_extension: fileExtensionProperty(filePath),
+					source: "renderer",
+					view_kind: kind,
+				});
+			}
 			handleOpenView({
 				panel,
 				kind,
@@ -870,7 +1024,7 @@ function LayoutShellContent({
 				pending,
 			});
 		},
-		[handleOpenView, extensionMap],
+		[handleOpenView, extensionMap, captureWorkspaceTelemetry],
 	);
 
 	useEffect(() => {
@@ -897,6 +1051,8 @@ function LayoutShellContent({
 					fileId: file.id as string,
 					filePath: file.path as string,
 					focus: false,
+					trackDocumentOpenAttempt: true,
+					trackDocumentViewed: false,
 				});
 				openedFiles.push({ id: file.id as string, path: file.path as string });
 				handledFilePaths.push(pendingOpenFilePath);
@@ -908,6 +1064,8 @@ function LayoutShellContent({
 					fileId: firstFile.id,
 					filePath: firstFile.path,
 					focus: true,
+					trackDocumentOpenAttempt: false,
+					trackDocumentViewed: true,
 				});
 			}
 			if (!cancelled) {
@@ -1028,23 +1186,20 @@ function LayoutShellContent({
 				clearExternalWriteReview(args);
 				return;
 			}
-			captureTelemetry("external write reviewed", {
-				file_extension: fileExtensionProperty(review.path),
-				review_action: "accept",
-				source: "renderer",
-			});
+			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return;
 			void (async () => {
-				if (await isExternalWriteReviewCurrent(review)) {
-					clearExternalWriteReview(args);
-				} else {
-					clearExternalWriteReview(args);
-				}
+				const outcome = (await isExternalWriteReviewCurrent(review))
+					? "accepted"
+					: "abandoned";
+				resolveDiffReviewTelemetry(review, outcome);
+				clearExternalWriteReview(args);
 			})();
 		},
 		[
 			getExternalWriteReviewForFile,
 			isExternalWriteReviewCurrent,
 			clearExternalWriteReview,
+			resolveDiffReviewTelemetry,
 		],
 	);
 
@@ -1055,34 +1210,40 @@ function LayoutShellContent({
 				clearExternalWriteReview(args);
 				return;
 			}
+			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return;
 			if (!(await isExternalWriteReviewCurrent(review))) {
+				resolveDiffReviewTelemetry(review, "abandoned");
 				clearExternalWriteReview(args);
 				return;
 			}
-			captureTelemetry("external write reviewed", {
-				file_extension: fileExtensionProperty(review.path),
-				review_action: "reject",
-				source: "renderer",
-			});
 			const { fileId } = args;
 			ignoredExternalWriteReviewFileIdsRef.current.add(fileId);
-			markFlashtypeFileWrite(fileId, review.beforeData);
-			await qb(lix)
-				.updateTable("lix_file")
-				.set({ data: review.beforeData })
-				.where("id", "=", fileId)
-				.execute();
-			clearExternalWriteReview(args);
-			window.setTimeout(() => {
-				ignoredExternalWriteReviewFileIdsRef.current.delete(fileId);
+			try {
+				markFlashtypeFileWrite(fileId, review.beforeData);
+				const result = await qb(lix)
+					.updateTable("lix_file")
+					.set({ data: review.beforeData })
+					.where("id", "=", fileId)
+					.executeTakeFirst();
+				if (Number(result.numUpdatedRows) > 0) {
+					resolveDiffReviewTelemetry(review, "rejected");
+				} else {
+					resolveDiffReviewTelemetry(review, "abandoned");
+				}
 				clearExternalWriteReview(args);
-			}, 1500);
+			} finally {
+				window.setTimeout(() => {
+					ignoredExternalWriteReviewFileIdsRef.current.delete(fileId);
+					clearExternalWriteReview(args);
+				}, 1500);
+			}
 		},
 		[
 			lix,
 			getExternalWriteReviewForFile,
 			isExternalWriteReviewCurrent,
 			clearExternalWriteReview,
+			resolveDiffReviewTelemetry,
 		],
 	);
 
@@ -1099,18 +1260,41 @@ function LayoutShellContent({
 						write.fileId,
 						write.path,
 					);
+					const existingReview = getOpenExternalWriteReviewForFile(
+						write.fileId,
+					);
 					if (!review) continue;
+					if (existingReview && existingReview.reviewId !== review.reviewId) {
+						resolveDiffReviewTelemetry(existingReview, "abandoned");
+					}
+					if (!diffOpenedReviewIdsRef.current.has(review.reviewId)) {
+						diffOpenedReviewIdsRef.current.add(review.reviewId);
+						openDiffReviewByFileIdRef.current.set(write.fileId, review);
+						captureWorkspaceTelemetry("diff opened", {
+							diff_review_id: review.reviewId,
+							file_extension: fileExtensionProperty(write.path),
+							source: "renderer",
+						});
+					}
 					handleOpenFile({
 						panel: "central",
 						fileId: write.fileId,
 						filePath: write.path,
 						launchArgs: { [EXTERNAL_WRITE_REVIEW_LAUNCH_ARG]: review },
 						focus: true,
+						trackTelemetry: false,
 					});
 				}
 			})();
 		},
-		[lix, handleOpenFile, clearExternalWriteReview],
+		[
+			lix,
+			handleOpenFile,
+			clearExternalWriteReview,
+			captureWorkspaceTelemetry,
+			getOpenExternalWriteReviewForFile,
+			resolveDiffReviewTelemetry,
+		],
 	);
 
 	const handleCloseView = useCallback(
@@ -1118,10 +1302,12 @@ function LayoutShellContent({
 			panel,
 			instance,
 			kind,
+			focus = false,
 		}: {
 			panel?: PanelSide;
 			instance?: string;
 			kind?: ExtensionKind;
+			focus?: boolean;
 		}) => {
 			if (!instance && !kind) return;
 			const predicate = (entry: ExtensionInstance) => {
@@ -1133,23 +1319,40 @@ function LayoutShellContent({
 				? [panel]
 				: (["central", "left", "right"] as PanelSide[]);
 			for (const side of targetPanels) {
+				const currentPanel = panelStatesRef.current[side];
+				const removedView = currentPanel.views.find(predicate);
+				const removedReview =
+					removedView?.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
 				let removed = false;
-				setPanelState(side, (current) => {
-					const index = current.views.findIndex(predicate);
-					if (index === -1) return current;
-					removed = true;
-					const views = current.views.filter((_, idx) => idx !== index);
-					const removedView = current.views[index];
-					const activeInstance =
-						current.activeInstance === removedView.instance
-							? (views[views.length - 1]?.instance ?? null)
-							: current.activeInstance;
-					return { views, activeInstance };
-				});
-				if (removed) break;
+				setPanelState(
+					side,
+					(current) => {
+						const index = current.views.findIndex(predicate);
+						if (index === -1) return current;
+						removed = true;
+						const views = current.views.filter((_, idx) => idx !== index);
+						const removedEntry = current.views[index];
+						const activeInstance =
+							current.activeInstance === removedEntry?.instance
+								? (views[views.length - 1]?.instance ?? null)
+								: current.activeInstance;
+						return { views, activeInstance };
+					},
+					{ focus },
+				);
+				if (removed) {
+					const review = removedReview;
+					if (
+						isExternalWriteReview(review) &&
+						!diffResolvedReviewIdsRef.current.has(review.reviewId)
+					) {
+						resolveDiffReviewTelemetry(review, "abandoned");
+					}
+					break;
+				}
 			}
 		},
-		[setPanelState],
+		[setPanelState, resolveDiffReviewTelemetry],
 	);
 
 	const handleCloseFileViews = useCallback(
@@ -1165,12 +1368,20 @@ function LayoutShellContent({
 				);
 			};
 			for (const side of targetPanels) {
+				const removedReviews = new Map<string, ExternalWriteReview>();
 				setPanelState(side, (current) => {
 					const views = current.views.filter(
 						(entry) => !matchesFileView(entry),
 					);
 					if (views.length === current.views.length) {
 						return current;
+					}
+					for (const entry of current.views) {
+						if (!matchesFileView(entry)) continue;
+						const review = entry.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
+						if (isExternalWriteReview(review)) {
+							removedReviews.set(review.reviewId, review);
+						}
 					}
 					const activeInstance = views.some(
 						(entry) => entry.instance === current.activeInstance,
@@ -1179,9 +1390,12 @@ function LayoutShellContent({
 						: (views[views.length - 1]?.instance ?? null);
 					return { views, activeInstance };
 				});
+				for (const review of removedReviews.values()) {
+					resolveDiffReviewTelemetry(review, "abandoned");
+				}
 			}
 		},
-		[setPanelState],
+		[setPanelState, resolveDiffReviewTelemetry],
 	);
 
 	const activeCentralEntry = useMemo(() => {
@@ -1214,15 +1428,21 @@ function LayoutShellContent({
 					? state.flashtype.icon
 					: undefined;
 			if (agent) {
-				captureTelemetry("agent launched", {
+				captureWorkspaceTelemetry("agent opened", {
 					agent,
 					panel: side,
 					source: "renderer",
+					surface: "terminal",
 				});
 			}
 			handleOpenView({ panel: side, kind, state, launchArgs, instance });
 		},
-		[activeCentralEntry, handleOpenView, extensionMap],
+		[
+			activeCentralEntry,
+			handleOpenView,
+			extensionMap,
+			captureWorkspaceTelemetry,
+		],
 	);
 
 	const focusPanel = useCallback((side: PanelSide) => {
@@ -1398,14 +1618,11 @@ function LayoutShellContent({
 			.where("path", "=", path)
 			.executeTakeFirstOrThrow();
 		const id = createdFile.id;
-		captureTelemetry("file created", {
-			file_extension: fileExtensionProperty(path),
-			source: "renderer",
-		});
 		handleOpenFile({
 			panel: "central",
 			fileId: id,
 			filePath: path,
+			documentOrigin: "new",
 			focus: true,
 		});
 	}, [handleOpenFile, lix]);
@@ -1497,27 +1714,8 @@ function LayoutShellContent({
 
 	const handleRemoveView = useCallback(
 		(side: PanelSide, instance: string) =>
-			setPanelState(
-				side,
-				(panel) => {
-					const targetView = panel.views.find(
-						(entry) => entry.instance === instance,
-					);
-					if (!targetView) {
-						return panel;
-					}
-					const views = panel.views.filter(
-						(entry) => entry.instance !== instance,
-					);
-					const nextActive =
-						panel.activeInstance === instance
-							? (views[views.length - 1]?.instance ?? null)
-							: panel.activeInstance;
-					return { views, activeInstance: nextActive };
-				},
-				{ focus: true },
-			),
-		[setPanelState],
+			handleCloseView({ panel: side, instance, focus: true }),
+		[handleCloseView],
 	);
 
 	const handleMoveViewToPanel = useCallback(

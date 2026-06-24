@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import os from "node:os";
 import {
 	beforeSendTelemetryEvent,
+	getDevelopmentTelemetryDistinctId,
 	scrubTelemetrySensitiveValues,
 	setTelemetrySessionContextForWebContents,
 } from "./telemetry.mjs";
@@ -56,5 +57,34 @@ describe("beforeSendTelemetryEvent", () => {
 				},
 			})?.properties?.$session_id,
 		).toBe(explicitSessionId);
+	});
+});
+
+describe("getDevelopmentTelemetryDistinctId", () => {
+	test("uses a stable dev id when dev telemetry is explicitly enabled", () => {
+		expect(
+			getDevelopmentTelemetryDistinctId({
+				isPackaged: false,
+				enableDevTelemetry: "1",
+			}),
+		).toBe("dev:mode");
+	});
+
+	test("does not replace the install id for packaged builds", () => {
+		expect(
+			getDevelopmentTelemetryDistinctId({
+				isPackaged: true,
+				enableDevTelemetry: "1",
+			}),
+		).toBeUndefined();
+	});
+
+	test("does not enable telemetry identity in dev unless opted in", () => {
+		expect(
+			getDevelopmentTelemetryDistinctId({
+				isPackaged: false,
+				enableDevTelemetry: undefined,
+			}),
+		).toBeUndefined();
 	});
 });

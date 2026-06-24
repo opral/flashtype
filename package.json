@@ -65,7 +65,7 @@
 		"lucide-react": "^0.542.0",
 		"node-pty": "^1.0.0",
 		"papaparse": "^5.5.3",
-		"posthog-js": "^1.392.0",
+		"posthog-js": "^1.393.0",
 		"posthog-node": "^5.38.2",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
