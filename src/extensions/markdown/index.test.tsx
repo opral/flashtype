@@ -2,11 +2,16 @@ import { Suspense } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { LixProvider } from "@/lib/lix-react";
-import { openLix } from "@/test-utils/node-lix-sdk";
+import {
+	openLix,
+	bundledPluginArchives,
+	type Lix,
+} from "@/test-utils/node-lix-sdk";
 import { MarkdownView } from "./index";
 import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
 import { qb } from "@/lib/lix-kysely";
+import { getExternalWriteReview } from "@/shell/external-write-review-history";
 
 describe("MarkdownView", () => {
 	test("throws when no file id is provided", () => {
@@ -373,4 +378,125 @@ describe("MarkdownView", () => {
 			utils?.unmount();
 		});
 	});
+
+	test("renders the per-change stepper for a safe external write review", async () => {
+		const lix = await openLix();
+		await installBundledPlugins(lix);
+		const path = "/docs/review.md";
+		await writeMarkdownFile(lix, path, "# Title\n\nAlpha.\n\nBeta.\n");
+		const fileId = await fileIdByPath(lix, path);
+		await writeMarkdownFile(
+			lix,
+			path,
+			"# Title\n\nAlpha edited.\n\nBeta edited.\n",
+		);
+		const review = await getExternalWriteReview(lix, fileId, path);
+		expect(review).not.toBeNull();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId={fileId}
+								filePath={path}
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+								externalWriteReview={review}
+								onResolveReviewDiff={async () => "applied"}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(
+			await screen.findByRole("group", { name: "Per-change review actions" }),
+		).toBeInTheDocument();
+		expect(await screen.findByText("1 of 2")).toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
+	test("falls back to classic controls when no granular resolver is wired", async () => {
+		const lix = await openLix();
+		await installBundledPlugins(lix);
+		const path = "/docs/review-classic.md";
+		await writeMarkdownFile(lix, path, "# Title\n\nAlpha.\n\nBeta.\n");
+		const fileId = await fileIdByPath(lix, path);
+		await writeMarkdownFile(
+			lix,
+			path,
+			"# Title\n\nAlpha edited.\n\nBeta edited.\n",
+		);
+		const review = await getExternalWriteReview(lix, fileId, path);
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId={fileId}
+								filePath={path}
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+								externalWriteReview={review}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(
+			await screen.findByRole("group", {
+				name: "External write review actions",
+			}),
+		).toBeInTheDocument();
+		expect(screen.queryByText("1 of 2")).not.toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
 });
+
+async function writeMarkdownFile(
+	lix: Lix,
+	path: string,
+	markdown: string,
+): Promise<void> {
+	await lix.execute(
+		"INSERT INTO lix_file (path, data) VALUES (?, ?) \
+		 ON CONFLICT (path) DO UPDATE SET data = excluded.data",
+		[path, new TextEncoder().encode(markdown)],
+	);
+}
+
+async function installBundledPlugins(lix: Lix): Promise<void> {
+	for (const plugin of await bundledPluginArchives()) {
+		await lix.execute(
+			"INSERT INTO lix_file (path, data) VALUES (?, ?) \
+			 ON CONFLICT (path) DO UPDATE SET data = excluded.data",
+			[`/.lix/plugins/${plugin.key}.lixplugin`, plugin.archiveBytes],
+		);
+	}
+}
+
+async function fileIdByPath(lix: Lix, path: string): Promise<string> {
+	const result = await lix.execute("SELECT id FROM lix_file WHERE path = ?", [
+		path,
+	]);
+	const id = result.rows[0]?.get("id");
+	if (typeof id !== "string") throw new Error(`Missing file id for ${path}`);
+	return id;
+}

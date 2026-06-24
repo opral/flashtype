@@ -54,7 +54,10 @@ export type GranularReviewPlan = {
 
 export type GranularReviewEligibility =
 	| { readonly status: "safe"; readonly plan: GranularReviewPlan }
-	| { readonly status: "unsafe"; readonly reason: GranularReviewFallbackReason };
+	| {
+			readonly status: "unsafe";
+			readonly reason: GranularReviewFallbackReason;
+	  };
 
 export type GranularReviewInput = {
 	readonly beforeBlocks: readonly MarkdownBlockSnapshot[] | undefined;
@@ -99,39 +102,77 @@ export function planGranularReview(
 	const before = orderMarkdownBlocks(beforeBlocks);
 	const after = orderMarkdownBlocks(afterBlocks);
 
-	const anchorIds = strictlyUnchangedIds(before, after);
-	const beforeSegments = segmentByAnchors(before, anchorIds);
-	const afterSegments = segmentByAnchors(after, anchorIds);
-
-	// Anchors must delimit the same regions on both sides, in the same order.
-	if (
-		!sameAnchorSequence(beforeSegments.anchorOrder, afterSegments.anchorOrder)
-	) {
-		return unsafe("ambiguous_order");
-	}
-	if (beforeSegments.gaps.length !== afterSegments.gaps.length) {
+	// Align both sides on their common block ids. A common id is an alignment
+	// point: if its content/order is identical it is unchanged, otherwise it is
+	// its own atomic update. Blocks unique to one side (inserts/deletes) between
+	// alignment points are grouped into one compound change per gap.
+	const beforeIds = new Set(before.map((block) => block.id));
+	const afterIds = new Set(after.map((block) => block.id));
+	const beforeCommon = before
+		.filter((block) => afterIds.has(block.id))
+		.map((block) => block.id);
+	const afterCommon = after
+		.filter((block) => beforeIds.has(block.id))
+		.map((block) => block.id);
+	// Differing common-id order means a move/reorder we cannot represent safely.
+	if (!sameSequence(beforeCommon, afterCommon)) {
 		return unsafe("ambiguous_order");
 	}
 
 	const changes: GranularReviewChange[] = [];
 	const segments: Segment[] = [];
+	const unchanged: MarkdownBlockSnapshot[] = [];
 	let displayOrder = 0;
-	for (let i = 0; i < beforeSegments.gaps.length; i += 1) {
-		const beforeGap = beforeSegments.gaps[i] ?? [];
-		const afterGap = afterSegments.gaps[i] ?? [];
-		if (beforeGap.length === 0 && afterGap.length === 0) continue;
+	const pushChange = (
+		beforeGap: readonly MarkdownBlockSnapshot[],
+		afterGap: readonly MarkdownBlockSnapshot[],
+		kind: GranularReviewChangeKind,
+	) => {
 		segments.push({ before: beforeGap, after: afterGap });
 		changes.push({
 			id: `change-${displayOrder}`,
-			kind: classifyChange(beforeGap, afterGap),
+			kind,
 			beforeBlockIds: beforeGap.map((block) => block.id),
 			afterBlockIds: afterGap.map((block) => block.id),
 			displayOrder,
 		});
 		displayOrder += 1;
-	}
+	};
 
-	const unchanged = before.filter((block) => anchorIds.has(block.id));
+	let i = 0;
+	let j = 0;
+	for (const commonId of beforeCommon) {
+		const beforeGap: MarkdownBlockSnapshot[] = [];
+		while (i < before.length && before[i]!.id !== commonId) {
+			beforeGap.push(before[i]!);
+			i += 1;
+		}
+		const afterGap: MarkdownBlockSnapshot[] = [];
+		while (j < after.length && after[j]!.id !== commonId) {
+			afterGap.push(after[j]!);
+			j += 1;
+		}
+		if (beforeGap.length > 0 || afterGap.length > 0) {
+			pushChange(beforeGap, afterGap, classifyGap(beforeGap, afterGap));
+		}
+		const beforeBlock = before[i]!;
+		const afterBlock = after[j]!;
+		i += 1;
+		j += 1;
+		if (
+			beforeBlock.block === afterBlock.block &&
+			beforeBlock.orderKey === afterBlock.orderKey
+		) {
+			unchanged.push(beforeBlock);
+		} else {
+			pushChange([beforeBlock], [afterBlock], "update");
+		}
+	}
+	const beforeTail = before.slice(i);
+	const afterTail = after.slice(j);
+	if (beforeTail.length > 0 || afterTail.length > 0) {
+		pushChange(beforeTail, afterTail, classifyGap(beforeTail, afterTail));
+	}
 
 	// Global invariants that make any mixed accept/reject combination provably
 	// valid: every block id and every order key is owned by exactly one change
@@ -190,7 +231,9 @@ function resolvePlan(args: {
 		const segment = changeById.get(change.id);
 		if (!segment) continue;
 		const decision = decisions.get(change.id);
-		selected.push(...(decision === "accepted" ? segment.after : segment.before));
+		selected.push(
+			...(decision === "accepted" ? segment.after : segment.before),
+		);
 	}
 	return renderMarkdownProjection(selected);
 }
@@ -217,54 +260,20 @@ function validateSide(blocks: readonly MarkdownBlockSnapshot[]): boolean {
 	return true;
 }
 
-function strictlyUnchangedIds(
-	before: readonly MarkdownBlockSnapshot[],
-	after: readonly MarkdownBlockSnapshot[],
-): Set<string> {
-	const afterById = new Map(after.map((block) => [block.id, block]));
-	const anchors = new Set<string>();
-	for (const block of before) {
-		const counterpart = afterById.get(block.id);
-		if (
-			counterpart &&
-			counterpart.block === block.block &&
-			counterpart.orderKey === block.orderKey
-		) {
-			anchors.add(block.id);
-		}
-	}
-	return anchors;
-}
-
-function segmentByAnchors(
-	sorted: readonly MarkdownBlockSnapshot[],
-	anchorIds: ReadonlySet<string>,
-): { gaps: MarkdownBlockSnapshot[][]; anchorOrder: string[] } {
-	const gaps: MarkdownBlockSnapshot[][] = [[]];
-	const anchorOrder: string[] = [];
-	for (const block of sorted) {
-		if (anchorIds.has(block.id)) {
-			anchorOrder.push(block.id);
-			gaps.push([]);
-		} else {
-			gaps[gaps.length - 1]?.push(block);
-		}
-	}
-	return { gaps, anchorOrder };
-}
-
-function sameAnchorSequence(left: string[], right: string[]): boolean {
+function sameSequence(
+	left: readonly string[],
+	right: readonly string[],
+): boolean {
 	if (left.length !== right.length) return false;
 	return left.every((id, index) => id === right[index]);
 }
 
-function classifyChange(
+function classifyGap(
 	before: readonly MarkdownBlockSnapshot[],
 	after: readonly MarkdownBlockSnapshot[],
 ): GranularReviewChangeKind {
 	if (before.length === 0) return "insert";
 	if (after.length === 0) return "delete";
-	if (before.length === 1 && after.length === 1) return "update";
 	return "replace";
 }
 

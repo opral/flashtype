@@ -384,3 +384,14 @@
 	border-radius: 0.25rem;
 	color: var(--color-text-diff-modified);
 }
+
+/* Soft selection ring on the block(s) of the active per-change review step.
+   Uses outline so it never shifts surrounding layout, and does not dim or
+   tint the other blocks. */
+.markdown-review .ProseMirror .markdown-review-active-block {
+	outline: 2px solid var(--color-bg-action-primary);
+	outline-offset: 3px;
+	border-radius: 0.25rem;
+	scroll-margin-top: 2rem;
+	scroll-margin-bottom: 6rem;
+}

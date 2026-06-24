@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, ExternalLink, FileText, Github, Loader2 } from "lucide-react";
 import {
@@ -24,7 +24,11 @@ import { ExternalWriteReviewControls } from "@/extension-runtime/external-write-
 import {
 	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
 	type ExternalWriteReview,
+	type GranularReviewResolution,
+	type GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
+import { planGranularReview } from "./granular-review-plan";
+import { MarkdownReviewStepper } from "./markdown-review-stepper";
 import { AnimatedZap } from "@/components/animated-zap";
 
 type MarkdownViewProps = {
@@ -43,6 +47,9 @@ type MarkdownViewProps = {
 		readonly fileId: string;
 		readonly reviewId: string;
 	}) => Promise<void>;
+	readonly onResolveReviewDiff?: (
+		resolution: GranularReviewResolution,
+	) => Promise<GranularReviewResolutionOutcome>;
 };
 
 type HistoricalMarkdownBlockRow = {
@@ -70,6 +77,7 @@ export function MarkdownView({
 	externalWriteReview = null,
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
+	onResolveReviewDiff,
 }: MarkdownViewProps) {
 	return (
 		<Suspense fallback={<MarkdownLoadingSpinner />}>
@@ -83,6 +91,7 @@ export function MarkdownView({
 				externalWriteReview={externalWriteReview}
 				onAcceptReviewDiff={onAcceptReviewDiff}
 				onRejectReviewDiff={onRejectReviewDiff}
+				onResolveReviewDiff={onResolveReviewDiff}
 			/>
 		</Suspense>
 	);
@@ -113,6 +122,7 @@ function MarkdownViewLoaded({
 	externalWriteReview = null,
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
+	onResolveReviewDiff,
 }: Omit<MarkdownViewProps, "fileId"> & {
 	readonly fileRow: MarkdownFileRow | undefined;
 }) {
@@ -165,9 +175,12 @@ function MarkdownViewLoaded({
 									reviewId={externalWriteReview.reviewId}
 									beforeCommitId={externalWriteReview.beforeCommitId}
 									afterCommitId={externalWriteReview.afterCommitId}
+									beforeData={externalWriteReview.beforeData}
+									afterData={externalWriteReview.afterData}
 									isActive={isActiveView && isPanelFocused}
 									onAccept={onAcceptReviewDiff}
 									onReject={onRejectReviewDiff}
+									onResolve={onResolveReviewDiff}
 								/>
 							</Suspense>
 						) : null}
@@ -244,15 +257,20 @@ function MarkdownReviewOverlay({
 	reviewId,
 	beforeCommitId,
 	afterCommitId,
+	beforeData,
+	afterData,
 	isActive,
 	onAccept,
 	onReject,
+	onResolve,
 }: {
 	readonly fileId: string;
 	readonly reviewDiff: MarkdownReviewDiff;
 	readonly reviewId: string;
 	readonly beforeCommitId?: string;
 	readonly afterCommitId?: string;
+	readonly beforeData: Uint8Array;
+	readonly afterData: Uint8Array;
 	readonly isActive: boolean;
 	readonly onAccept?: (args: {
 		readonly fileId: string;
@@ -262,9 +280,13 @@ function MarkdownReviewOverlay({
 		readonly fileId: string;
 		readonly reviewId: string;
 	}) => Promise<void>;
+	readonly onResolve?: (
+		resolution: GranularReviewResolution,
+	) => Promise<GranularReviewResolutionOutcome>;
 }) {
 	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
 	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
+	const diffContainerRef = useRef<HTMLDivElement | null>(null);
 	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
 		const beforeSnapshotsAvailable =
 			beforeBlocks !== undefined &&
@@ -285,23 +307,77 @@ function MarkdownReviewOverlay({
 	const diffHtml = useMemo(() => {
 		return renderMarkdownReviewDiffHtml(enrichedReviewDiff);
 	}, [enrichedReviewDiff]);
+
+	// Granular review is only attempted when both historical snapshots can be
+	// loaded; otherwise we keep the classic all-or-nothing controls.
+	const canAttemptGranular = Boolean(
+		beforeCommitId && afterCommitId && onResolve,
+	);
+	const snapshotsLoading =
+		canAttemptGranular &&
+		(beforeBlocks === undefined || afterBlocks === undefined);
+
+	const eligibility = useMemo(() => {
+		if (!canAttemptGranular || snapshotsLoading) return null;
+		return planGranularReview({
+			beforeBlocks,
+			afterBlocks,
+			beforeData,
+			afterData,
+		});
+	}, [
+		afterBlocks,
+		afterData,
+		beforeBlocks,
+		beforeData,
+		canAttemptGranular,
+		snapshotsLoading,
+	]);
+
 	const rejectReview = () => void onReject?.({ fileId, reviewId });
+
+	// Decide the surface only once preflight is known: never render classic
+	// controls and then morph them into the granular stepper.
+	const controls = snapshotsLoading ? null : eligibility?.status === "safe" ? (
+		<MarkdownReviewStepper
+			plan={eligibility.plan}
+			reviewId={reviewId}
+			fileId={fileId}
+			beforeData={beforeData}
+			afterData={afterData}
+			isActive={isActive}
+			diffContainerRef={diffContainerRef}
+			onResolve={onResolve!}
+		/>
+	) : (
+		<ExternalWriteReviewControls
+			isActive={isActive}
+			onAccept={() => onAccept?.({ fileId, reviewId })}
+			onReject={rejectReview}
+		/>
+	);
 
 	return (
 		<div className="markdown-review-overlay">
 			<div className="markdown-review-surface">
-				<div className="ph-mask tiptap-container w-full h-full overflow-y-auto bg-background">
+				<div
+					ref={diffContainerRef}
+					className="ph-mask tiptap-container w-full h-full overflow-y-auto bg-background"
+				>
 					<div
 						className="ProseMirror tiptap w-full mx-auto"
 						dangerouslySetInnerHTML={{ __html: diffHtml }}
 					/>
 				</div>
 			</div>
-			<ExternalWriteReviewControls
-				isActive={isActive}
-				onAccept={() => onAccept?.({ fileId, reviewId })}
-				onReject={rejectReview}
-			/>
+			{snapshotsLoading ? (
+				<div className="markdown-review-loading" role="status">
+					<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+					<span>Loading review…</span>
+				</div>
+			) : (
+				controls
+			)}
 		</div>
 	);
 }
@@ -552,6 +628,7 @@ export const extension = createReactExtensionDefinition({
 				}
 				onAcceptReviewDiff={context.acceptExternalWriteReview}
 				onRejectReviewDiff={context.rejectExternalWriteReview}
+				onResolveReviewDiff={context.resolveExternalWriteReviewGranular}
 			/>
 		</LixProvider>
 	),
