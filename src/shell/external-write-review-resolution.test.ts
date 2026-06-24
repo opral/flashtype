@@ -1,12 +1,19 @@
 import { describe, expect, test } from "vitest";
-import { openLix, bundledPluginArchives, type Lix } from "@/test-utils/node-lix-sdk";
+import {
+	openLix,
+	bundledPluginArchives,
+	type Lix,
+} from "@/test-utils/node-lix-sdk";
 import { getExternalWriteReview } from "@/shell/external-write-review-history";
 import {
 	consumeRecentFlashtypeFileWrite,
 	hashFileData,
 } from "@/extension-runtime/external-write-tracking";
 import type { GranularReviewResolution } from "@/extension-runtime/external-write-review";
-import { applyGranularReviewResolution } from "./external-write-review-resolution";
+import {
+	applyGranularReviewResolution,
+	granularResolutionTelemetry,
+} from "./external-write-review-resolution";
 
 const enc = (text: string) => new TextEncoder().encode(text);
 const dec = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
@@ -27,7 +34,12 @@ async function openReviewFixture(): Promise<Fixture> {
 	await writeFile(lix, path, "# Title\n\nAlpha edited.\n\nBeta edited.\n");
 	const review = await getExternalWriteReview(lix, fileId, path);
 	if (!review) throw new Error("expected review");
-	return { lix, fileId, beforeData: review.beforeData, afterData: review.afterData };
+	return {
+		lix,
+		fileId,
+		beforeData: review.beforeData,
+		afterData: review.afterData,
+	};
 }
 
 function resolution(
@@ -55,7 +67,11 @@ describe("applyGranularReviewResolution", () => {
 			const resolvedData = enc("# Title\n\nAlpha edited.\n\nBeta.\n");
 			const result = await applyGranularReviewResolution(
 				fixture.lix,
-				resolution(fixture, { resolvedData, acceptedCount: 1, rejectedCount: 1 }),
+				resolution(fixture, {
+					resolvedData,
+					acceptedCount: 1,
+					rejectedCount: 1,
+				}),
 			);
 			expect(result.outcome).toBe("applied");
 			const observed = await fileData(fixture.lix, fixture.fileId);
@@ -77,7 +93,11 @@ describe("applyGranularReviewResolution", () => {
 			const resolvedData = enc("# Title\n\nAlpha edited.\n\nBeta.\n");
 			const result = await applyGranularReviewResolution(
 				fixture.lix,
-				resolution(fixture, { resolvedData, acceptedCount: 1, rejectedCount: 1 }),
+				resolution(fixture, {
+					resolvedData,
+					acceptedCount: 1,
+					rejectedCount: 1,
+				}),
 			);
 			expect(result.outcome).toBe("stale");
 			const observed = await fileData(fixture.lix, fixture.fileId);
@@ -148,7 +168,11 @@ describe("applyGranularReviewResolution", () => {
 			const resolvedData = enc("# Title\n\nAlpha edited.\n\nBeta.\n");
 			await applyGranularReviewResolution(
 				fixture.lix,
-				resolution(fixture, { resolvedData, acceptedCount: 1, rejectedCount: 1 }),
+				resolution(fixture, {
+					resolvedData,
+					acceptedCount: 1,
+					rejectedCount: 1,
+				}),
 			);
 			const hash = hashFileData(resolvedData);
 			expect(consumeRecentFlashtypeFileWrite(fixture.fileId, "00000000")).toBe(
@@ -161,6 +185,31 @@ describe("applyGranularReviewResolution", () => {
 		}
 	});
 
+	test("telemetry properties are aggregate and content-free", () => {
+		const props = granularResolutionTelemetry({
+			acceptedCount: 2,
+			rejectedCount: 1,
+			usedRemainingAction: true,
+		});
+		expect(props).toEqual({
+			review_mode: "granular",
+			change_count: 3,
+			accepted_count: 2,
+			rejected_count: 1,
+			used_remaining_action: true,
+		});
+		// Only aggregate keys are present — no fileId, reviewId, block/change ids,
+		// order keys, hashes, paths, or content.
+		expect(Object.keys(props).sort()).toEqual([
+			"accepted_count",
+			"change_count",
+			"rejected_count",
+			"review_mode",
+			"used_remaining_action",
+		]);
+		expect(Object.values(props).every((v) => typeof v !== "object")).toBe(true);
+	});
+
 	test("a failed transaction cancels the self-write marker", async () => {
 		const fileId = "failing-file";
 		const resolvedData = enc("# Title\n\nMixed.\n");
@@ -169,7 +218,10 @@ describe("applyGranularReviewResolution", () => {
 		const fakeLix = {
 			async transaction<T>(
 				callback: (tx: {
-					execute: (sql: string, params?: ReadonlyArray<unknown>) => Promise<any>;
+					execute: (
+						sql: string,
+						params?: ReadonlyArray<unknown>,
+					) => Promise<any>;
 				}) => Promise<T>,
 			): Promise<T> {
 				return callback({
@@ -201,7 +253,11 @@ describe("applyGranularReviewResolution", () => {
 	});
 });
 
-async function writeFile(lix: Lix, path: string, markdown: string): Promise<void> {
+async function writeFile(
+	lix: Lix,
+	path: string,
+	markdown: string,
+): Promise<void> {
 	await lix.execute(
 		"INSERT INTO lix_file (path, data) VALUES (?, ?) \
 		 ON CONFLICT (path) DO UPDATE SET data = excluded.data",

@@ -74,6 +74,32 @@ export async function applyGranularReviewResolution(
 	}
 }
 
+/**
+ * Aggregate, content-free telemetry properties for a granular resolution. It
+ * deliberately contains only counts and coarse flags — never Markdown content,
+ * paths, block/change ids, order keys, or hashes.
+ */
+export function granularResolutionTelemetry(
+	resolution: Pick<
+		GranularReviewResolution,
+		"acceptedCount" | "rejectedCount" | "usedRemainingAction"
+	>,
+): {
+	review_mode: "granular";
+	change_count: number;
+	accepted_count: number;
+	rejected_count: number;
+	used_remaining_action: boolean;
+} {
+	return {
+		review_mode: "granular",
+		change_count: resolution.acceptedCount + resolution.rejectedCount,
+		accepted_count: resolution.acceptedCount,
+		rejected_count: resolution.rejectedCount,
+		used_remaining_action: resolution.usedRemainingAction,
+	};
+}
+
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 	if (left.length !== right.length) return false;
 	for (let i = 0; i < left.length; i += 1) {

@@ -346,6 +346,7 @@ export function MarkdownReviewStepper({
 	return (
 		<div
 			className="markdown-review-stepper"
+			data-testid="markdown-review-stepper"
 			role="group"
 			aria-label="Per-change review actions"
 			data-applying={state.applying ? "true" : undefined}

@@ -34,7 +34,10 @@ import {
 	type ExternalFileWrite,
 } from "./external-write-detector";
 import { getExternalWriteReview } from "./external-write-review-history";
-import { applyGranularReviewResolution } from "./external-write-review-resolution";
+import {
+	applyGranularReviewResolution,
+	granularResolutionTelemetry,
+} from "./external-write-review-resolution";
 import {
 	createReviewGuardRegistry,
 	type ReviewGuard,
@@ -507,12 +510,15 @@ function LayoutShellContent({
 		(
 			review: ExternalWriteReview,
 			outcome: "accepted" | "abandoned" | "rejected",
+			extra?: Record<string, string | number | boolean>,
 		) => {
 			captureWorkspaceTelemetry("diff_resolved", {
 				diff_review_id: review.reviewId,
 				file_extension: fileExtensionProperty(review.path),
 				outcome,
 				source: "renderer",
+				review_mode: "classic",
+				...extra,
 			});
 		},
 		[captureWorkspaceTelemetry],
@@ -522,6 +528,7 @@ function LayoutShellContent({
 		(
 			review: ExternalWriteReview,
 			outcome: "accepted" | "abandoned" | "rejected",
+			extra?: Record<string, string | number | boolean>,
 		) => {
 			if (!claimDiffReviewResolution(review)) {
 				return false;
@@ -530,7 +537,7 @@ function LayoutShellContent({
 			if (openReview?.reviewId === review.reviewId) {
 				openDiffReviewByFileIdRef.current.delete(review.fileId);
 			}
-			captureDiffResolvedTelemetry(review, outcome);
+			captureDiffResolvedTelemetry(review, outcome, extra);
 			return true;
 		},
 		[claimDiffReviewResolution, captureDiffResolvedTelemetry],
@@ -1268,6 +1275,7 @@ function LayoutShellContent({
 				return "accepted_existing";
 			}
 			const result = await applyGranularReviewResolution(lix, resolution);
+			const telemetry = granularResolutionTelemetry(resolution);
 			if (
 				result.outcome === "applied" ||
 				result.outcome === "accepted_existing"
@@ -1276,11 +1284,12 @@ function LayoutShellContent({
 					resolveDiffReviewTelemetry(
 						review,
 						resolution.rejectedCount === 0 ? "accepted" : "rejected",
+						telemetry,
 					);
 				}
 				clearExternalWriteReview(args);
 			} else if (result.outcome === "stale" || result.outcome === "missing") {
-				if (review) resolveDiffReviewTelemetry(review, "abandoned");
+				if (review) resolveDiffReviewTelemetry(review, "abandoned", telemetry);
 				clearExternalWriteReview(args);
 			}
 			// On "failed" the overlay keeps its decisions so the user can retry.
