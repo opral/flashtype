@@ -121,6 +121,14 @@ function capture(command, args) {
 		const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
 		let stdout = "";
 		let stderr = "";
+		let settled = false;
+		const settle = (callback, value) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			callback(value);
+		};
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk) => {
@@ -129,13 +137,16 @@ function capture(command, args) {
 		child.stderr.on("data", (chunk) => {
 			stderr += chunk;
 		});
-		child.on("error", reject);
-		child.on("exit", (code) => {
+		child.on("error", (error) => {
+			settle(reject, error);
+		});
+		child.on("close", (code) => {
 			if (code === 0) {
-				resolve(stdout);
+				settle(resolve, stdout);
 				return;
 			}
-			reject(
+			settle(
+				reject,
 				new Error(
 					`${command} exited with code ${code ?? 1}${stderr ? `: ${stderr}` : ""}`,
 				),
