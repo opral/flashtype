@@ -1303,10 +1303,12 @@ function LayoutShellContent({
 			panel,
 			instance,
 			kind,
+			focus = false,
 		}: {
 			panel?: PanelSide;
 			instance?: string;
 			kind?: ExtensionKind;
+			focus?: boolean;
 		}) => {
 			if (!instance && !kind) return;
 			const predicate = (entry: ExtensionInstance) => {
@@ -1323,18 +1325,22 @@ function LayoutShellContent({
 				const removedReview =
 					removedView?.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG];
 				let removed = false;
-				setPanelState(side, (current) => {
-					const index = current.views.findIndex(predicate);
-					if (index === -1) return current;
-					removed = true;
-					const views = current.views.filter((_, idx) => idx !== index);
-					const removedEntry = current.views[index];
-					const activeInstance =
-						current.activeInstance === removedEntry?.instance
-							? (views[views.length - 1]?.instance ?? null)
-							: current.activeInstance;
-					return { views, activeInstance };
-				});
+				setPanelState(
+					side,
+					(current) => {
+						const index = current.views.findIndex(predicate);
+						if (index === -1) return current;
+						removed = true;
+						const views = current.views.filter((_, idx) => idx !== index);
+						const removedEntry = current.views[index];
+						const activeInstance =
+							current.activeInstance === removedEntry?.instance
+								? (views[views.length - 1]?.instance ?? null)
+								: current.activeInstance;
+						return { views, activeInstance };
+					},
+					{ focus },
+				);
 				if (removed) {
 					const review = removedReview;
 					if (
@@ -1708,7 +1714,7 @@ function LayoutShellContent({
 
 	const handleRemoveView = useCallback(
 		(side: PanelSide, instance: string) =>
-			handleCloseView({ panel: side, instance }),
+			handleCloseView({ panel: side, instance, focus: true }),
 		[handleCloseView],
 	);
 
