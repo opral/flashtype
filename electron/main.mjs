@@ -1711,16 +1711,17 @@ function installApplicationMenu() {
 }
 
 function buildFileMenu() {
-	const workspaceActionsEnabled = canOpenWorkspaceWindows();
 	const trackingWindow = getWorkspaceWindowForFileAction();
-	const trackingWorkspace = trackingWindow ? getWorkspace(trackingWindow) : null;
+	const trackingWorkspace = trackingWindow
+		? getWorkspace(trackingWindow)
+		: null;
 	return {
 		label: "File",
 		submenu: [
 			{
 				label: "New Window",
 				accelerator: "CmdOrCtrl+N",
-				enabled: workspaceActionsEnabled,
+				enabled: true,
 				click: () => {
 					void createNewWindowFromApplicationMenu();
 				},
@@ -1728,7 +1729,7 @@ function buildFileMenu() {
 			{
 				label: "Open Folder...",
 				accelerator: "CmdOrCtrl+O",
-				enabled: workspaceActionsEnabled,
+				enabled: true,
 				click: () => {
 					void openFolderFromApplicationMenu();
 				},
@@ -1737,7 +1738,7 @@ function buildFileMenu() {
 			{
 				label: "New File...",
 				enabled:
-					workspaceActionsEnabled && Boolean(getWorkspaceWindowForFileAction()),
+					Boolean(getWorkspaceWindowForFileAction()),
 				click: () => {
 					requestNewFileFromApplicationMenu();
 				},
@@ -1746,7 +1747,7 @@ function buildFileMenu() {
 				id: "track-changes",
 				label: "Track Changes",
 				type: "checkbox",
-				enabled: workspaceActionsEnabled && Boolean(trackingWorkspace),
+				enabled: Boolean(trackingWorkspace),
 				checked: trackingWorkspace
 					? trackingWorkspace.ephemeral !== true
 					: false,
@@ -1765,20 +1766,22 @@ function updateDockMenu() {
 		return;
 	}
 	const trackingWindow = getWorkspaceWindowForFileAction();
-	const trackingWorkspace = trackingWindow ? getWorkspace(trackingWindow) : null;
+	const trackingWorkspace = trackingWindow
+		? getWorkspace(trackingWindow)
+		: null;
 
 	app.dock.setMenu(
 		Menu.buildFromTemplate([
 			{
 				label: "New Window",
-				enabled: canOpenWorkspaceWindows(),
+				enabled: true,
 				click: () => {
 					void createNewWindowFromApplicationMenu();
 				},
 			},
 			{
 				label: "Open Folder...",
-				enabled: canOpenWorkspaceWindows(),
+				enabled: true,
 				click: () => {
 					void openFolderFromApplicationMenu();
 				},
@@ -1786,9 +1789,7 @@ function updateDockMenu() {
 			{ type: "separator" },
 			{
 				label: "New File...",
-				enabled:
-					canOpenWorkspaceWindows() &&
-					Boolean(getWorkspaceWindowForFileAction()),
+				enabled: Boolean(getWorkspaceWindowForFileAction()),
 				click: () => {
 					requestNewFileFromApplicationMenu();
 				},
@@ -1797,7 +1798,7 @@ function updateDockMenu() {
 				id: "dock-track-changes",
 				label: "Track Changes",
 				type: "checkbox",
-				enabled: canOpenWorkspaceWindows() && Boolean(trackingWorkspace),
+				enabled: Boolean(trackingWorkspace),
 				checked: trackingWorkspace
 					? trackingWorkspace.ephemeral !== true
 					: false,
