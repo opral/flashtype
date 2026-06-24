@@ -135,7 +135,7 @@ describe("FilesView", () => {
 				panel: "central",
 				fileId: createdId,
 				filePath: "/notes.md",
-				state: { focusOnLoad: true },
+				state: { focusOnLoad: true, defaultBlock: "heading1" },
 				focus: true,
 				documentOrigin: "new",
 			});

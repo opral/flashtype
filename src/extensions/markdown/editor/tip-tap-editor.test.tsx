@@ -267,6 +267,74 @@ test("shows placeholder only while focused on an empty document", async () => {
 	});
 });
 
+test("uses heading 1 as the requested empty document default", async () => {
+	const fileId = "file_default_heading";
+	const lix = await openLix({
+		keyValues: [
+			{
+				key: "lix_deterministic_mode",
+				value: { enabled: true },
+				lixcol_branch_id: "global",
+				lixcol_global: true,
+			},
+			{
+				key: "flashtype_active_file_id",
+				value: fileId,
+				lixcol_branch_id: "global",
+				lixcol_global: true,
+				lixcol_untracked: true,
+			},
+		],
+	});
+
+	await qb(lix)
+		.insertInto("lix_file")
+		.values({
+			id: fileId,
+			path: "/default-heading.md",
+			data: new TextEncoder().encode(""),
+		})
+		.execute();
+
+	let editorRef: Editor | null = null;
+
+	await act(async () => {
+		render(
+			<Suspense>
+				<Providers lix={lix}>
+					<TipTapEditor
+						defaultBlock="heading1"
+						focusOnLoad
+						onReady={(editor) => (editorRef = editor)}
+						persistDebounceMs={0}
+					/>
+				</Providers>
+			</Suspense>,
+		);
+	});
+
+	const editorNode = await screen.findByTestId("tiptap-editor");
+	await waitFor(() => {
+		expect(editorNode.querySelector("h1")).toBeTruthy();
+		expect(editorNode.querySelector("p")).toBeNull();
+		expect(editorRef?.isActive("heading", { level: 1 })).toBe(true);
+	});
+
+	await act(async () => {
+		editorRef?.commands.insertContent("Document title");
+	});
+
+	await waitFor(async () => {
+		const row = await qb(lix)
+			.selectFrom("lix_file")
+			.where("id", "=", fileId)
+			.select("data")
+			.executeTakeFirstOrThrow();
+		const markdown = new TextDecoder().decode(row.data ?? new Uint8Array());
+		expect(markdown).toBe("# Document title\n");
+	});
+});
+
 test("clicking the surface focuses the editor even when content exists", async () => {
 	const fileId = "file_focus_surface";
 	const lix = await openLix({

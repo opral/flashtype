@@ -183,7 +183,7 @@ function FilesViewContent({
 					panel: "central",
 					fileId: id,
 					filePath: path,
-					state: { focusOnLoad: true },
+					state: { focusOnLoad: true, defaultBlock: "heading1" },
 					focus: true,
 					documentOrigin: "new",
 				});

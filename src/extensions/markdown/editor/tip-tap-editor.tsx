@@ -8,6 +8,7 @@ import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import { createEditor } from "./create-editor";
 import { assembleMdAst } from "./assemble-md-ast";
 import { astToTiptapDoc } from "./tiptap-markdown-bridge";
+import type { EmptyMarkdownDefaultBlock } from "./tiptap-markdown-bridge";
 import { parseMarkdown, serializeAst } from "./markdown-rust";
 import { tiptapDocToAst } from "./tiptap-markdown-bridge";
 import { decodeMarkdownData } from "./decode-markdown-data";
@@ -18,6 +19,7 @@ type TipTapEditorProps = {
 	onReady?: (editor: Editor) => void;
 	persistDebounceMs?: number;
 	focusOnLoad?: boolean;
+	defaultBlock?: EmptyMarkdownDefaultBlock;
 	isActiveView?: boolean;
 };
 
@@ -41,6 +43,7 @@ export function TipTapEditor({
 	onReady,
 	persistDebounceMs,
 	focusOnLoad,
+	defaultBlock,
 	isActiveView = true,
 }: TipTapEditorProps) {
 	if (fileId) {
@@ -51,6 +54,7 @@ export function TipTapEditor({
 				onReady={onReady}
 				persistDebounceMs={persistDebounceMs}
 				focusOnLoad={focusOnLoad}
+				defaultBlock={defaultBlock}
 				isActiveView={isActiveView}
 			/>
 		);
@@ -62,6 +66,7 @@ export function TipTapEditor({
 			onReady={onReady}
 			persistDebounceMs={persistDebounceMs}
 			focusOnLoad={focusOnLoad}
+			defaultBlock={defaultBlock}
 			isActiveView={isActiveView}
 		/>
 	);
@@ -147,6 +152,7 @@ function TipTapEditorLoadedContent({
 	onReady,
 	persistDebounceMs,
 	focusOnLoad,
+	defaultBlock,
 	isActiveView = true,
 	hasInitialFile,
 	initialMarkdown,
@@ -177,6 +183,7 @@ function TipTapEditorLoadedContent({
 			initialMarkdown,
 			contentAst: hasAstSnapshot ? initialAst : undefined,
 			fileId: activeFileId,
+			defaultBlock,
 			persistDebounceMs: PERSIST_DEBOUNCE_MS,
 		});
 	}, [
@@ -187,6 +194,7 @@ function TipTapEditorLoadedContent({
 		initialAst,
 		initialAstLoaded,
 		initialMarkdown,
+		defaultBlock,
 	]);
 
 	useEffect(() => {
@@ -404,7 +412,7 @@ function TipTapEditorLoadedContent({
 					continue;
 				}
 				const ast = parseMarkdown(nextMarkdown) as any;
-				editor.commands.setContent(astToTiptapDoc(ast), {
+				editor.commands.setContent(astToTiptapDoc(ast, { defaultBlock }), {
 					emitUpdate: false,
 				});
 			}
@@ -414,7 +422,14 @@ function TipTapEditorLoadedContent({
 			closed = true;
 			events.close();
 		};
-	}, [lix, editor, activeFileId, activeBranchId, initialMarkdown]);
+	}, [
+		lix,
+		editor,
+		activeFileId,
+		activeBranchId,
+		initialMarkdown,
+		defaultBlock,
+	]);
 
 	useEffect(() => {
 		hasAutoFocusedRef.current = false;

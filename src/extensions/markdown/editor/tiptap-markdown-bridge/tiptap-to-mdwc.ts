@@ -1,4 +1,5 @@
 import { normalizeAst } from "../markdown-rust";
+import { EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY } from "./mdwc-to-tiptap";
 
 const SPREAD_META_KEY = "__mdwc_spread";
 
@@ -19,6 +20,7 @@ function extractNodeData(attrs: PMNode["attrs"]): {
 		}
 		delete clone[SPREAD_META_KEY];
 	}
+	delete clone[EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY];
 	return {
 		data: Object.keys(clone).length > 0 ? clone : undefined,
 		spread,
@@ -40,8 +42,15 @@ export type PMNode = {
 export function tiptapDocToAst(doc: PMNode): any {
 	const outChildren: any[] = [];
 	for (const n of doc.content || []) {
-		// Drop empty top-level paragraphs (UI scaffold) from persisted AST
+		// Drop empty top-level paragraphs used only as editor UI scaffolds.
 		if (n.type === "paragraph") {
+			const inline = pmInlineToMd(n.content || []);
+			if (!inline.length) continue;
+		}
+		if (
+			n.type === "heading" &&
+			n.attrs?.data?.[EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY]
+		) {
 			const inline = pmInlineToMd(n.content || []);
 			if (!inline.length) continue;
 		}

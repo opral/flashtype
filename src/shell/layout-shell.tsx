@@ -1623,6 +1623,7 @@ function LayoutShellContent({
 			fileId: id,
 			filePath: path,
 			documentOrigin: "new",
+			state: { focusOnLoad: true, defaultBlock: "heading1" },
 			focus: true,
 		});
 	}, [handleOpenFile, lix]);
