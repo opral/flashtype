@@ -1,10 +1,14 @@
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 
 const RECENT_SELF_WRITE_TTL_MS = 10_000;
-const recentSelfWrites = new Map<
-	string,
-	Array<{ hash: string; timestamp: number }>
->();
+type SelfWriteEntry = { hash: string; timestamp: number };
+const recentSelfWrites = new Map<string, Array<SelfWriteEntry>>();
+
+/**
+ * Cancels a previously registered self-write expectation. Calling it again, or
+ * after the entry was already consumed or expired, is a safe no-op.
+ */
+export type CancelFlashtypeFileWrite = () => void;
 
 export function hashFileData(value: unknown): string {
 	const bytes = decodeFileDataToBytes(value);
@@ -20,10 +24,19 @@ export function markFlashtypeFileWrite(
 	fileId: string,
 	data: unknown,
 	now = Date.now(),
-): void {
+): CancelFlashtypeFileWrite {
+	const entry: SelfWriteEntry = { hash: hashFileData(data), timestamp: now };
 	const existing = pruneRecentWrites(recentSelfWrites.get(fileId) ?? [], now);
-	existing.push({ hash: hashFileData(data), timestamp: now });
+	existing.push(entry);
 	recentSelfWrites.set(fileId, existing);
+	return () => {
+		const entries = recentSelfWrites.get(fileId);
+		if (!entries) return;
+		const index = entries.indexOf(entry);
+		if (index < 0) return;
+		entries.splice(index, 1);
+		if (entries.length === 0) recentSelfWrites.delete(fileId);
+	};
 }
 
 export function consumeRecentFlashtypeFileWrite(
@@ -51,9 +64,9 @@ export function consumeRecentFlashtypeFileWrite(
 }
 
 function pruneRecentWrites(
-	entries: Array<{ hash: string; timestamp: number }>,
+	entries: Array<SelfWriteEntry>,
 	now: number,
-): Array<{ hash: string; timestamp: number }> {
+): Array<SelfWriteEntry> {
 	return entries.filter(
 		(entry) => now - entry.timestamp <= RECENT_SELF_WRITE_TTL_MS,
 	);

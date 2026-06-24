@@ -1,0 +1,237 @@
+import { describe, expect, test } from "vitest";
+import { openLix, bundledPluginArchives, type Lix } from "@/test-utils/node-lix-sdk";
+import { getExternalWriteReview } from "@/shell/external-write-review-history";
+import {
+	consumeRecentFlashtypeFileWrite,
+	hashFileData,
+} from "@/extension-runtime/external-write-tracking";
+import type { GranularReviewResolution } from "@/extension-runtime/external-write-review";
+import { applyGranularReviewResolution } from "./external-write-review-resolution";
+
+const enc = (text: string) => new TextEncoder().encode(text);
+const dec = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+type Fixture = {
+	readonly lix: Lix;
+	readonly fileId: string;
+	readonly beforeData: Uint8Array;
+	readonly afterData: Uint8Array;
+};
+
+async function openReviewFixture(): Promise<Fixture> {
+	const lix = await openLix();
+	await installBundledPlugins(lix);
+	const path = "/fixtures/resolution.md";
+	await writeFile(lix, path, "# Title\n\nAlpha.\n\nBeta.\n");
+	const fileId = await fileIdByPath(lix, path);
+	await writeFile(lix, path, "# Title\n\nAlpha edited.\n\nBeta edited.\n");
+	const review = await getExternalWriteReview(lix, fileId, path);
+	if (!review) throw new Error("expected review");
+	return { lix, fileId, beforeData: review.beforeData, afterData: review.afterData };
+}
+
+function resolution(
+	fixture: Fixture,
+	overrides: Partial<GranularReviewResolution> & {
+		resolvedData: Uint8Array;
+		acceptedCount: number;
+		rejectedCount: number;
+	},
+): GranularReviewResolution {
+	return {
+		fileId: fixture.fileId,
+		reviewId: "review-1",
+		afterData: fixture.afterData,
+		beforeData: fixture.beforeData,
+		usedRemainingAction: false,
+		...overrides,
+	};
+}
+
+describe("applyGranularReviewResolution", () => {
+	test("writes once when current data still matches the review after-state", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			const resolvedData = enc("# Title\n\nAlpha edited.\n\nBeta.\n");
+			const result = await applyGranularReviewResolution(
+				fixture.lix,
+				resolution(fixture, { resolvedData, acceptedCount: 1, rejectedCount: 1 }),
+			);
+			expect(result.outcome).toBe("applied");
+			const observed = await fileData(fixture.lix, fixture.fileId);
+			expect(dec(observed)).toBe("# Title\n\nAlpha edited.\n\nBeta.\n");
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
+	test("does not write when the file changed since the review opened", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			// A newer external write lands before the user resolves.
+			await writeFile(
+				fixture.lix,
+				"/fixtures/resolution.md",
+				"# Title\n\nSomething else entirely.\n",
+			);
+			const resolvedData = enc("# Title\n\nAlpha edited.\n\nBeta.\n");
+			const result = await applyGranularReviewResolution(
+				fixture.lix,
+				resolution(fixture, { resolvedData, acceptedCount: 1, rejectedCount: 1 }),
+			);
+			expect(result.outcome).toBe("stale");
+			const observed = await fileData(fixture.lix, fixture.fileId);
+			expect(dec(observed)).toBe("# Title\n\nSomething else entirely.\n");
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
+	test("all accepted performs no write and reports accepted_existing", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			const result = await applyGranularReviewResolution(
+				fixture.lix,
+				resolution(fixture, {
+					resolvedData: fixture.afterData,
+					acceptedCount: 2,
+					rejectedCount: 0,
+				}),
+			);
+			expect(result.outcome).toBe("accepted_existing");
+			const observed = await fileData(fixture.lix, fixture.fileId);
+			expect(dec(observed)).toBe(dec(fixture.afterData));
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
+	test("all rejected writes the exact before-state", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			const result = await applyGranularReviewResolution(
+				fixture.lix,
+				resolution(fixture, {
+					resolvedData: fixture.beforeData,
+					acceptedCount: 0,
+					rejectedCount: 2,
+				}),
+			);
+			expect(result.outcome).toBe("applied");
+			const observed = await fileData(fixture.lix, fixture.fileId);
+			expect(dec(observed)).toBe(dec(fixture.beforeData));
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
+	test("a missing file reports missing", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			const result = await applyGranularReviewResolution(fixture.lix, {
+				...resolution(fixture, {
+					resolvedData: enc("x\n"),
+					acceptedCount: 1,
+					rejectedCount: 1,
+				}),
+				fileId: "does-not-exist",
+			});
+			expect(result.outcome).toBe("missing");
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
+	test("an applied write registers an exact self-write marker consumed once", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			const resolvedData = enc("# Title\n\nAlpha edited.\n\nBeta.\n");
+			await applyGranularReviewResolution(
+				fixture.lix,
+				resolution(fixture, { resolvedData, acceptedCount: 1, rejectedCount: 1 }),
+			);
+			const hash = hashFileData(resolvedData);
+			expect(consumeRecentFlashtypeFileWrite(fixture.fileId, "00000000")).toBe(
+				false,
+			);
+			expect(consumeRecentFlashtypeFileWrite(fixture.fileId, hash)).toBe(true);
+			expect(consumeRecentFlashtypeFileWrite(fixture.fileId, hash)).toBe(false);
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
+	test("a failed transaction cancels the self-write marker", async () => {
+		const fileId = "failing-file";
+		const resolvedData = enc("# Title\n\nMixed.\n");
+		const afterData = enc("# Title\n\nAfter.\n");
+		// Fake lix whose UPDATE throws after the marker is registered.
+		const fakeLix = {
+			async transaction<T>(
+				callback: (tx: {
+					execute: (sql: string, params?: ReadonlyArray<unknown>) => Promise<any>;
+				}) => Promise<T>,
+			): Promise<T> {
+				return callback({
+					execute: async (sql: string) => {
+						if (sql.startsWith("SELECT")) {
+							return { rows: [{ get: () => afterData }] };
+						}
+						throw new Error("simulated write failure");
+					},
+				});
+			},
+		} as unknown as Lix;
+
+		const result = await applyGranularReviewResolution(fakeLix, {
+			fileId,
+			reviewId: "review-1",
+			resolvedData,
+			afterData,
+			beforeData: enc("# Title\n\nBefore.\n"),
+			acceptedCount: 1,
+			rejectedCount: 1,
+			usedRemainingAction: false,
+		});
+		expect(result.outcome).toBe("failed");
+		// The marker must have been canceled, so nothing is consumable.
+		expect(
+			consumeRecentFlashtypeFileWrite(fileId, hashFileData(resolvedData)),
+		).toBe(false);
+	});
+});
+
+async function writeFile(lix: Lix, path: string, markdown: string): Promise<void> {
+	await lix.execute(
+		"INSERT INTO lix_file (path, data) VALUES (?, ?) \
+		 ON CONFLICT (path) DO UPDATE SET data = excluded.data",
+		[path, enc(markdown)],
+	);
+}
+
+async function installBundledPlugins(lix: Lix): Promise<void> {
+	for (const plugin of await bundledPluginArchives()) {
+		await lix.execute(
+			"INSERT INTO lix_file (path, data) VALUES (?, ?) \
+			 ON CONFLICT (path) DO UPDATE SET data = excluded.data",
+			[`/.lix/plugins/${plugin.key}.lixplugin`, plugin.archiveBytes],
+		);
+	}
+}
+
+async function fileIdByPath(lix: Lix, path: string): Promise<string> {
+	const result = await lix.execute("SELECT id FROM lix_file WHERE path = ?", [
+		path,
+	]);
+	const id = result.rows[0]?.get("id");
+	if (typeof id !== "string") throw new Error(`Missing file id for ${path}`);
+	return id;
+}
+
+async function fileData(lix: Lix, fileId: string): Promise<Uint8Array> {
+	const result = await lix.execute("SELECT data FROM lix_file WHERE id = ?", [
+		fileId,
+	]);
+	const { decodeFileDataToBytes } = await import("@/lib/decode-file-data");
+	return decodeFileDataToBytes(result.rows[0]?.get("data"));
+}

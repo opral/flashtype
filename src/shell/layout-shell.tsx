@@ -34,10 +34,13 @@ import {
 	type ExternalFileWrite,
 } from "./external-write-detector";
 import { getExternalWriteReview } from "./external-write-review-history";
+import { applyGranularReviewResolution } from "./external-write-review-resolution";
 import { markFlashtypeFileWrite } from "@/extension-runtime/external-write-tracking";
 import {
 	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
 	type ExternalWriteReview,
+	type GranularReviewResolution,
+	type GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import { qb } from "@/lib/lix-kysely";
@@ -1247,6 +1250,42 @@ function LayoutShellContent({
 		],
 	);
 
+	const handleResolveExternalWriteReviewGranular = useCallback(
+		async (
+			resolution: GranularReviewResolution,
+		): Promise<GranularReviewResolutionOutcome> => {
+			const args = {
+				fileId: resolution.fileId,
+				reviewId: resolution.reviewId,
+			};
+			const review = getExternalWriteReviewForFile(args);
+			if (review && diffResolvedReviewIdsRef.current.has(review.reviewId)) {
+				return "accepted_existing";
+			}
+			const result = await applyGranularReviewResolution(lix, resolution);
+			if (result.outcome === "applied" || result.outcome === "accepted_existing") {
+				if (review) {
+					resolveDiffReviewTelemetry(
+						review,
+						resolution.rejectedCount === 0 ? "accepted" : "rejected",
+					);
+				}
+				clearExternalWriteReview(args);
+			} else if (result.outcome === "stale" || result.outcome === "missing") {
+				if (review) resolveDiffReviewTelemetry(review, "abandoned");
+				clearExternalWriteReview(args);
+			}
+			// On "failed" the overlay keeps its decisions so the user can retry.
+			return result.outcome;
+		},
+		[
+			lix,
+			getExternalWriteReviewForFile,
+			clearExternalWriteReview,
+			resolveDiffReviewTelemetry,
+		],
+	);
+
 	const handleExternalFileWrites = useCallback(
 		(writes: ExternalFileWrite[]) => {
 			void (async () => {
@@ -1814,6 +1853,8 @@ function LayoutShellContent({
 			focusPanel: focusPanel,
 			acceptExternalWriteReview: handleAcceptExternalWriteReview,
 			rejectExternalWriteReview: handleRejectExternalWriteReview,
+			resolveExternalWriteReviewGranular:
+				handleResolveExternalWriteReviewGranular,
 			lix,
 		}),
 		[
@@ -1825,6 +1866,7 @@ function LayoutShellContent({
 			handleResizePanel,
 			handleAcceptExternalWriteReview,
 			handleRejectExternalWriteReview,
+			handleResolveExternalWriteReviewGranular,
 			focusPanel,
 			lix,
 		],

@@ -1,5 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import type { Lix } from "@/lib/lix-types";
+import type {
+	GranularReviewResolution,
+	GranularReviewResolutionOutcome,
+} from "@/extension-runtime/external-write-review";
 
 /**
  * Union of registry keys for views available in the layout.
@@ -136,6 +140,9 @@ export interface ExtensionContext {
 		readonly fileId: string;
 		readonly reviewId: string;
 	}) => Promise<void>;
+	readonly resolveExternalWriteReviewGranular?: (
+		resolution: GranularReviewResolution,
+	) => Promise<GranularReviewResolutionOutcome>;
 	readonly closeExtension?: (args: {
 		readonly panel?: PanelSide;
 		readonly instance?: string;
