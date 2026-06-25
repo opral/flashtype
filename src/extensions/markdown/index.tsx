@@ -388,9 +388,9 @@ function MarkdownReviewOverlay({
 		fileId,
 	]);
 
-	// Decide the surface only once preflight is known: never render classic
-	// controls and then morph them into the granular stepper. The stepper is used
-	// only for multi-change reviews; a single change falls back to classic.
+	// Wait for the snapshot preflight before choosing a surface, so classic
+	// controls do not flash and then swap to the stepper. The stepper handles
+	// multi-change reviews; a single change uses the classic controls.
 	const controls = snapshotsLoading ? null : eligibility?.status === "safe" &&
 	  eligibility.plan.changes.length > 1 ? (
 		<MarkdownReviewStepper

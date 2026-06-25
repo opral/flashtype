@@ -136,9 +136,8 @@ ipcMain.on("review-guard:set-pending", (event, payload) => {
 function guardWindowCloseEvent(window, event) {
 	// A confirmed app quit: every window already agreed to close.
 	if (windowCloseGuard.isQuitConfirmed()) return;
-	// Nothing to lose in this window: let the close proceed immediately, with no
-	// renderer round-trip. This keeps closing/quitting instant whenever no review
-	// holds partial decisions (the overwhelmingly common case).
+	// No partial review in this window: let the close proceed immediately, with
+	// no renderer round-trip, so closing/quitting stays instant.
 	if (!windowsWithPendingReview.has(window.id)) return;
 	const { allow, ask } = windowCloseGuard.handleCloseRequest(window.id);
 	if (allow) return;

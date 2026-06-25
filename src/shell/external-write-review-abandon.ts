@@ -1,8 +1,7 @@
 // Decision logic for the abandonment dialog's "Keep proposed changes" action.
 //
-// Kept as a small pure module so the ordering guarantee — the destructive
-// continuation must run strictly after the review has resolved — can be tested
-// in isolation, without standing up the whole layout shell.
+// A small pure module so its ordering rule — the destructive continuation runs
+// only after the review has resolved — can be tested without the layout shell.
 
 export type KeepProposedOutcome = "accepted" | "abandoned" | "noop";
 
@@ -15,8 +14,8 @@ export type KeepProposedOutcome = "accepted" | "abandoned" | "noop";
  * proposed state was actually preserved.
  *
  * If the file changed since the review opened (`abandoned`), the continuation
- * is skipped and the optional `cancel` runs instead, so the destructive action
- * never proceeds silently against a buffer the user never saw.
+ * is skipped and the optional `cancel` runs instead, rather than proceeding
+ * against a buffer the user did not see.
  *
  * @returns `"continued"` when the continuation ran, `"cancelled"` otherwise.
  */

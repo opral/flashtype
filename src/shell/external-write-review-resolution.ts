@@ -49,9 +49,7 @@ export async function applyGranularReviewResolution(
 				if (current.rows.length === 0) {
 					return { outcome: "missing" as const };
 				}
-				const currentData = decodeFileDataToBytes(
-					current.rows[0]?.get("data"),
-				);
+				const currentData = decodeFileDataToBytes(current.rows[0]?.get("data"));
 				if (!bytesEqual(currentData, afterData)) {
 					return { outcome: "stale" as const };
 				}

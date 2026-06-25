@@ -527,7 +527,8 @@ function LayoutShellContent({
 			captureWorkspaceTelemetry("diff_resolved", {
 				diff_review_id: review.reviewId,
 				diff_session_id:
-					diffSessionIdByFileIdRef.current.get(review.fileId) ?? review.reviewId,
+					diffSessionIdByFileIdRef.current.get(review.fileId) ??
+					review.reviewId,
 				file_extension: fileExtensionProperty(review.path),
 				outcome,
 				source: "renderer",
@@ -1295,10 +1296,10 @@ function LayoutShellContent({
 			if (review && diffResolvedReviewIdsRef.current.has(review.reviewId)) {
 				return "accepted_existing";
 			}
-			// Suppress the detector for this file while the resolution write lands so
-			// it can never reopen a review of itself, then lift the suppression after
-			// it settles (parity with the classic reject path; the exact self-write
-			// marker is a second line of defence).
+			// Ignore the detector for this file while the resolution write lands so it
+			// does not reopen a review of itself, then lift it once the write settles
+			// (same approach as the classic reject path; the exact self-write marker
+			// is a backstop).
 			const { fileId } = args;
 			ignoredExternalWriteReviewFileIdsRef.current.add(fileId);
 			let wroteResolution = false;
@@ -1318,11 +1319,9 @@ function LayoutShellContent({
 						);
 					}
 					clearExternalWriteReview(args);
-				} else if (
-					result.outcome === "stale" ||
-					result.outcome === "missing"
-				) {
-					if (review) resolveDiffReviewTelemetry(review, "abandoned", telemetry);
+				} else if (result.outcome === "stale" || result.outcome === "missing") {
+					if (review)
+						resolveDiffReviewTelemetry(review, "abandoned", telemetry);
 					clearExternalWriteReview(args);
 				}
 				// On "failed" the overlay keeps its decisions so the user can retry.
@@ -1422,10 +1421,9 @@ function LayoutShellContent({
 		const dialog = abandonDialog;
 		setAbandonDialog(null);
 		if (!dialog) return;
-		// Keep the proposed (after) changes by accepting the whole review, and only
-		// continue the destructive action once that acceptance has resolved. If the
-		// file changed since the review opened, cancel instead of continuing
-		// silently against a buffer the user never saw.
+		// Keep the proposed (after) changes by accepting the whole review, and
+		// continue the destructive action only once that acceptance resolves. If
+		// the file changed since the review opened, cancel instead.
 		void keepProposedThenContinue({
 			accept: () =>
 				handleAcceptExternalWriteReview({
@@ -1452,9 +1450,9 @@ function LayoutShellContent({
 	}, [abandonDialog, handleRejectExternalWriteReview]);
 
 	// Establish a tracked Lix baseline the first time each reviewable Markdown
-	// file is observed, so its FIRST external edit can be reviewed per-change
-	// rather than all-or-nothing. The write is identical-bytes (no disk change),
-	// idempotent, and self-write-suppressed; deduped per file for this session.
+	// file is observed, so its first external edit can be reviewed per-change
+	// rather than all-or-nothing. The write is identical-bytes (no disk change)
+	// and idempotent; deduped per file for this session.
 	const baselinedFileIdsRef = useRef(new Set<string>());
 	const baselinePromisesByFileIdRef = useRef(new Map<string, Promise<void>>());
 	const ensureReviewBaseline = useCallback(
@@ -1478,8 +1476,7 @@ function LayoutShellContent({
 						continue;
 					}
 					// Let any in-flight baseline for this file settle first, so the
-					// review is computed against a stable before-state (and a baseline
-					// write never races the review open).
+					// review is computed against a stable before-state.
 					await baselinePromisesByFileIdRef.current.get(write.fileId);
 					const latest = await getExternalWriteReview(
 						lix,
@@ -1492,10 +1489,9 @@ function LayoutShellContent({
 					);
 
 					// Fold a sequential external write into the review already open for
-					// this file: keep its original "before" anchor and only advance the
-					// "after" to the latest state. The cumulative diff is reviewed as one
-					// growing set of changes, so an earlier change is never silently
-					// dropped when the next write arrives.
+					// this file: keep its original "before" anchor and advance the
+					// "after" to the latest state, so the cumulative diff is reviewed
+					// together and an earlier change is not dropped by the next write.
 					let review = latest;
 					if (existingReview) {
 						if (fileBytesEqual(existingReview.beforeData, latest.afterData)) {
