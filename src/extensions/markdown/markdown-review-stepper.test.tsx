@@ -276,6 +276,53 @@ describe("MarkdownReviewStepper", () => {
 		expect(onResolve.mock.calls[0]![0].rejectedCount).toBe(0);
 	});
 
+	test("re-prompts a decided change whose content evolves in a later write", async () => {
+		// Same key for the first change across both plans, but its after-content
+		// changes (Alpha v2 -> Alpha v3), so the carried decision must NOT be reused.
+		const baseline = [b("h", "10", "# T"), b("p", "20", "Alpha"), b("q", "30", "Beta")];
+		const v1 = [b("h", "10", "# T"), b("p", "20", "Alpha v2"), b("q", "30", "Beta v2")];
+		const v2 = [b("h", "10", "# T"), b("p", "20", "Alpha v3"), b("q", "30", "Beta v2")];
+		const first = buildPlan(baseline, v1);
+		const second = buildPlan(baseline, v2);
+
+		const ref = createRef<HTMLElement>();
+		const onResolve = vi.fn<
+			(r: GranularReviewResolution) => Promise<GranularReviewResolutionOutcome>
+		>(async () => "applied");
+		const propsFor = (
+			built: typeof first,
+			reviewId: string,
+		): React.ComponentProps<typeof MarkdownReviewStepper> => ({
+			plan: built.plan,
+			reviewId,
+			fileId: "file-1",
+			beforeData: built.beforeData,
+			afterData: built.afterData,
+			isActive: true,
+			diffContainerRef: ref,
+			onResolve,
+		});
+
+		const { rerender } = render(
+			<MarkdownReviewStepper {...propsFor(first, "review-v1")} />,
+		);
+		// Accept the first change (p), leaving the second (q) pending.
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		expect(screen.getByText("2 of 2")).toBeTruthy();
+
+		// Fold: same before-anchor, but p's content evolved -> its decision resets.
+		rerender(<MarkdownReviewStepper {...propsFor(second, "review-v2")} />);
+
+		// Both changes are pending now: a single decision must NOT complete the
+		// review (if p's accept had been carried, one click would have resolved).
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		expect(onResolve).not.toHaveBeenCalled();
+		// Deciding the remaining change completes it.
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		await waitFor(() => expect(onResolve).toHaveBeenCalledTimes(1));
+		expect(onResolve.mock.calls[0]![0].acceptedCount).toBe(2);
+	});
+
 	test("a failed resolution keeps decisions and offers Retry", async () => {
 		const onResolveImpl = vi
 			.fn<() => Promise<GranularReviewResolutionOutcome>>()
