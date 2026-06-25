@@ -321,7 +321,7 @@ async function openWorkspaceRequests(
 		requestsBySource.set(taggedRequest.requestedSource, requests);
 	}
 
-	for (const [source, requests] of requestsBySource) {
+	for (const requests of requestsBySource.values()) {
 		let workspaceTargets;
 		try {
 			workspaceTargets = await resolveDirectLaunchWorkspaceTargets(requests);
