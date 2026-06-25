@@ -17,7 +17,7 @@
 		"dev": "node scripts/dev.mjs",
 		"dev:renderer": "vite --host 127.0.0.1 --port 4173 --strictPort",
 		"dev:electron": "wait-on tcp:4173 && VITE_DEV_SERVER_URL=http://127.0.0.1:4173 electron ./electron/main.mjs",
-		"build:markdown-wc": "CARGO_TARGET_DIR=./target pnpm -C submodule/markdown-wc/js run build:web",
+		"build:markdown-wc": "CARGO_TARGET_DIR=./target pnpm -C vendor/markdown-wc/js run build:web",
 		"build:icons": "cargo flashtype-icons",
 		"build:env-variables": "node scripts/write-env-variables.mjs",
 		"build:posthog-sourcemaps": "node scripts/upload-posthog-sourcemaps.mjs",

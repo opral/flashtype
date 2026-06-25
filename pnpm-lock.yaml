@@ -222,7 +222,7 @@ importers:
         specifier: 0.7.0
         version: 0.7.0
 
-  submodule/markdown-wc/js: {}
+  vendor/markdown-wc/js: {}
 
 packages:
 

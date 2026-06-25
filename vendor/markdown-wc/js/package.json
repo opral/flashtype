@@ -1,0 +1,11 @@
+{
+  "name": "@opral/markdown-wc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf pkg target",
+    "build:node": "cargo build --manifest-path ./Cargo.toml --release --target wasm32-unknown-unknown && wasm-bindgen --target experimental-nodejs-module --out-dir ./pkg ./target/wasm32-unknown-unknown/release/markdown_wc_js_bindings.wasm",
+    "build:web": "cargo build --manifest-path ./Cargo.toml --release --target wasm32-unknown-unknown && wasm-bindgen --target bundler --out-dir ./pkg ./target/wasm32-unknown-unknown/release/markdown_wc_js_bindings.wasm",
+    "build": "pnpm run build:web"
+  }
+}

@@ -24,7 +24,7 @@ export default defineConfig({
 			"@": path.resolve(__dirname, "src"),
 			"@markdown-wc/wasm": path.resolve(
 				__dirname,
-				"submodule/markdown-wc/js/pkg/markdown_wc_js_bindings.js",
+				"vendor/markdown-wc/js/pkg/markdown_wc_js_bindings.js",
 			),
 		},
 	},
