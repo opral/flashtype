@@ -8,7 +8,6 @@ export type ExternalWriteReview = {
 	readonly afterCommitId?: string;
 	readonly beforeDepth?: number;
 	readonly afterDepth?: number;
-	readonly source?: "agent-turn" | "history";
 	readonly agentTurnRangeId?: string;
 };
 

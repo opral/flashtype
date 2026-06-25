@@ -13,7 +13,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 describe("getExternalWriteReview", () => {
-	test("uses latest file history when no agent turn range exists", async () => {
+	test("returns no review when no agent turn range exists", async () => {
 		const lix = await openLix();
 		try {
 			await writeFile(lix, "history-file", "/docs/history.md", "before");
@@ -25,15 +25,13 @@ describe("getExternalWriteReview", () => {
 				"/docs/history.md",
 			);
 
-			expect(review?.source).toBe("history");
-			expect(decode(review?.beforeData)).toBe("before");
-			expect(decode(review?.afterData)).toBe("after");
+			expect(review).toBeNull();
 		} finally {
 			await lix.close();
 		}
 	});
 
-	test("prefers an agent turn range over the latest file history pair", async () => {
+	test("uses an agent turn range for the review diff", async () => {
 		const lix = await openLix();
 		try {
 			await writeFile(lix, "agent-file", "/docs/agent.md", "turn before");
@@ -53,7 +51,6 @@ describe("getExternalWriteReview", () => {
 				"/docs/agent.md",
 			);
 
-			expect(review?.source).toBe("agent-turn");
 			expect(review?.agentTurnRangeId).toBe("range-1");
 			expect(review?.beforeCommitId).toBe(beforeCommitId);
 			expect(review?.afterCommitId).toBe(afterCommitId);

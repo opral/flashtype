@@ -20,37 +20,8 @@ export async function getExternalWriteReview(
 	path: string,
 ): Promise<ExternalWriteReview | null> {
 	const range = await readAgentTurnCommitRange(lix);
-	if (range && range.beforeCommitId === range.afterCommitId) return null;
-	const agentTurnReview = range
-		? await getAgentTurnExternalWriteReview(lix, fileId, path, range)
-		: null;
-	if (agentTurnReview) {
-		return agentTurnReview;
-	}
-	const rows = await getHistoryRows(lix, fileId);
-	if (!rows || rows.history.length < 2) return null;
-	const afterData = decodeFileDataToBytes(rows.history[0]?.data);
-	const beforeData = decodeFileDataToBytes(rows.history[1]?.data);
-	if (fileBytesEqual(beforeData, afterData)) return null;
-	return {
-		fileId,
-		path,
-		reviewId: `${fileId}:${hashFileData(beforeData)}:${hashFileData(afterData)}`,
-		afterData,
-		beforeData,
-		afterCommitId:
-			rows.history[0]?.lixcol_observed_commit_id ?? rows.startCommitId,
-		beforeCommitId: rows.history[1]?.lixcol_observed_commit_id ?? undefined,
-		afterDepth:
-			typeof rows.history[0]?.lixcol_depth === "number"
-				? rows.history[0].lixcol_depth
-				: undefined,
-		beforeDepth:
-			typeof rows.history[1]?.lixcol_depth === "number"
-				? rows.history[1].lixcol_depth
-				: undefined,
-		source: "history",
-	};
+	if (!range || range.beforeCommitId === range.afterCommitId) return null;
+	return getAgentTurnExternalWriteReview(lix, fileId, path, range);
 }
 
 async function getAgentTurnExternalWriteReview(
@@ -79,7 +50,6 @@ async function getAgentTurnExternalWriteReview(
 			typeof before.lixcol_depth === "number" ? before.lixcol_depth : undefined,
 		afterDepth:
 			typeof after.lixcol_depth === "number" ? after.lixcol_depth : undefined,
-		source: "agent-turn",
 		agentTurnRangeId: range.id,
 	};
 }
@@ -98,34 +68,6 @@ async function getFileHistorySnapshotAtCommit(
 		.limit(1)
 		.executeTakeFirst()) as FileHistoryRow | undefined;
 	return row ?? null;
-}
-
-async function getHistoryRows(
-	lix: Lix,
-	fileId: string,
-): Promise<{ startCommitId: string; history: FileHistoryRow[] } | null> {
-	const activeBranchId = await lix.activeBranchId();
-	const branch = await qb(lix)
-		.selectFrom("lix_branch")
-		.select("commit_id")
-		.where("id", "=", activeBranchId)
-		.limit(1)
-		.executeTakeFirst();
-
-	const startCommitId = branch?.commit_id;
-	if (typeof startCommitId !== "string" || startCommitId.length === 0) {
-		return null;
-	}
-
-	const history = (await qb(lix)
-		.selectFrom("lix_file_history")
-		.select(["data", "lixcol_depth", "lixcol_observed_commit_id"])
-		.where("lixcol_start_commit_id", "=", startCommitId)
-		.where("id", "=", fileId)
-		.orderBy("lixcol_depth", "asc")
-		.limit(2)
-		.execute()) as FileHistoryRow[];
-	return { startCommitId, history };
 }
 
 function fileBytesEqual(left: Uint8Array, right: Uint8Array): boolean {
