@@ -312,11 +312,9 @@ function changeSignature(
 	before: readonly MarkdownBlockSnapshot[],
 	after: readonly MarkdownBlockSnapshot[],
 ): string {
-	const part = (blocks: readonly MarkdownBlockSnapshot[]) =>
-		blocks
-			.map((block) => `${block.id} ${block.orderKey} ${block.block}`)
-			.join("");
-	return hashString(`${part(before)}${part(after)}`);
+	const serialize = (blocks: readonly MarkdownBlockSnapshot[]) =>
+		blocks.map((block) => [block.id, block.orderKey, block.block]);
+	return hashString(JSON.stringify([serialize(before), serialize(after)]));
 }
 
 function hashString(value: string): string {
