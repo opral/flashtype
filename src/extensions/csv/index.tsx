@@ -262,7 +262,7 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 	);
 
 	return (
-		<div className="ph-mask h-full min-h-0 flex-1 bg-background">
+		<div className="ph-mask ph-no-capture h-full min-h-0 flex-1 bg-background">
 			<DataEditor
 				className="csv-data-grid"
 				columns={columns}
