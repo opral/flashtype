@@ -106,6 +106,30 @@ describe("getExternalWriteReview", () => {
 			await lix.close();
 		}
 	});
+
+	test("omits undefined optional ids when persisting agent turn ranges", async () => {
+		const lix = await openLix();
+		try {
+			await writeAgentTurnCommitRange(lix, {
+				id: "range-without-optional-ids",
+				agent: "codex",
+				beforeCommitId: "commit-before",
+				afterCommitId: "commit-after",
+				sessionId: undefined,
+				turnId: undefined,
+				startedAt: 1,
+				completedAt: 2,
+			});
+
+			const range = await readAgentTurnCommitRange(lix);
+
+			expect(range?.id).toBe("range-without-optional-ids");
+			expect(Object.hasOwn(range ?? {}, "sessionId")).toBe(false);
+			expect(Object.hasOwn(range ?? {}, "turnId")).toBe(false);
+		} finally {
+			await lix.close();
+		}
+	});
 });
 
 async function writeFile(

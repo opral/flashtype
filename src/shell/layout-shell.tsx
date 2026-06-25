@@ -432,7 +432,13 @@ function isExternalWriteReview(value: unknown): value is ExternalWriteReview {
 		typeof review.path === "string" &&
 		typeof review.reviewId === "string" &&
 		review.beforeData instanceof Uint8Array &&
-		review.afterData instanceof Uint8Array
+		review.afterData instanceof Uint8Array &&
+		typeof review.beforeCommitId === "string" &&
+		review.beforeCommitId.length > 0 &&
+		typeof review.afterCommitId === "string" &&
+		review.afterCommitId.length > 0 &&
+		typeof review.agentTurnRangeId === "string" &&
+		review.agentTurnRangeId.length > 0
 	);
 }
 
@@ -864,10 +870,7 @@ function LayoutShellLoadedContent({
 			if (openReview?.reviewId === review.reviewId) {
 				openDiffReviewByFileIdRef.current.delete(review.fileId);
 			}
-			if (
-				(outcome === "accepted" || outcome === "rejected") &&
-				review.agentTurnRangeId
-			) {
+			if (outcome === "accepted" || outcome === "rejected") {
 				void clearAgentTurnCommitRange(lix, review.agentTurnRangeId).catch(
 					(error: unknown) => {
 						console.warn(

@@ -5,9 +5,8 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
 import { TERMINAL_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
+import { buildTerminalInitialCommand } from "../../extension-runtime/agent-terminal-command";
 import { createTerminalOutputNormalizer } from "./ansi-style-normalizer";
-
-const TERMINAL_INITIAL_COMMAND_LAUNCH_ARG = "initialCommand";
 
 function cssColor(name: string, fallback: string): string {
 	if (typeof window === "undefined") return fallback;
@@ -188,14 +187,10 @@ export const extension = createReactExtensionDefinition({
 	multiInstance: true,
 	component: ({ instance }) => (
 		<TerminalView
-			initialCommand={
-				typeof instance.launchArgs?.[TERMINAL_INITIAL_COMMAND_LAUNCH_ARG] ===
-				"string"
-					? instance.launchArgs[TERMINAL_INITIAL_COMMAND_LAUNCH_ARG]
-					: typeof instance.state?.command === "string"
-						? instance.state.command
-						: undefined
-			}
+			initialCommand={buildTerminalInitialCommand({
+				state: instance.state,
+				launchArgs: instance.launchArgs,
+			})}
 		/>
 	),
 });

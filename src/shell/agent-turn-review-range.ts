@@ -34,17 +34,18 @@ export async function writeAgentTurnCommitRange(
 	lix: Lix,
 	range: AgentTurnCommitRange,
 ): Promise<void> {
+	const value = serializeAgentTurnCommitRange(range);
 	await qb(lix)
 		.insertInto("lix_key_value_by_branch")
 		.values({
 			key: AGENT_TURN_COMMIT_RANGE_KEY,
-			value: range,
+			value,
 			lixcol_branch_id: GLOBAL_BRANCH_ID,
 			lixcol_global: true,
 			lixcol_untracked: true,
 		})
 		.onConflict((oc) =>
-			oc.columns(["key", "lixcol_branch_id"]).doUpdateSet({ value: range }),
+			oc.columns(["key", "lixcol_branch_id"]).doUpdateSet({ value }),
 		)
 		.execute();
 }
@@ -94,4 +95,19 @@ export function isAgentTurnCommitRange(
 		(range.sessionId === undefined || typeof range.sessionId === "string") &&
 		(range.turnId === undefined || typeof range.turnId === "string")
 	);
+}
+
+function serializeAgentTurnCommitRange(
+	range: AgentTurnCommitRange,
+): AgentTurnCommitRange {
+	return {
+		id: range.id,
+		agent: range.agent,
+		beforeCommitId: range.beforeCommitId,
+		afterCommitId: range.afterCommitId,
+		...(range.sessionId !== undefined ? { sessionId: range.sessionId } : {}),
+		...(range.turnId !== undefined ? { turnId: range.turnId } : {}),
+		startedAt: range.startedAt,
+		completedAt: range.completedAt,
+	};
 }

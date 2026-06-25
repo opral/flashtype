@@ -10,8 +10,6 @@ import {
 
 type FileHistoryRow = {
 	readonly data: unknown;
-	readonly lixcol_depth: number | null;
-	readonly lixcol_observed_commit_id: string | null;
 };
 
 export async function getExternalWriteReview(
@@ -46,10 +44,6 @@ async function getAgentTurnExternalWriteReview(
 		afterData,
 		beforeCommitId: range.beforeCommitId,
 		afterCommitId: range.afterCommitId,
-		beforeDepth:
-			typeof before.lixcol_depth === "number" ? before.lixcol_depth : undefined,
-		afterDepth:
-			typeof after.lixcol_depth === "number" ? after.lixcol_depth : undefined,
 		agentTurnRangeId: range.id,
 	};
 }
@@ -61,7 +55,7 @@ async function getFileHistorySnapshotAtCommit(
 ): Promise<FileHistoryRow | null> {
 	const row = (await qb(lix)
 		.selectFrom("lix_file_history")
-		.select(["data", "lixcol_depth", "lixcol_observed_commit_id"])
+		.select("data")
 		.where("lixcol_start_commit_id", "=", commitId)
 		.where("id", "=", fileId)
 		.where("lixcol_depth", "=", 0)

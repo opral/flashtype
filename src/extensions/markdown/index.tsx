@@ -126,8 +126,6 @@ function MarkdownViewLoaded({
 		return {
 			beforeMarkdown: decodeFileDataToText(externalWriteReview.beforeData),
 			afterMarkdown: decodeFileDataToText(externalWriteReview.afterData),
-			beforeDepth: externalWriteReview.beforeDepth,
-			afterDepth: externalWriteReview.afterDepth,
 		};
 	}, [externalWriteReview]);
 
@@ -258,8 +256,8 @@ function MarkdownReviewOverlay({
 	readonly fileId: string;
 	readonly reviewDiff: MarkdownReviewDiff;
 	readonly reviewId: string;
-	readonly beforeCommitId?: string;
-	readonly afterCommitId?: string;
+	readonly beforeCommitId: string;
+	readonly afterCommitId: string;
 	readonly isActive: boolean;
 	readonly onAccept?: (args: {
 		readonly fileId: string;

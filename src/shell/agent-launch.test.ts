@@ -4,6 +4,7 @@ import {
 	buildAgentLaunchArgsWithActiveFile,
 	buildFlashtypeActiveFilePrompt,
 } from "./agent-launch";
+import { buildTerminalInitialCommand } from "@/extension-runtime/agent-terminal-command";
 
 describe("buildFlashtypeActiveFilePrompt", () => {
 	test("uses the Flashtype.com launch-context sentence", () => {
@@ -83,6 +84,21 @@ describe("buildAgentLaunchArgsWithActiveFile", () => {
 		const command = String(launchArgs?.[TERMINAL_INITIAL_COMMAND_LAUNCH_ARG]);
 		expect(command).toContain("hooks.UserPromptSubmit=");
 		expect(command).not.toContain("developer_instructions=");
+	});
+
+	test("injects hooks into restored agent terminal commands", () => {
+		const command = buildTerminalInitialCommand({
+			state: {
+				command: "claude --dangerously-skip-permissions",
+				flashtype: { icon: "claude" },
+			},
+		});
+
+		expect(command).toContain("claude --dangerously-skip-permissions");
+		expect(command).toContain("--settings");
+		expect(command).toContain("UserPromptSubmit");
+		expect(command).toContain("StopFailure");
+		expect(command).not.toContain("--append-system-prompt");
 	});
 
 	test("does not alter non-agent terminal launches", () => {
