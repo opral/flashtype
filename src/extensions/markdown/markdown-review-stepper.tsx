@@ -34,7 +34,16 @@ type StepperState = {
 	readonly reviewId: string;
 	readonly decisions: readonly ReviewDecision[];
 	readonly activeIndex: number;
-	readonly applying: boolean;
+	/**
+	 * Set the instant a resolution is submitted. Disables every control so no
+	 * action can race the in-flight write, regardless of how fast it resolves.
+	 */
+	readonly submitting: boolean;
+	/**
+	 * Set only after a short delay so the "Applying…" affordance never flashes
+	 * for a fast write. Always implies `submitting`.
+	 */
+	readonly showApplying: boolean;
 	readonly error: boolean;
 };
 
@@ -43,7 +52,8 @@ type StepperAction =
 	| { type: "decide"; index: number; decision: "accepted" | "rejected" }
 	| { type: "decideRemaining"; decision: "accepted" | "rejected" }
 	| { type: "navigate"; index: number }
-	| { type: "beginApply" }
+	| { type: "beginSubmit" }
+	| { type: "beginApplying" }
 	| { type: "applyFailed" };
 
 function initState(args: { reviewId: string; count: number }): StepperState {
@@ -51,7 +61,8 @@ function initState(args: { reviewId: string; count: number }): StepperState {
 		reviewId: args.reviewId,
 		decisions: Array.from({ length: args.count }, () => "pending" as const),
 		activeIndex: 0,
-		applying: false,
+		submitting: false,
+		showApplying: false,
 		error: false,
 	};
 }
@@ -90,10 +101,12 @@ function reducer(state: StepperState, action: StepperAction): StepperState {
 		}
 		case "navigate":
 			return { ...state, activeIndex: action.index };
-		case "beginApply":
-			return { ...state, applying: true, error: false };
+		case "beginSubmit":
+			return { ...state, submitting: true, showApplying: false, error: false };
+		case "beginApplying":
+			return state.submitting ? { ...state, showApplying: true } : state;
 		case "applyFailed":
-			return { ...state, applying: false, error: true };
+			return { ...state, submitting: false, showApplying: false, error: true };
 		default:
 			return state;
 	}
@@ -155,7 +168,7 @@ export function MarkdownReviewStepper({
 	const pendingCount = state.decisions.filter((d) => d === "pending").length;
 	const decidedCount = total - pendingCount;
 	const hasPartialDecisions =
-		decidedCount > 0 && pendingCount > 0 && !state.applying;
+		decidedCount > 0 && pendingCount > 0 && !state.submitting;
 
 	// Surface partial-decision state to the shell's abandonment guard.
 	useEffect(() => {
@@ -190,10 +203,12 @@ export function MarkdownReviewStepper({
 			usedRemainingAction: usedRemainingRef.current,
 		};
 
-		// Only surface the "Applying…" state if the write is slow enough to need
-		// it, so fast resolutions never flash.
+		// Disable every control immediately so nothing can race the in-flight
+		// write, then only surface the "Applying…" affordance if the write is slow
+		// enough to need it, so fast resolutions never flash it.
+		dispatch({ type: "beginSubmit" });
 		applyTimerRef.current = window.setTimeout(() => {
-			dispatch({ type: "beginApply" });
+			dispatch({ type: "beginApplying" });
 		}, APPLYING_DELAY_MS);
 
 		void onResolve(resolution)
@@ -227,11 +242,11 @@ export function MarkdownReviewStepper({
 
 	// Auto-apply once every change has been decided.
 	useEffect(() => {
-		if (state.error || state.applying) return;
+		if (state.error || state.submitting) return;
 		if (total === 0) return;
 		const allDecided = state.decisions.every((d) => d !== "pending");
 		if (allDecided) submit();
-	}, [state.decisions, state.error, state.applying, total, submit]);
+	}, [state.decisions, state.error, state.submitting, total, submit]);
 
 	useEffect(
 		() => () => {
@@ -244,10 +259,10 @@ export function MarkdownReviewStepper({
 
 	const decide = useCallback(
 		(decision: "accepted" | "rejected") => {
-			if (state.applying) return;
+			if (state.submitting) return;
 			dispatch({ type: "decide", index: state.activeIndex, decision });
 		},
-		[state.activeIndex, state.applying],
+		[state.activeIndex, state.submitting],
 	);
 
 	const navigate = useCallback(
@@ -264,12 +279,12 @@ export function MarkdownReviewStepper({
 
 	const decideRemaining = useCallback(
 		(decision: "accepted" | "rejected") => {
-			if (state.applying) return;
+			if (state.submitting) return;
 			usedRemainingRef.current = true;
 			setMenuOpen(false);
 			dispatch({ type: "decideRemaining", decision });
 		},
-		[state.applying],
+		[state.submitting],
 	);
 
 	const retry = useCallback(() => {
@@ -349,7 +364,8 @@ export function MarkdownReviewStepper({
 			data-testid="markdown-review-stepper"
 			role="group"
 			aria-label="Per-change review actions"
-			data-applying={state.applying ? "true" : undefined}
+			data-applying={state.showApplying ? "true" : undefined}
+			data-submitting={state.submitting ? "true" : undefined}
 		>
 			<span
 				className="markdown-review-live"
@@ -379,7 +395,7 @@ export function MarkdownReviewStepper({
 									type="button"
 									className="markdown-review-chevron"
 									aria-label="Previous change"
-									disabled={state.applying || state.activeIndex === 0}
+									disabled={state.submitting || state.activeIndex === 0}
 									onClick={() => navigate(-1)}
 								>
 									<ChevronUp aria-hidden />
@@ -396,7 +412,7 @@ export function MarkdownReviewStepper({
 									type="button"
 									className="markdown-review-chevron"
 									aria-label="Next change"
-									disabled={state.applying || state.activeIndex === total - 1}
+									disabled={state.submitting || state.activeIndex === total - 1}
 									onClick={() => navigate(1)}
 								>
 									<ChevronDown aria-hidden />
@@ -410,7 +426,7 @@ export function MarkdownReviewStepper({
 									type="button"
 									className="markdown-review-chevron"
 									aria-label="More review actions"
-									disabled={state.applying || pendingCount === 0}
+									disabled={state.submitting || pendingCount === 0}
 								>
 									<MoreHorizontal aria-hidden />
 								</button>
@@ -431,7 +447,7 @@ export function MarkdownReviewStepper({
 							type="button"
 							className="markdown-review-button markdown-review-button-reject"
 							data-chosen={activeDecision === "rejected" ? "true" : undefined}
-							disabled={state.applying}
+							disabled={state.submitting}
 							onClick={() => decide("rejected")}
 						>
 							<span>Reject</span>
@@ -443,7 +459,7 @@ export function MarkdownReviewStepper({
 							type="button"
 							className="markdown-review-button markdown-review-button-accept"
 							data-chosen={activeDecision === "accepted" ? "true" : undefined}
-							disabled={state.applying}
+							disabled={state.submitting}
 							onClick={() => decide("accepted")}
 						>
 							<span>Accept</span>
@@ -453,7 +469,7 @@ export function MarkdownReviewStepper({
 						</button>
 					</div>
 
-					{state.applying ? (
+					{state.showApplying ? (
 						<span className="markdown-review-applying" role="status">
 							Applying…
 						</span>

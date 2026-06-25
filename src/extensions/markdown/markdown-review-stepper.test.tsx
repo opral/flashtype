@@ -197,6 +197,29 @@ describe("MarkdownReviewStepper", () => {
 		expect(onResolve).not.toHaveBeenCalled();
 	});
 
+	test("disables controls immediately on submit, before the Applying affordance", () => {
+		// A resolution that never settles keeps the stepper in its submitting state.
+		const onResolveImpl = vi.fn(
+			() => new Promise<GranularReviewResolutionOutcome>(() => {}),
+		);
+		const { onResolve } = renderStepper({ onResolve: onResolveImpl as any });
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		// The write is in flight: controls are disabled synchronously, without
+		// waiting for the delayed "Applying…" affordance.
+		expect(onResolve).toHaveBeenCalledTimes(1);
+		const accept = screen.getByRole("button", {
+			name: /Accept/,
+		}) as HTMLButtonElement;
+		const reject = screen.getByRole("button", {
+			name: /Reject/,
+		}) as HTMLButtonElement;
+		expect(accept.disabled).toBe(true);
+		expect(reject.disabled).toBe(true);
+		// "Applying…" is delayed, so it has not flashed in for this fast path.
+		expect(screen.queryByText("Applying…")).toBeNull();
+	});
+
 	test("a failed resolution keeps decisions and offers Retry", async () => {
 		const onResolveImpl = vi
 			.fn<() => Promise<GranularReviewResolutionOutcome>>()
