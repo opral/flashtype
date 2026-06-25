@@ -11,15 +11,14 @@ import {
 } from "./electron-test-utils";
 
 const INITIAL = "# Review\n\nAlpha paragraph.\n\nBeta paragraph.\n";
-// First external write establishes a real "before" commit (the boot-ingested
-// state has no observed commit id, which intentionally falls back to classic).
-const V2 = "# Review\n\nAlpha v2.\n\nBeta v2.\n";
-// Second external write edits both paragraphs relative to V2 -> two changes.
-const V3 = "# Review\n\nAlpha v3.\n\nBeta v3.\n";
-// Accept the first change, reject the second: the canonical Lix projection.
-const EXPECTED = "# Review\n\nAlpha v3.\n\nBeta v2.\n";
+// A single external edit changes both paragraphs -> two granular changes. The
+// app establishes a tracked baseline for the file at ingest, so even this very
+// first external write offers the per-change stepper (no warm-up write needed).
+const EDIT = "# Review\n\nAlpha v2.\n\nBeta v2.\n";
+// Accept the first change, reject the second: the canonical mixed projection.
+const EXPECTED = "# Review\n\nAlpha v2.\n\nBeta paragraph.\n";
 
-test("accepts one block and rejects another in a granular Markdown review", async ({
+test("accepts one block and rejects another on the first external Markdown edit", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const workspaceDir = testInfo.outputPath("workspace");
@@ -38,28 +37,20 @@ test("accepts one block and rejects another in a granular Markdown review", asyn
 		await expectInstalledPluginArchives(workspaceDir);
 		await ensureFilesViewOpenInLeftPanel(page);
 
-		// Open the file so it is ingested, then change it from outside the app.
+		// Open the file so it is ingested and rendered; this also confirms the
+		// workspace baseline had a chance to materialize before the external edit.
 		const reviewFile = page.getByTestId("file-tree-item-review-md");
 		await expect(reviewFile).toBeVisible();
 		await reviewFile.click();
 		await expect(page.getByText("/review.md")).toBeVisible();
-		// Wait for the initial content to be ingested and committed by Lix.
 		await expect(page.getByText("Alpha paragraph.")).toBeVisible();
-		await page.waitForTimeout(2500);
 
-		// First external write: opens a review whose before-state is the boot
-		// ingest (no observed commit id), so it uses the classic controls. This
-		// establishes V2 as a real commit for the next review's before-state.
-		await writeFile(reviewPath, V2);
+		// The single external write that triggers the review.
+		await writeFile(reviewPath, EDIT);
+
+		// The granular stepper appears with two changes — no warm-up write.
 		const overlay = page.locator(".markdown-review-overlay");
 		await expect(overlay).toBeVisible({ timeout: 45_000 });
-		await page.waitForTimeout(1000);
-
-		// Second external write: edits both paragraphs relative to V2, so the
-		// review now has a real before-commit and offers the granular stepper.
-		await writeFile(reviewPath, V3);
-
-		// The granular stepper should appear with two changes.
 		const stepper = page.getByTestId("markdown-review-stepper");
 		await expect(stepper).toBeVisible({ timeout: 45_000 });
 		await expect(stepper.getByText("1 of 2", { exact: true })).toBeVisible();
@@ -70,7 +61,7 @@ test("accepts one block and rejects another in a granular Markdown review", asyn
 		await stepper.getByRole("button", { name: /Reject/ }).click();
 
 		// The overlay closes once the mixed result is applied.
-		await expect(stepper).toBeHidden({ timeout: 30_000 });
+		await expect(overlay).toBeHidden({ timeout: 30_000 });
 
 		// The file on disk holds exactly the canonical mixed projection.
 		await expect
@@ -79,9 +70,10 @@ test("accepts one block and rejects another in a granular Markdown review", asyn
 			})
 			.toBe(EXPECTED);
 
-		// The internal resolution write must not reopen a second review.
-		await page.waitForTimeout(1500);
-		await expect(page.getByTestId("markdown-review-stepper")).toHaveCount(0);
+		// The internal resolution write is suppressed, so no second review opens:
+		// the overlay stays gone and the editor is interactive again.
+		await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
+		await expect(page.getByText("Alpha v2.")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}

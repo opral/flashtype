@@ -240,6 +240,7 @@ export type DesktopReviewGuardApi = {
 		queryId: number;
 		decision: "allow" | "cancel";
 	}): void;
+	setPending(pending: boolean): void;
 };
 
 declare global {

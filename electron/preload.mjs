@@ -71,6 +71,11 @@ const reviewGuard = {
 	},
 	respondClose: (payload) =>
 		ipcRenderer.send("review-guard:close-decision", payload),
+	// The renderer pushes whether this window currently holds a partially-decided
+	// review, so the main process can decide close/quit synchronously and only
+	// query (and wait for) the renderer when there is something to lose.
+	setPending: (pending) =>
+		ipcRenderer.send("review-guard:set-pending", { pending: pending === true }),
 };
 
 const terminal = {

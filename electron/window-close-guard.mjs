@@ -15,6 +15,12 @@
 export function createWindowCloseGuard() {
 	const asking = new Set();
 	const bypass = new Set();
+	// App-quit coordination. A quit must not start irreversible teardown until
+	// every window's review guard has agreed to close, so the quit runs in three
+	// phases: "idle" -> "confirming" (asking each window) -> "confirmed". A
+	// cancelled confirmation returns to "idle" with no teardown, keeping the app
+	// fully functional.
+	let quitPhase = "idle";
 
 	return {
 		/**
@@ -64,6 +70,40 @@ export function createWindowCloseGuard() {
 		},
 		isBypassing(windowId) {
 			return bypass.has(windowId);
+		},
+
+		/**
+		 * Begin (or observe) an app-quit confirmation.
+		 * @returns {{ proceed: boolean, alreadyConfirming: boolean }}
+		 *   `proceed` — the quit is already confirmed; let teardown run now.
+		 *   `alreadyConfirming` — a confirmation is already in flight; do nothing.
+		 */
+		beginQuitConfirmation() {
+			if (quitPhase === "confirmed") {
+				return { proceed: true, alreadyConfirming: false };
+			}
+			if (quitPhase === "confirming") {
+				return { proceed: false, alreadyConfirming: true };
+			}
+			quitPhase = "confirming";
+			return { proceed: false, alreadyConfirming: false };
+		},
+
+		/** Mark the quit confirmed: every window agreed to close. */
+		confirmQuit() {
+			quitPhase = "confirmed";
+		},
+
+		/** Abort an in-flight confirmation (a window kept reviewing). */
+		cancelQuit() {
+			quitPhase = "idle";
+		},
+
+		isQuitConfirmed() {
+			return quitPhase === "confirmed";
+		},
+		isConfirmingQuit() {
+			return quitPhase === "confirming";
 		},
 	};
 }

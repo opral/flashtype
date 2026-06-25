@@ -59,4 +59,55 @@ describe("createWindowCloseGuard", () => {
 		expect(guard.isAsking(1)).toBe(false);
 		expect(guard.isBypassing(1)).toBe(false);
 	});
+
+	describe("app-quit coordination", () => {
+		test("first confirmation enters the confirming phase without proceeding", () => {
+			const guard = createWindowCloseGuard();
+			expect(guard.beginQuitConfirmation()).toEqual({
+				proceed: false,
+				alreadyConfirming: false,
+			});
+			expect(guard.isConfirmingQuit()).toBe(true);
+			expect(guard.isQuitConfirmed()).toBe(false);
+		});
+
+		test("a re-entrant confirmation reports alreadyConfirming", () => {
+			const guard = createWindowCloseGuard();
+			guard.beginQuitConfirmation();
+			expect(guard.beginQuitConfirmation()).toEqual({
+				proceed: false,
+				alreadyConfirming: true,
+			});
+		});
+
+		test("after confirmQuit, the next quit pass proceeds to teardown", () => {
+			const guard = createWindowCloseGuard();
+			guard.beginQuitConfirmation();
+			guard.confirmQuit();
+			expect(guard.isQuitConfirmed()).toBe(true);
+			expect(guard.beginQuitConfirmation()).toEqual({
+				proceed: true,
+				alreadyConfirming: false,
+			});
+		});
+
+		test("a confirmed quit lets window closes bypass the guard", () => {
+			const guard = createWindowCloseGuard();
+			guard.confirmQuit();
+			expect(guard.isQuitConfirmed()).toBe(true);
+		});
+
+		test("cancelQuit returns to idle so the quit can be re-attempted", () => {
+			const guard = createWindowCloseGuard();
+			guard.beginQuitConfirmation();
+			guard.cancelQuit();
+			expect(guard.isConfirmingQuit()).toBe(false);
+			expect(guard.isQuitConfirmed()).toBe(false);
+			// A fresh quit attempt starts a brand new confirmation.
+			expect(guard.beginQuitConfirmation()).toEqual({
+				proceed: false,
+				alreadyConfirming: false,
+			});
+		});
+	});
 });
