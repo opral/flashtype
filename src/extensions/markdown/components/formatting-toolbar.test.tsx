@@ -9,7 +9,7 @@ import {
 import { FormattingToolbar } from "./formatting-toolbar";
 import { EditorProvider, useEditorCtx } from "../editor/editor-context";
 import { buildMarkdownFromEditor } from "../editor/build-markdown-from-editor";
-import { parseMarkdown } from "../editor/markdown-rust";
+import { parseMarkdown } from "../editor/markdown";
 
 type EditorSetup = {
 	editor: Editor;

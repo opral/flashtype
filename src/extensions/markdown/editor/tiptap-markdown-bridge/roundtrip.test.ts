@@ -4,7 +4,7 @@ import { astToTiptapDoc } from "./mdwc-to-tiptap";
 import { tiptapDocToAst } from "./tiptap-to-mdwc";
 import { Editor } from "@tiptap/core";
 import { MarkdownWc } from "./markdown-wc";
-import { normalizeAst, parseMarkdown, serializeAst } from "../markdown-rust";
+import { normalizeAst, parseMarkdown, serializeAst } from "../markdown";
 
 type Ast = any;
 

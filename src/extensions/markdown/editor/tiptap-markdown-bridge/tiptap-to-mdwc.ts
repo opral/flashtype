@@ -1,4 +1,4 @@
-import { normalizeAst } from "../markdown-rust";
+import { normalizeAst } from "../markdown";
 import { EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY } from "./mdwc-to-tiptap";
 
 const SPREAD_META_KEY = "__mdwc_spread";

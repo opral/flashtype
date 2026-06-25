@@ -8,7 +8,7 @@ import {
 	tiptapDocToAst,
 } from "./tiptap-markdown-bridge";
 import type { EmptyMarkdownDefaultBlock } from "./tiptap-markdown-bridge";
-import { parseMarkdown, serializeAst } from "./markdown-rust";
+import { parseMarkdown, serializeAst } from "./markdown";
 import { handlePaste as defaultHandlePaste } from "./handle-paste";
 import { SlashCommandsExtension } from "./extensions/slash-commands";
 import { TableNavigationExtension } from "./extensions/table-navigation";

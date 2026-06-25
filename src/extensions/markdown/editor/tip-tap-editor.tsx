@@ -9,7 +9,7 @@ import { createEditor } from "./create-editor";
 import { assembleMdAst } from "./assemble-md-ast";
 import { astToTiptapDoc } from "./tiptap-markdown-bridge";
 import type { EmptyMarkdownDefaultBlock } from "./tiptap-markdown-bridge";
-import { parseMarkdown, serializeAst } from "./markdown-rust";
+import { parseMarkdown, serializeAst } from "./markdown";
 import { tiptapDocToAst } from "./tiptap-markdown-bridge";
 import { decodeMarkdownData } from "./decode-markdown-data";
 

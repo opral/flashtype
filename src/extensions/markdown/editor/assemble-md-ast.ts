@@ -1,6 +1,6 @@
 import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
-import { parseMarkdown } from "./markdown-rust";
+import { parseMarkdown } from "./markdown";
 import { decodeMarkdownData } from "./decode-markdown-data";
 
 export async function assembleMdAst(args: {
