@@ -1,11 +1,5 @@
-import {
-	useCallback,
-	useEffect,
-	useReducer,
-	useRef,
-	useState,
-	type RefObject,
-} from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { ChevronUp, ChevronDown, MoreHorizontal } from "lucide-react";
 import {
 	DropdownMenu,
@@ -18,120 +12,28 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type {
-	GranularReviewPlan,
-	ReviewDecision,
-} from "./granular-review-plan";
+import type { GranularReviewPlan } from "./granular-review-plan";
 import type {
 	GranularReviewResolution,
 	GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
 import { hashFileData } from "@/extension-runtime/external-write-tracking";
+import {
+	initStepperState,
+	rehydrateDecisions,
+	recordDecisions,
+	stepperReducer,
+	type CarriedDecision,
+} from "./markdown-review-stepper-state";
+import {
+	highlightTargets,
+	isMacPlatform,
+	revealIfNeeded,
+} from "./markdown-review-stepper-dom";
+import { useReviewStepperShortcuts } from "./markdown-review-stepper-keyboard";
 import "./markdown-review-stepper.css";
 
-type CarriedDecision = {
-	readonly decision: "accepted" | "rejected";
-	readonly signature: string;
-};
-
 const APPLYING_DELAY_MS = 150;
-
-type StepperState = {
-	readonly reviewId: string;
-	readonly decisions: readonly ReviewDecision[];
-	readonly activeIndex: number;
-	/**
-	 * Set the instant a resolution is submitted. Disables every control so no
-	 * action can race the in-flight write, regardless of how fast it resolves.
-	 */
-	readonly submitting: boolean;
-	/**
-	 * Set only after a short delay so the "Applying…" affordance never flashes
-	 * for a fast write. Always implies `submitting`.
-	 */
-	readonly showApplying: boolean;
-	readonly error: boolean;
-};
-
-type StepperAction =
-	| { type: "reset"; reviewId: string; count: number }
-	| {
-			type: "rehydrate";
-			reviewId: string;
-			decisions: readonly ReviewDecision[];
-			activeIndex: number;
-	  }
-	| { type: "decide"; index: number; decision: "accepted" | "rejected" }
-	| { type: "decideRemaining"; decision: "accepted" | "rejected" }
-	| { type: "navigate"; index: number }
-	| { type: "beginSubmit" }
-	| { type: "beginApplying" }
-	| { type: "applyFailed" };
-
-function initState(args: { reviewId: string; count: number }): StepperState {
-	return {
-		reviewId: args.reviewId,
-		decisions: Array.from({ length: args.count }, () => "pending" as const),
-		activeIndex: 0,
-		submitting: false,
-		showApplying: false,
-		error: false,
-	};
-}
-
-function nextPendingIndex(
-	decisions: readonly ReviewDecision[],
-	from: number,
-): number {
-	for (let offset = 1; offset <= decisions.length; offset += 1) {
-		const index = (from + offset) % decisions.length;
-		if (decisions[index] === "pending") return index;
-	}
-	return from;
-}
-
-function reducer(state: StepperState, action: StepperAction): StepperState {
-	switch (action.type) {
-		case "reset":
-			return initState(action);
-		case "rehydrate":
-			return {
-				reviewId: action.reviewId,
-				decisions: action.decisions,
-				activeIndex: action.activeIndex,
-				submitting: false,
-				showApplying: false,
-				error: false,
-			};
-		case "decide": {
-			const decisions = state.decisions.map((decision, index) =>
-				index === action.index ? action.decision : decision,
-			);
-			return {
-				...state,
-				decisions,
-				activeIndex: nextPendingIndex(decisions, action.index),
-				error: false,
-			};
-		}
-		case "decideRemaining": {
-			const decisions = state.decisions.map((decision) =>
-				decision === "pending" ? action.decision : decision,
-			);
-			return { ...state, decisions, error: false };
-		}
-		case "navigate":
-			return { ...state, activeIndex: action.index };
-		case "beginSubmit":
-			return { ...state, submitting: true, showApplying: false, error: false };
-		case "beginApplying":
-			return state.submitting ? { ...state, showApplying: true } : state;
-		case "applyFailed":
-			return { ...state, submitting: false, showApplying: false, error: true };
-		default:
-			return state;
-	}
-}
 
 export type MarkdownReviewStepperProps = {
 	readonly plan: GranularReviewPlan;
@@ -164,30 +66,25 @@ export function MarkdownReviewStepper({
 }: MarkdownReviewStepperProps) {
 	const changes = plan.changes;
 	const [state, dispatch] = useReducer(
-		reducer,
-		{
-			reviewId,
-			count: changes.length,
-		},
-		initState,
+		stepperReducer,
+		{ reviewId, count: changes.length },
+		initStepperState,
 	);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const submittedRef = useRef(false);
 	const applyTimerRef = useRef<number | null>(null);
-	// Decisions already made in this review session, keyed by stable change key.
-	// Lets a sequential external write that folds into the open review (new
-	// reviewId, same before-anchor) keep prior accept/reject choices instead of
-	// resetting them. Cleared when the session's before-anchor changes.
+	// Decisions made in this review session, keyed by stable change key, so a
+	// sequential external write that folds into the open review (new reviewId,
+	// same before-anchor) can keep prior choices. Cleared when the anchor changes.
 	const decidedByKeyRef = useRef(new Map<string, CarriedDecision>());
 	const sessionBeforeRef = useRef<string | null>(null);
 
-	// Take over for a new (or folded) review: carry any decision whose change is
-	// unchanged (same key and content signature), reset evolved ones, and add new
-	// changes as pending. A change of before-anchor starts a fresh session.
+	// Take over for a new (or folded) review, carrying still-valid decisions. A
+	// change of before-anchor starts a fresh session.
 	useEffect(() => {
 		if (state.reviewId === reviewId) {
-			// Anchor the session on first mount so the first fold is not mistaken
-			// for a new session (which would clear the carried decisions).
+			// Anchor the session on first mount so the first fold reads as a fold,
+			// not a new session (which would clear the carried decisions).
 			if (sessionBeforeRef.current === null) {
 				sessionBeforeRef.current = hashFileData(beforeData);
 			}
@@ -199,35 +96,19 @@ export function MarkdownReviewStepper({
 			decidedByKeyRef.current.clear();
 			sessionBeforeRef.current = beforeKey;
 		}
-		const decisions: ReviewDecision[] = changes.map((change) => {
-			const carried = decidedByKeyRef.current.get(change.key);
-			return carried && carried.signature === change.signature
-				? carried.decision
-				: "pending";
-		});
-		const firstPending = decisions.findIndex((d) => d === "pending");
-		dispatch({
-			type: "rehydrate",
-			reviewId,
-			decisions,
-			activeIndex: firstPending < 0 ? 0 : firstPending,
-		});
+		const { decisions, activeIndex } = rehydrateDecisions(
+			changes,
+			decidedByKeyRef.current,
+		);
+		dispatch({ type: "rehydrate", reviewId, decisions, activeIndex });
 	}, [reviewId, changes, beforeData, state.reviewId]);
 
-	// Record decisions for the current plan so they can be carried if the review
-	// folds. Guarded on reviewId match so it never records the stale decisions of
-	// the previous plan against the new plan's changes.
+	// Record decided changes so they can be carried if the review folds. Guarded
+	// on reviewId match so the previous plan's decisions are not recorded against
+	// the new plan's changes.
 	useEffect(() => {
 		if (state.reviewId !== reviewId) return;
-		changes.forEach((change, index) => {
-			const decision = state.decisions[index];
-			if (decision === "accepted" || decision === "rejected") {
-				decidedByKeyRef.current.set(change.key, {
-					decision,
-					signature: change.signature,
-				});
-			}
-		});
+		recordDecisions(changes, state.decisions, decidedByKeyRef.current);
 	}, [state.decisions, changes, reviewId, state.reviewId]);
 
 	const total = changes.length;
@@ -271,9 +152,8 @@ export function MarkdownReviewStepper({
 			usedRemainingAction: usedRemainingRef.current,
 		};
 
-		// Disable every control immediately so nothing can race the in-flight
-		// write, then only surface the "Applying…" affordance if the write is slow
-		// enough to need it, so fast resolutions never flash it.
+		// Disable controls immediately; only show "Applying…" if the write is slow
+		// enough to need it, so fast resolutions do not flash it.
 		dispatch({ type: "beginSubmit" });
 		applyTimerRef.current = window.setTimeout(() => {
 			dispatch({ type: "beginApplying" });
@@ -360,6 +240,9 @@ export function MarkdownReviewStepper({
 		submit();
 	}, [submit]);
 
+	const acceptActive = useCallback(() => decide("accepted"), [decide]);
+	const rejectActive = useCallback(() => decide("rejected"), [decide]);
+
 	// Highlight and reveal the active change's block(s) in the static diff.
 	useEffect(() => {
 		const container = diffContainerRef.current;
@@ -376,50 +259,13 @@ export function MarkdownReviewStepper({
 		};
 	}, [activeChange, diffContainerRef, state.decisions]);
 
-	// Scoped keyboard handling: only while this review is the active surface and
-	// no overlay (dropdown/error) owns the key.
-	useEffect(() => {
-		if (!isActive) return;
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.defaultPrevented) return;
-			const usesPrimaryModifier =
-				event.metaKey || (event.ctrlKey && !event.metaKey);
-			if (event.altKey && !event.metaKey && !event.ctrlKey) {
-				if (event.key === "ArrowUp") {
-					event.preventDefault();
-					event.stopPropagation();
-					navigate(-1);
-					return;
-				}
-				if (event.key === "ArrowDown") {
-					event.preventDefault();
-					event.stopPropagation();
-					navigate(1);
-					return;
-				}
-				return;
-			}
-			if (usesPrimaryModifier && !event.altKey && !event.shiftKey) {
-				if (event.key === "Enter") {
-					event.preventDefault();
-					event.stopPropagation();
-					decide("accepted");
-				}
-				return;
-			}
-			if (event.key === "Escape") {
-				// Yield to an open menu or the error layer.
-				if (menuOpen || state.error) return;
-				event.preventDefault();
-				event.stopPropagation();
-				decide("rejected");
-			}
-		};
-		window.addEventListener("keydown", handleKeyDown, { capture: true });
-		return () => {
-			window.removeEventListener("keydown", handleKeyDown, { capture: true });
-		};
-	}, [isActive, menuOpen, state.error, decide, navigate]);
+	useReviewStepperShortcuts({
+		active: isActive,
+		rejectBlocked: menuOpen || state.error,
+		onAccept: acceptActive,
+		onReject: rejectActive,
+		onNavigate: navigate,
+	});
 
 	if (total === 0) return null;
 
@@ -546,48 +392,4 @@ export function MarkdownReviewStepper({
 			)}
 		</div>
 	);
-}
-
-function highlightTargets(
-	container: HTMLElement,
-	change: {
-		beforeBlockIds: readonly string[];
-		afterBlockIds: readonly string[];
-	},
-): HTMLElement[] {
-	const ids = new Set([...change.beforeBlockIds, ...change.afterBlockIds]);
-	const targets: HTMLElement[] = [];
-	for (const id of ids) {
-		const escaped = cssEscape(id);
-		const selector = `[data-diff-key="${escaped}"], [data-diff-key^="${escaped}:"]`;
-		for (const element of container.querySelectorAll(selector)) {
-			if (element instanceof HTMLElement && !targets.includes(element)) {
-				targets.push(element);
-			}
-		}
-	}
-	return targets;
-}
-
-function revealIfNeeded(container: HTMLElement, target: HTMLElement): void {
-	const containerRect = container.getBoundingClientRect();
-	const targetRect = target.getBoundingClientRect();
-	const fullyVisible =
-		targetRect.top >= containerRect.top &&
-		targetRect.bottom <= containerRect.bottom;
-	if (fullyVisible) return;
-	target.scrollIntoView({ block: "nearest", behavior: "auto" });
-}
-
-function cssEscape(value: string): string {
-	const cssApi = (
-		globalThis as { CSS?: { escape?: (value: string) => string } }
-	).CSS;
-	if (cssApi?.escape) return cssApi.escape(value);
-	return value.replace(/["\\]/g, "\\$&");
-}
-
-function isMacPlatform(): boolean {
-	if (typeof navigator === "undefined") return true;
-	return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 }
