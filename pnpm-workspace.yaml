@@ -1,6 +1,5 @@
 packages:
   - .
-  - submodule/markdown-wc/js
   - submodule/lix/packages/js-sdk
   - "!submodule/lix/packages/**/dist"
 

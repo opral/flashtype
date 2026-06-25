@@ -1,4 +1,4 @@
-import { serializeAst } from "./markdown-rust";
+import { serializeAst } from "./markdown";
 import { tiptapDocToAst } from "./tiptap-markdown-bridge";
 
 export function buildMarkdownFromEditor(editor: any): string {

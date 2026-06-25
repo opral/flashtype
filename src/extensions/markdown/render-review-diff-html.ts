@@ -4,7 +4,7 @@ import {
 	renderMarkdownAstEditorHtml,
 	supportsDiffId,
 } from "@/extensions/markdown/editor/render-markdown-html";
-import { parseMarkdown } from "@/extensions/markdown/editor/markdown-rust";
+import { parseMarkdown } from "@/extensions/markdown/editor/markdown";
 import type { MarkdownReviewDiff } from "./review-diff";
 
 export function renderMarkdownReviewDiffHtml(

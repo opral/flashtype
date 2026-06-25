@@ -2,7 +2,7 @@ import { test, expect } from "vitest";
 import { openLix } from "@/test-utils/node-lix-sdk";
 import { createEditor } from "./create-editor";
 import { astToTiptapDoc } from "./tiptap-markdown-bridge";
-import { parseMarkdown, serializeAst } from "./markdown-rust";
+import { parseMarkdown, serializeAst } from "./markdown";
 import { handlePaste } from "./handle-paste";
 import { Editor } from "@tiptap/core";
 import { qb } from "@/lib/lix-kysely";
