@@ -424,6 +424,54 @@ describe("MarkdownView", () => {
 		});
 	});
 
+	test("uses classic controls for a single-change review even when granular is wired", async () => {
+		const lix = await openLix();
+		await installBundledPlugins(lix);
+		const path = "/docs/review-single.md";
+		await writeMarkdownFile(lix, path, "# Title\n\nAlpha.\n\nBeta.\n");
+		const fileId = await fileIdByPath(lix, path);
+		// Only the first paragraph changes -> exactly one granular change.
+		await writeMarkdownFile(lix, path, "# Title\n\nAlpha edited.\n\nBeta.\n");
+		const review = await getExternalWriteReview(lix, fileId, path);
+		expect(review).not.toBeNull();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId={fileId}
+								filePath={path}
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+								externalWriteReview={review}
+								onResolveReviewDiff={async () => "applied"}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		// A single change is all-or-nothing, so the classic controls are shown
+		// rather than a "1 of 1" stepper.
+		expect(
+			await screen.findByRole("group", {
+				name: "External write review actions",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("group", { name: "Per-change review actions" }),
+		).not.toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
 	test("falls back to classic controls when no granular resolver is wired", async () => {
 		const lix = await openLix();
 		await installBundledPlugins(lix);

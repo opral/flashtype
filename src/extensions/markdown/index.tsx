@@ -358,7 +358,13 @@ function MarkdownReviewOverlay({
 
 	const rejectReview = () => void onReject?.({ fileId, reviewId });
 
-	const isGranular = !snapshotsLoading && eligibility?.status === "safe";
+	// The per-change stepper only earns its keep when there is more than one
+	// change to step through. A single change is effectively all-or-nothing, so
+	// it uses the classic accept/reject controls instead of a "1 of 1" stepper.
+	const isGranular =
+		!snapshotsLoading &&
+		eligibility?.status === "safe" &&
+		eligibility.plan.changes.length > 1;
 
 	// Register a partial-decision guard with the shell while the granular
 	// stepper is mounted so destructive actions can prompt before discarding.
@@ -374,11 +380,19 @@ function MarkdownReviewOverlay({
 			onReviewPendingChange?.(reviewId, false);
 			unregister();
 		};
-	}, [isGranular, onRegisterReviewGuard, onReviewPendingChange, reviewId, fileId]);
+	}, [
+		isGranular,
+		onRegisterReviewGuard,
+		onReviewPendingChange,
+		reviewId,
+		fileId,
+	]);
 
 	// Decide the surface only once preflight is known: never render classic
-	// controls and then morph them into the granular stepper.
-	const controls = snapshotsLoading ? null : eligibility?.status === "safe" ? (
+	// controls and then morph them into the granular stepper. The stepper is used
+	// only for multi-change reviews; a single change falls back to classic.
+	const controls = snapshotsLoading ? null : eligibility?.status === "safe" &&
+	  eligibility.plan.changes.length > 1 ? (
 		<MarkdownReviewStepper
 			plan={eligibility.plan}
 			reviewId={reviewId}
