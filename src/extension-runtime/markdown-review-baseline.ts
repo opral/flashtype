@@ -1,9 +1,5 @@
 import type { Lix } from "@/lib/lix-types";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
-import {
-	markFlashtypeFileWrite,
-	type CancelFlashtypeFileWrite,
-} from "./external-write-tracking";
 
 /**
  * Ensure a freshly-ingested Markdown file has a tracked Lix baseline commit, so
@@ -14,42 +10,52 @@ import {
  * commit, the before-side `markdown_block` snapshots cannot be loaded, and the
  * granular planner falls back to the classic review.
  *
- * Writing the file's EXACT current bytes back through Lix promotes that
- * untracked state into a tracked commit — which materializes `markdown_block`
- * snapshots and usable history — WITHOUT changing the file on disk, because
- * identical bytes are a disk no-op. On state that is already tracked, an
- * identical write produces no new commit, so this is idempotent and cheap to
- * call repeatedly.
+ * Writing the file's current bytes back through Lix promotes that untracked
+ * state into a tracked commit — which materializes `markdown_block` snapshots
+ * and usable history — WITHOUT changing the file on disk, because the bytes are
+ * identical. On state that is already tracked, an identical write produces no
+ * new commit, so this is idempotent and cheap to call repeatedly.
  *
- * The write is registered as an exact self-write so it can never open a review
- * of itself (and is a no-op for the detector regardless, since the content hash
- * is unchanged). Reading and re-writing inside one transaction guarantees the
- * bytes written are exactly the bytes present, so a concurrent external write
- * can never be clobbered. Failures are swallowed: a missing baseline simply
- * leaves the first external write on the classic path.
+ * `expectedData` is the content observed when the file first entered the
+ * workspace. The write is a compare-and-write: it only runs while the file
+ * still holds exactly those bytes, so it can never clobber — or be confused by —
+ * a newer external write that raced ahead. No self-write suppression is needed:
+ * an identical-bytes write leaves the content hash unchanged, so the external
+ * write detector never mistakes it (or a real edit) for a review. Failures are
+ * swallowed; a missing baseline simply leaves the first edit on the classic
+ * path.
  */
 export async function ensureMarkdownReviewBaseline(
 	lix: Lix,
 	fileId: string,
+	expectedData: Uint8Array,
 ): Promise<void> {
-	let cancel: CancelFlashtypeFileWrite = () => {};
 	try {
-		const wrote = await lix.transaction(async (tx) => {
+		await lix.transaction(async (tx) => {
 			const current = await tx.execute(
 				"SELECT data FROM lix_file WHERE id = ?",
 				[fileId],
 			);
-			if (current.rows.length === 0) return false;
-			const bytes = decodeFileDataToBytes(current.rows[0]?.get("data"));
-			cancel = markFlashtypeFileWrite(fileId, bytes);
+			if (current.rows.length === 0) return;
+			const currentBytes = decodeFileDataToBytes(current.rows[0]?.get("data"));
+			// Only promote the baseline while the file still holds the exact bytes
+			// we observed. A newer external write must be left untouched so its
+			// review is never suppressed or overwritten.
+			if (!bytesEqual(currentBytes, expectedData)) return;
 			await tx.execute("UPDATE lix_file SET data = ? WHERE id = ?", [
-				bytes,
+				expectedData,
 				fileId,
 			]);
-			return true;
 		});
-		if (!wrote) cancel();
 	} catch {
-		cancel();
+		// Best-effort: a missing baseline just leaves the first edit on classic.
 	}
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+	if (left.length !== right.length) return false;
+	for (let i = 0; i < left.length; i += 1) {
+		if (left[i] !== right[i]) return false;
+	}
+	return true;
 }

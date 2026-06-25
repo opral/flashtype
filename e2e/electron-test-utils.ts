@@ -119,19 +119,38 @@ export async function expectInstalledPluginArchives(
 	workspaceDir: string,
 ): Promise<void> {
 	await expect
-		.poll(() =>
-			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_md_v2.lixplugin"),
-			),
+		.poll(
+			() =>
+				readBinaryFile(
+					path.join(workspaceDir, ".lix", "plugins", "plugin_md_v2.lixplugin"),
+				),
+			{ timeout: 60_000 },
 		)
 		.toBeGreaterThan(0);
 	await expect
-		.poll(() =>
-			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_csv.lixplugin"),
-			),
+		.poll(
+			() =>
+				readBinaryFile(
+					path.join(workspaceDir, ".lix", "plugins", "plugin_csv.lixplugin"),
+				),
+			{ timeout: 60_000 },
 		)
 		.toBeGreaterThan(0);
+}
+
+/**
+ * Wait for a freshly launched workspace window to be ready for interaction.
+ *
+ * Boot can be slow — especially under load (e.g. `--repeat-each`) or a cold dev
+ * server — so this waits on a stable "app mounted, no file open" signal with a
+ * generous timeout rather than assuming it appears within the default expect
+ * window.
+ */
+export async function waitForWorkspaceReady(page: Page): Promise<void> {
+	await page.waitForLoadState("domcontentloaded").catch(() => {});
+	await expect(page.getByTestId("central-panel-empty-state")).toBeVisible({
+		timeout: 60_000,
+	});
 }
 
 export async function closeElectronApp(

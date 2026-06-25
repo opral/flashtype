@@ -463,6 +463,10 @@ function LayoutShellContent({
 	const openDiffReviewByFileIdRef = useRef(
 		new Map<string, ExternalWriteReview>(),
 	);
+	// Stable id for a review session (the reviewId at first open), kept across
+	// folds even as the per-write reviewId advances, so diff_opened and
+	// diff_resolved telemetry always pair up.
+	const diffSessionIdByFileIdRef = useRef(new Map<string, string>());
 	const workspaceIdRef = useRef<string | undefined>(undefined);
 	const panelStatesRef = useRef({
 		left: leftPanel,
@@ -522,6 +526,8 @@ function LayoutShellContent({
 		) => {
 			captureWorkspaceTelemetry("diff_resolved", {
 				diff_review_id: review.reviewId,
+				diff_session_id:
+					diffSessionIdByFileIdRef.current.get(review.fileId) ?? review.reviewId,
 				file_extension: fileExtensionProperty(review.path),
 				outcome,
 				source: "renderer",
@@ -546,6 +552,8 @@ function LayoutShellContent({
 				openDiffReviewByFileIdRef.current.delete(review.fileId);
 			}
 			captureDiffResolvedTelemetry(review, outcome, extra);
+			// End the telemetry session once it has been reported.
+			diffSessionIdByFileIdRef.current.delete(review.fileId);
 			return true;
 		},
 		[claimDiffReviewResolution, captureDiffResolvedTelemetry],
@@ -1287,26 +1295,48 @@ function LayoutShellContent({
 			if (review && diffResolvedReviewIdsRef.current.has(review.reviewId)) {
 				return "accepted_existing";
 			}
-			const result = await applyGranularReviewResolution(lix, resolution);
-			const telemetry = granularResolutionTelemetry(resolution);
-			if (
-				result.outcome === "applied" ||
-				result.outcome === "accepted_existing"
-			) {
-				if (review) {
-					resolveDiffReviewTelemetry(
-						review,
-						resolution.rejectedCount === 0 ? "accepted" : "rejected",
-						telemetry,
-					);
+			// Suppress the detector for this file while the resolution write lands so
+			// it can never reopen a review of itself, then lift the suppression after
+			// it settles (parity with the classic reject path; the exact self-write
+			// marker is a second line of defence).
+			const { fileId } = args;
+			ignoredExternalWriteReviewFileIdsRef.current.add(fileId);
+			let wroteResolution = false;
+			try {
+				const result = await applyGranularReviewResolution(lix, resolution);
+				wroteResolution = result.outcome === "applied";
+				const telemetry = granularResolutionTelemetry(resolution);
+				if (
+					result.outcome === "applied" ||
+					result.outcome === "accepted_existing"
+				) {
+					if (review) {
+						resolveDiffReviewTelemetry(
+							review,
+							resolution.rejectedCount === 0 ? "accepted" : "rejected",
+							telemetry,
+						);
+					}
+					clearExternalWriteReview(args);
+				} else if (
+					result.outcome === "stale" ||
+					result.outcome === "missing"
+				) {
+					if (review) resolveDiffReviewTelemetry(review, "abandoned", telemetry);
+					clearExternalWriteReview(args);
 				}
-				clearExternalWriteReview(args);
-			} else if (result.outcome === "stale" || result.outcome === "missing") {
-				if (review) resolveDiffReviewTelemetry(review, "abandoned", telemetry);
-				clearExternalWriteReview(args);
+				// On "failed" the overlay keeps its decisions so the user can retry.
+				return result.outcome;
+			} finally {
+				if (wroteResolution) {
+					window.setTimeout(() => {
+						ignoredExternalWriteReviewFileIdsRef.current.delete(fileId);
+						clearExternalWriteReview(args);
+					}, 1500);
+				} else {
+					ignoredExternalWriteReviewFileIdsRef.current.delete(fileId);
+				}
 			}
-			// On "failed" the overlay keeps its decisions so the user can retry.
-			return result.outcome;
 		},
 		[
 			lix,
@@ -1426,11 +1456,15 @@ function LayoutShellContent({
 	// rather than all-or-nothing. The write is identical-bytes (no disk change),
 	// idempotent, and self-write-suppressed; deduped per file for this session.
 	const baselinedFileIdsRef = useRef(new Set<string>());
+	const baselinePromisesByFileIdRef = useRef(new Map<string, Promise<void>>());
 	const ensureReviewBaseline = useCallback(
-		(fileId: string) => {
+		(fileId: string, bytes: Uint8Array) => {
 			if (baselinedFileIdsRef.current.has(fileId)) return;
 			baselinedFileIdsRef.current.add(fileId);
-			void ensureMarkdownReviewBaseline(lix, fileId);
+			baselinePromisesByFileIdRef.current.set(
+				fileId,
+				ensureMarkdownReviewBaseline(lix, fileId, bytes),
+			);
 		},
 		[lix],
 	);
@@ -1443,6 +1477,10 @@ function LayoutShellContent({
 						clearExternalWriteReview({ fileId: write.fileId });
 						continue;
 					}
+					// Let any in-flight baseline for this file settle first, so the
+					// review is computed against a stable before-state (and a baseline
+					// write never races the review open).
+					await baselinePromisesByFileIdRef.current.get(write.fileId);
 					const latest = await getExternalWriteReview(
 						lix,
 						write.fileId,
@@ -1481,14 +1519,18 @@ function LayoutShellContent({
 					// review so the next write folds from the same anchor.
 					openDiffReviewByFileIdRef.current.set(write.fileId, review);
 					// One "diff_opened" per session: emit only when a fresh review opens,
-					// not on each fold of the same session.
+					// not on each fold of the same session. The session id is the
+					// reviewId at first open and stays fixed across folds so the later
+					// diff_resolved (with an advanced reviewId) still pairs with it.
 					if (
 						!existingReview &&
 						!diffOpenedReviewIdsRef.current.has(review.reviewId)
 					) {
 						diffOpenedReviewIdsRef.current.add(review.reviewId);
+						diffSessionIdByFileIdRef.current.set(write.fileId, review.reviewId);
 						captureWorkspaceTelemetry("diff_opened", {
 							diff_review_id: review.reviewId,
+							diff_session_id: review.reviewId,
 							file_extension: fileExtensionProperty(write.path),
 							source: "renderer",
 						});

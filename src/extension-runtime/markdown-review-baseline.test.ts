@@ -97,7 +97,7 @@ describe("ensureMarkdownReviewBaseline", () => {
 	test("a baseline makes the first external write granular-eligible without touching disk", async () => {
 		const { lix, fileId, mdPath } = await bootWorkspace();
 		try {
-			await ensureMarkdownReviewBaseline(lix, fileId);
+			await ensureMarkdownReviewBaseline(lix, fileId, enc(ORIGINAL));
 			// The baseline writes identical bytes, so the on-disk file is untouched.
 			expect(await readFile(mdPath, "utf8")).toBe(ORIGINAL);
 
@@ -115,11 +115,28 @@ describe("ensureMarkdownReviewBaseline", () => {
 		}
 	});
 
+	test("does not clobber a newer external write that raced ahead of the baseline", async () => {
+		const { lix, fileId } = await bootWorkspace();
+		try {
+			// An external write lands before the (already-scheduled) baseline runs.
+			await externalWrite(lix, fileId, EXTERNAL);
+			// The baseline carries the original bytes it observed at boot. Because
+			// the file no longer holds them, it must not write — never reverting the
+			// external content nor suppressing its review.
+			await ensureMarkdownReviewBaseline(lix, fileId, enc(ORIGINAL));
+			const review = await getExternalWriteReview(lix, fileId, "/review.md");
+			expect(review).not.toBeNull();
+			expect(new TextDecoder().decode(review!.afterData)).toBe(EXTERNAL);
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("is idempotent: a second baseline call does not throw or change disk", async () => {
 		const { lix, fileId, mdPath } = await bootWorkspace();
 		try {
-			await ensureMarkdownReviewBaseline(lix, fileId);
-			await ensureMarkdownReviewBaseline(lix, fileId);
+			await ensureMarkdownReviewBaseline(lix, fileId, enc(ORIGINAL));
+			await ensureMarkdownReviewBaseline(lix, fileId, enc(ORIGINAL));
 			expect(await readFile(mdPath, "utf8")).toBe(ORIGINAL);
 			// Still granular after a redundant baseline.
 			await externalWrite(lix, fileId, EXTERNAL);

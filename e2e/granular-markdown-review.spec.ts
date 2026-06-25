@@ -8,6 +8,7 @@ import {
 	expectInstalledPluginArchives,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
+	waitForWorkspaceReady,
 } from "./electron-test-utils";
 
 const INITIAL = "# Review\n\nAlpha paragraph.\n\nBeta paragraph.\n";
@@ -33,7 +34,7 @@ test("accepts one block and rejects another on the first external Markdown edit"
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
+		await waitForWorkspaceReady(page);
 		await expectInstalledPluginArchives(workspaceDir);
 		await ensureFilesViewOpenInLeftPanel(page);
 
@@ -100,7 +101,7 @@ test("folds a second external edit into the open review instead of dropping the 
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
+		await waitForWorkspaceReady(page);
 		await expectInstalledPluginArchives(workspaceDir);
 		await ensureFilesViewOpenInLeftPanel(page);
 

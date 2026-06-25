@@ -8,11 +8,13 @@ import {
 	consumeRecentFlashtypeFileWrite,
 	hashFileData,
 } from "@/extension-runtime/external-write-tracking";
+import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 
 type ReviewableFileSnapshot = {
 	id: string;
 	path: string;
 	hash: string;
+	bytes: Uint8Array;
 };
 
 export type ExternalFileWrite = {
@@ -39,10 +41,11 @@ export function ExternalWriteDetector({
 	onExternalWrites: (writes: ExternalFileWrite[]) => void;
 	/**
 	 * Called once the first time each reviewable file is observed (at boot and
-	 * for files added later). The shell uses this to establish a tracked Lix
-	 * baseline so the file's FIRST external edit can be reviewed per-change.
+	 * for files added later), with the bytes seen at that moment. The shell uses
+	 * this to establish a tracked Lix baseline so the file's FIRST external edit
+	 * can be reviewed per-change.
 	 */
-	onReviewableFileFirstObserved?: (fileId: string) => void;
+	onReviewableFileFirstObserved?: (fileId: string, bytes: Uint8Array) => void;
 }) {
 	const lix = useLix();
 	const lastHashesRef = useRef(new Map<string, string>());
@@ -63,7 +66,7 @@ export function ExternalWriteDetector({
 			for (const row of reviewableRows) {
 				const firstSeen = !lastHashesRef.current.has(row.id);
 				nextHashes.set(row.id, row.hash);
-				if (firstSeen) onReviewableFileFirstObserved?.(row.id);
+				if (firstSeen) onReviewableFileFirstObserved?.(row.id, row.bytes);
 				if (!hasInitialSnapshotRef.current) continue;
 
 				const previousHash = lastHashesRef.current.get(row.id);
@@ -147,9 +150,11 @@ function readReviewableFileSnapshot(
 	const data = row.data;
 	if (typeof id !== "string" || typeof path !== "string") return null;
 	if (!isExternalWriteReviewableFilePath(path)) return null;
+	const bytes = decodeFileDataToBytes(data);
 	return {
 		id,
 		path,
-		hash: hashFileData(data),
+		hash: hashFileData(bytes),
+		bytes,
 	};
 }
