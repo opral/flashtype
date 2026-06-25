@@ -8,6 +8,7 @@ import {
 	mkdtemp,
 	opendir,
 	readFile,
+	realpath,
 	rename,
 	rm,
 	stat,
@@ -224,11 +225,14 @@ export async function setEphemeralWatchedDirectories(window, payload) {
 	const state = getOrCreateWindowState(window);
 	const workspace = state.workspace;
 	const ownerId = normalizeEphemeralFileTreeOwnerId(payload?.ownerId);
-	const directoryPaths = normalizeWorkspaceDirectoryPaths(payload?.paths);
 	if (!workspace || workspace.ephemeral !== true) {
 		removeEphemeralFileTreeOwner(state, ownerId);
 		return [];
 	}
+	const directoryPaths = normalizeWorkspaceDirectoryPaths(
+		payload?.paths,
+		state,
+	);
 
 	if (directoryPaths.length > 0) {
 		state.ephemeralFileTreeOwners.set(ownerId, directoryPaths);
@@ -246,18 +250,16 @@ export async function readEphemeralWorkspaceFile(window, payload) {
 		throw new Error("No transient workspace is open.");
 	}
 	const filePath = normalizeWorkspaceFilePath(payload?.path);
-	const parentDirectory = parentDirectoryPathForFilePath(filePath);
-	const watchedDirectories = effectiveEphemeralWatchedDirectories(state);
-	if (!watchedDirectories.has(parentDirectory)) {
+	if (!isEphemeralWatchedFileEntry(state, filePath)) {
 		throw new Error(
-			`File is not in an opened Files view directory: ${filePath}`,
+			`File is not in the opened Files view: ${filePath}`,
 		);
 	}
-	const localPath = workspaceLocalPathForFilePath(workspace, filePath);
-	const metadata = await lstat(localPath);
-	if (metadata.isSymbolicLink() || !metadata.isFile()) {
-		throw new Error(`Path is not a regular workspace file: ${filePath}`);
-	}
+	const { localPath } = await resolveExistingWorkspacePath(
+		workspace,
+		filePath,
+		"file",
+	);
 	return await readFile(localPath);
 }
 
@@ -534,14 +536,17 @@ function normalizeEphemeralFileTreeOwnerId(ownerId) {
 	return ownerId;
 }
 
-function normalizeWorkspaceDirectoryPaths(paths) {
+function normalizeWorkspaceDirectoryPaths(paths, state) {
 	if (!Array.isArray(paths)) {
 		throw new Error("workspace watched directory paths must be an array.");
 	}
 	const seen = new Set();
 	const normalizedPaths = [];
-	for (const path of paths) {
-		const normalizedPath = normalizeWorkspaceDirectoryPath(path);
+	for (const directoryPath of paths) {
+		const normalizedPath = normalizeWorkspaceDirectoryPath(
+			directoryPath,
+			state,
+		);
 		if (seen.has(normalizedPath)) {
 			continue;
 		}
@@ -552,7 +557,7 @@ function normalizeWorkspaceDirectoryPaths(paths) {
 	return normalizedPaths;
 }
 
-function normalizeWorkspaceDirectoryPath(directoryPath) {
+function normalizeWorkspaceDirectoryPath(directoryPath, state) {
 	if (directoryPath === "/") {
 		return "/";
 	}
@@ -563,9 +568,12 @@ function normalizeWorkspaceDirectoryPath(directoryPath) {
 	) {
 		throw new Error(`Invalid workspace directory path: ${directoryPath}`);
 	}
-	const segments = directoryPath.split("/").filter(Boolean);
-	validateVisibleWorkspacePathSegments(segments, directoryPath);
-	return `/${segments.join("/")}/`;
+	if (!isEphemeralWatchedDirectoryEntry(state, directoryPath)) {
+		throw new Error(
+			`Directory is not in the opened Files view: ${directoryPath}`,
+		);
+	}
+	return directoryPath;
 }
 
 function normalizeWorkspaceFilePath(filePath) {
@@ -576,67 +584,24 @@ function normalizeWorkspaceFilePath(filePath) {
 	) {
 		throw new Error(`Invalid workspace file path: ${filePath}`);
 	}
-	const segments = filePath.split("/").filter(Boolean);
-	validateVisibleWorkspacePathSegments(segments, filePath);
-	return `/${segments.join("/")}`;
-}
-
-function validateVisibleWorkspacePathSegments(segments, originalPath) {
-	if (segments.length === 0) {
-		throw new Error(`Invalid workspace path: ${originalPath}`);
-	}
-	for (const segment of segments) {
-		if (
-			segment.length === 0 ||
-			segment === "." ||
-			segment === ".." ||
-			segment.startsWith(".") ||
-			segment.includes("/") ||
-			path.isAbsolute(segment)
-		) {
-			throw new Error(`Invalid workspace path: ${originalPath}`);
-		}
-	}
-	if (segments[0] === LIX_DIRECTORY_NAME) {
-		throw new Error(`Invalid workspace path: ${originalPath}`);
-	}
-}
-
-function workspaceLocalPathForDirectoryPath(workspace, directoryPath) {
-	if (directoryPath === "/") {
-		return workspace.path;
-	}
-	const segments = directoryPath.split("/").filter(Boolean);
-	return path.join(workspace.path, ...segments);
-}
-
-function workspaceLocalPathForFilePath(workspace, filePath) {
-	const segments = filePath.split("/").filter(Boolean);
-	return path.join(workspace.path, ...segments);
-}
-
-function parentDirectoryPathForFilePath(filePath) {
-	const segments = filePath.split("/").filter(Boolean);
-	segments.pop();
-	return segments.length === 0 ? "/" : `/${segments.join("/")}/`;
+	return filePath;
 }
 
 function parentDirectoryPathForDirectoryPath(directoryPath) {
 	if (directoryPath === "/") {
 		return null;
 	}
-	const segments = directoryPath.split("/").filter(Boolean);
-	segments.pop();
-	return segments.length === 0 ? "/" : `/${segments.join("/")}/`;
+	const parentPath = path.posix.dirname(directoryPath.slice(0, -1));
+	return parentPath === "/" ? "/" : `${parentPath}/`;
 }
 
-function childDirectoryPath(directoryPath, name) {
-	return directoryPath === "/" ? `/${name}/` : `${directoryPath}${name}/`;
+function childWorkspacePath(directoryPath, name, kind) {
+	const childPath = path.posix.join(directoryPath, name);
+	return kind === "directory" ? `${childPath}/` : childPath;
 }
 
 function displayNameFromWorkspacePath(workspacePath) {
-	const segments = workspacePath.split("/").filter(Boolean);
-	return segments[segments.length - 1] ?? workspacePath;
+	return path.posix.basename(workspacePath) || workspacePath;
 }
 
 function removeEphemeralFileTreeOwner(state, ownerId) {
@@ -651,6 +616,71 @@ function effectiveEphemeralWatchedDirectories(state) {
 		}
 	}
 	return paths;
+}
+
+function isEphemeralWatchedDirectoryEntry(state, directoryPath) {
+	return state.ephemeralWatchedEntries.some(
+		(entry) =>
+			entry.kind === "directory" &&
+			entry.source === "watched" &&
+			entry.path === directoryPath,
+	);
+}
+
+function isEphemeralWatchedFileEntry(state, filePath) {
+	return state.ephemeralWatchedEntries.some(
+		(entry) =>
+			entry.kind === "file" &&
+			entry.source === "watched" &&
+			entry.path === filePath,
+	);
+}
+
+async function resolveExistingWorkspacePath(workspace, workspacePath, kind) {
+	validateWorkspacePathShape(workspacePath, kind);
+	const rootRealPath = await realpath(workspace.path);
+	const localPath = path.resolve(rootRealPath, `.${workspacePath}`);
+	const realLocalPath = await realpath(localPath);
+	if (!isPathContainedInDirectory(rootRealPath, realLocalPath)) {
+		throw new Error(`Workspace path escapes the workspace: ${workspacePath}`);
+	}
+	const metadata = await lstat(localPath);
+	if (metadata.isSymbolicLink()) {
+		throw new Error(`Workspace path is a symbolic link: ${workspacePath}`);
+	}
+	if (kind === "directory" && !metadata.isDirectory()) {
+		throw new Error(`Path is not a workspace directory: ${workspacePath}`);
+	}
+	if (kind === "file" && !metadata.isFile()) {
+		throw new Error(`Path is not a regular workspace file: ${workspacePath}`);
+	}
+	return { localPath, realLocalPath, metadata };
+}
+
+function validateWorkspacePathShape(workspacePath, kind) {
+	if (typeof workspacePath !== "string" || !workspacePath.startsWith("/")) {
+		throw new Error(`Invalid workspace path: ${workspacePath}`);
+	}
+	if (
+		kind === "directory" &&
+		workspacePath !== "/" &&
+		!workspacePath.endsWith("/")
+	) {
+		throw new Error(`Invalid workspace directory path: ${workspacePath}`);
+	}
+	if (kind === "file" && workspacePath.endsWith("/")) {
+		throw new Error(`Invalid workspace file path: ${workspacePath}`);
+	}
+}
+
+function isPathContainedInDirectory(directoryPath, candidatePath) {
+	const relativePath = path.relative(directoryPath, candidatePath);
+	return (
+		relativePath === "" ||
+		(relativePath !== ".." &&
+			!relativePath.startsWith(`..${path.sep}`) &&
+			!path.isAbsolute(relativePath))
+	);
 }
 
 async function refreshEphemeralFileTree(window, state, options = {}) {
@@ -695,15 +725,12 @@ async function refreshEphemeralDirectoryWatchers(
 ) {
 	const watchableDirectories = new Set();
 	for (const directoryPath of watchedDirectories) {
-		const localPath = workspaceLocalPathForDirectoryPath(
-			workspace,
-			directoryPath,
-		);
 		try {
-			const metadata = await lstat(localPath);
-			if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-				continue;
-			}
+			const { localPath } = await resolveExistingWorkspacePath(
+				workspace,
+				directoryPath,
+				"directory",
+			);
 			watchableDirectories.add(directoryPath);
 			if (state.ephemeralDirectoryWatchers.has(directoryPath)) {
 				continue;
@@ -752,13 +779,17 @@ async function collectEphemeralWatchedEntries(workspace, watchedDirectories) {
 	for (const directoryPath of [...watchedDirectories].sort((left, right) =>
 		left.localeCompare(right),
 	)) {
+		const directoryEntries = await collectEphemeralDirectoryEntries(
+			workspace,
+			directoryPath,
+		);
+		if (directoryEntries === null) {
+			continue;
+		}
 		if (directoryPath !== "/") {
 			addWatchedDirectoryEntry(entriesByPath, directoryPath);
 		}
-		for (const entry of await collectEphemeralDirectoryEntries(
-			workspace,
-			directoryPath,
-		)) {
+		for (const entry of directoryEntries) {
 			entriesByPath.set(entry.path, entry);
 		}
 	}
@@ -783,24 +814,21 @@ function addWatchedDirectoryEntry(entriesByPath, directoryPath) {
 }
 
 async function collectEphemeralDirectoryEntries(workspace, directoryPath) {
-	const localDirectoryPath = workspaceLocalPathForDirectoryPath(
-		workspace,
-		directoryPath,
-	);
-	let metadata;
+	let localDirectoryPath;
 	try {
-		metadata = await lstat(localDirectoryPath);
+		({ localPath: localDirectoryPath } = await resolveExistingWorkspacePath(
+			workspace,
+			directoryPath,
+			"directory",
+		));
 	} catch {
-		return [];
-	}
-	if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-		return [];
+		return null;
 	}
 	let directory;
 	try {
 		directory = await opendir(localDirectoryPath);
 	} catch {
-		return [];
+		return null;
 	}
 
 	const entries = [];
@@ -819,12 +847,11 @@ async function collectEphemeralDirectoryEntries(workspace, directoryPath) {
 			continue;
 		}
 		if (entryMetadata.isDirectory()) {
-			const entryPath = childDirectoryPath(directoryPath, entry.name);
-			try {
-				normalizeWorkspaceDirectoryPath(entryPath);
-			} catch {
-				continue;
-			}
+			const entryPath = childWorkspacePath(
+				directoryPath,
+				entry.name,
+				"directory",
+			);
 			entries.push({
 				id: `watched:${entryPath}`,
 				parent_id: directoryPath === "/" ? null : `watched:${directoryPath}`,
@@ -838,19 +865,7 @@ async function collectEphemeralDirectoryEntries(workspace, directoryPath) {
 		if (!entryMetadata.isFile()) {
 			continue;
 		}
-		const relativePath = workspaceRelativeFilePath(
-			workspace.path,
-			localEntryPath,
-		);
-		if (!relativePath) {
-			continue;
-		}
-		const entryPath = `/${relativePath}`;
-		try {
-			normalizeWorkspaceFilePath(entryPath);
-		} catch {
-			continue;
-		}
+		const entryPath = childWorkspacePath(directoryPath, entry.name, "file");
 		entries.push({
 			id: `watched:${entryPath}`,
 			parent_id: directoryPath === "/" ? null : `watched:${directoryPath}`,

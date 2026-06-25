@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -503,7 +503,7 @@ describe("workspace resolution", () => {
 
 			await expect(
 				readEphemeralWorkspaceFile(window, { path: "/docs/nested.txt" }),
-			).rejects.toThrow("opened Files view directory");
+			).rejects.toThrow("opened Files view");
 
 			const nestedEntries = await setEphemeralWatchedDirectories(window, {
 				ownerId: "files",
@@ -551,7 +551,49 @@ describe("workspace resolution", () => {
 			).resolves.toEqual([]);
 			await expect(
 				readEphemeralWorkspaceFile(window, { path: "/notes.txt" }),
-			).rejects.toThrow("opened Files view directory");
+			).rejects.toThrow("opened Files view");
+		} finally {
+			await disposeWorkspaceWindowState(window);
+		}
+	});
+
+	test("does not read listed transient files through symlinked ancestors", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const outsideDirectory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"outside",
+		);
+		const docsDirectory = path.join(directory, "docs");
+		await mkdir(docsDirectory, { recursive: true });
+		await mkdir(outsideDirectory, { recursive: true });
+		await writeFile(path.join(docsDirectory, "secret.txt"), "inside\n");
+		await writeFile(path.join(outsideDirectory, "secret.txt"), "outside\n");
+
+		const window = createTestWindow();
+		try {
+			await setWorkspaceFromPath(directory, window);
+			await setEphemeralWatchedDirectories(window, {
+				ownerId: "files",
+				paths: ["/"],
+			});
+			await setEphemeralWatchedDirectories(window, {
+				ownerId: "files",
+				paths: ["/", "/docs/"],
+			});
+
+			await rm(docsDirectory, { force: true, recursive: true });
+			await symlink(outsideDirectory, docsDirectory, "dir");
+
+			await expect(
+				readEphemeralWorkspaceFile(window, { path: "/docs/secret.txt" }),
+			).rejects.toThrow("escapes the workspace");
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}
