@@ -17,13 +17,11 @@ import { decodeFileDataToBytes } from "@/lib/decode-file-data";
  * new commit, so this is idempotent and cheap to call repeatedly.
  *
  * `expectedData` is the content observed when the file first entered the
- * workspace. The write is a compare-and-write: it only runs while the file
- * still holds exactly those bytes, so it can never clobber — or be confused by —
- * a newer external write that raced ahead. No self-write suppression is needed:
- * an identical-bytes write leaves the content hash unchanged, so the external
- * write detector never mistakes it (or a real edit) for a review. Failures are
- * swallowed; a missing baseline simply leaves the first edit on the classic
- * path.
+ * workspace. The write is a compare-and-write that only runs while the file
+ * still holds those bytes, so a newer external write that raced ahead is left
+ * intact. No self-write suppression is needed: an identical-bytes write leaves
+ * the content hash unchanged, so the detector does not treat it as an edit.
+ * Failures are swallowed; a missing baseline leaves the first edit on classic.
  */
 export async function ensureMarkdownReviewBaseline(
 	lix: Lix,

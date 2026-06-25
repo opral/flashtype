@@ -12,11 +12,9 @@ import {
 } from "./electron-test-utils";
 
 const INITIAL = "# Review\n\nAlpha paragraph.\n\nBeta paragraph.\n";
-// A single external edit changes both paragraphs -> two granular changes. The
-// app establishes a tracked baseline for the file at ingest, so even this very
-// first external write offers the per-change stepper (no warm-up write needed).
+// One external edit touching both paragraphs -> two granular changes.
 const EDIT = "# Review\n\nAlpha v2.\n\nBeta v2.\n";
-// Accept the first change, reject the second: the canonical mixed projection.
+// Accept the first change, reject the second.
 const EXPECTED = "# Review\n\nAlpha v2.\n\nBeta paragraph.\n";
 
 test("accepts one block and rejects another on the first external Markdown edit", async ({
@@ -38,41 +36,34 @@ test("accepts one block and rejects another on the first external Markdown edit"
 		await expectInstalledPluginArchives(workspaceDir);
 		await ensureFilesViewOpenInLeftPanel(page);
 
-		// Open the file so it is ingested and rendered; this also confirms the
-		// workspace baseline had a chance to materialize before the external edit.
+		// Open the file first so its baseline is established before the edit.
 		const reviewFile = page.getByTestId("file-tree-item-review-md");
 		await expect(reviewFile).toBeVisible();
 		await reviewFile.click();
 		await expect(page.getByText("/review.md")).toBeVisible();
 		await expect(page.getByText("Alpha paragraph.")).toBeVisible();
 
-		// The single external write that triggers the review.
 		await writeFile(reviewPath, EDIT);
 
-		// The granular stepper appears with two changes — no warm-up write.
 		const overlay = page.locator(".markdown-review-overlay");
 		await expect(overlay).toBeVisible({ timeout: 45_000 });
 		const stepper = page.getByTestId("markdown-review-stepper");
 		await expect(stepper).toBeVisible({ timeout: 45_000 });
 		await expect(stepper.getByText("1 of 2", { exact: true })).toBeVisible();
 
-		// Accept the first change, then reject the second; the review auto-applies.
 		await stepper.getByRole("button", { name: /Accept/ }).click();
 		await expect(stepper.getByText("2 of 2", { exact: true })).toBeVisible();
 		await stepper.getByRole("button", { name: /Reject/ }).click();
 
-		// The overlay closes once the mixed result is applied.
 		await expect(overlay).toBeHidden({ timeout: 30_000 });
 
-		// The file on disk holds exactly the canonical mixed projection.
 		await expect
 			.poll(async () => await readFile(reviewPath, "utf8"), {
 				timeout: 30_000,
 			})
 			.toBe(EXPECTED);
 
-		// The internal resolution write is suppressed, so no second review opens:
-		// the overlay stays gone and the editor is interactive again.
+		// The internal resolution write must not reopen a second review.
 		await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
 		await expect(page.getByText("Alpha v2.")).toBeVisible();
 	} finally {
@@ -80,9 +71,8 @@ test("accepts one block and rejects another on the first external Markdown edit"
 	}
 });
 
-// Two sequential single-change writes (how an assistant streams edits) must not
-// lose the first change: the second write folds into the open review, and the
-// cumulative diff is reviewed together in one stepper.
+// Two sequential single-change writes must fold into one review rather than the
+// second dropping the first.
 const EDIT_ALPHA = "# Review\n\nAlpha v2.\n\nBeta paragraph.\n";
 const EDIT_BOTH = "# Review\n\nAlpha v2.\n\nBeta v2.\n";
 
@@ -111,7 +101,7 @@ test("folds a second external edit into the open review instead of dropping the 
 		await expect(page.getByText("/review.md")).toBeVisible();
 		await expect(page.getByText("Alpha paragraph.")).toBeVisible();
 
-		// First write changes only Alpha -> a single change -> classic controls.
+		// One change -> classic controls.
 		await writeFile(reviewPath, EDIT_ALPHA);
 		const overlay = page.locator(".markdown-review-overlay");
 		await expect(overlay).toBeVisible({ timeout: 45_000 });
@@ -120,20 +110,17 @@ test("folds a second external edit into the open review instead of dropping the 
 		).toBeVisible();
 		await expect(page.getByTestId("markdown-review-stepper")).toHaveCount(0);
 
-		// Second write changes Beta. It folds into the still-open review, so the
-		// cumulative diff (Alpha + Beta) is now reviewed together in the stepper.
+		// Folds into the open review -> cumulative two-change stepper.
 		await writeFile(reviewPath, EDIT_BOTH);
 		const stepper = page.getByTestId("markdown-review-stepper");
 		await expect(stepper).toBeVisible({ timeout: 45_000 });
 		await expect(stepper.getByText("1 of 2", { exact: true })).toBeVisible();
 
-		// Accept the first change (Alpha), reject the second (Beta).
 		await stepper.getByRole("button", { name: /Accept/ }).click();
 		await expect(stepper.getByText("2 of 2", { exact: true })).toBeVisible();
 		await stepper.getByRole("button", { name: /Reject/ }).click();
 
 		await expect(overlay).toBeHidden({ timeout: 30_000 });
-		// Accepting Alpha and rejecting Beta yields exactly the first write's state.
 		await expect
 			.poll(async () => await readFile(reviewPath, "utf8"), { timeout: 30_000 })
 			.toBe(EDIT_ALPHA);

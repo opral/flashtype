@@ -4,17 +4,12 @@ import {
 	renderMarkdownProjection,
 } from "./granular-review-projection";
 
-// Snapshot-based planner for per-change Markdown review. It never inspects the
-// rendered DOM, never patches source byte ranges, and never relies on the
-// `markdown-wc` parser. A "change" is derived purely from the before/after
-// `markdown_block` snapshots that Lix materialized, and every mixed result is
-// composed in Lix projection space (see `granular-review-projection.ts`).
-//
-// Safety is proven up front: the plan is only `safe` when rejecting everything
-// reproduces `beforeData` and accepting everything reproduces `afterData`
-// byte-for-byte, and when global identity/order invariants guarantee that any
-// mixed accept/reject combination yields a unique, deterministically ordered
-// projection. Anything else falls back to the classic all-or-nothing review.
+// Snapshot-based planner for per-change Markdown review. Changes are derived
+// from the before/after `markdown_block` snapshots Lix materialized — not from
+// the rendered DOM, source byte ranges, or the `markdown-wc` parser — and mixed
+// results are composed in Lix projection space (see granular-review-projection).
+// The plan is `safe` only when rejecting all reproduces `beforeData` and
+// accepting all reproduces `afterData`; otherwise it falls back to classic.
 
 export type GranularReviewFallbackReason =
 	| "missing_snapshots"
@@ -99,14 +94,11 @@ export function planGranularReview(
 	const { beforeBlocks, afterBlocks, beforeData, afterData } = input;
 	if (!beforeBlocks || !afterBlocks) return unsafe("missing_snapshots");
 
-	// Extended Markdown (YAML frontmatter, footnotes, math) is deliberately kept
-	// on the classic all-or-nothing path. Even when the block projection happens
-	// to round-trip these constructs byte-for-byte, the per-change diff display
-	// and block highlighting do not map cleanly onto them, so granular review
-	// could mislead. This is a cheap, conservative textual signal over the
-	// projection bytes themselves — it never parses with `markdown-wc` and never
-	// treats that parser as the source of truth for granularity. False positives
-	// only ever degrade to classic, which is always safe.
+	// Keep extended Markdown (YAML frontmatter, footnotes, math) on the classic
+	// path: even when the block projection round-trips these byte-for-byte, the
+	// per-change diff display does not map cleanly onto them. This is a cheap
+	// textual signal over the projection bytes — not a markdown-wc parse — and a
+	// false positive only degrades to classic.
 	if (
 		hasExtendedMarkdown(decodeProjection(beforeData)) ||
 		hasExtendedMarkdown(decodeProjection(afterData))
@@ -118,8 +110,8 @@ export function planGranularReview(
 	const afterValidation = validateSide(afterBlocks);
 	if (!beforeValidation || !afterValidation) return unsafe("invalid_snapshot");
 
-	// The whole feature depends on Flashtype reproducing the exact Lix
-	// projection from snapshots. If it cannot, never offer granular controls.
+	// Granular review depends on reproducing the exact Lix projection from
+	// snapshots; if it cannot, fall back to classic rather than offer it.
 	if (!bytesEqual(renderMarkdownProjection(beforeBlocks), beforeData)) {
 		return unsafe("projection_mismatch");
 	}
@@ -204,10 +196,10 @@ export function planGranularReview(
 		pushChange(beforeTail, afterTail, classifyGap(beforeTail, afterTail));
 	}
 
-	// Global invariants that make any mixed accept/reject combination provably
-	// valid: every block id and every order key is owned by exactly one change
-	// (or is an unchanged anchor). This rules out moves and boundary churn that
-	// could duplicate or drop a block under some decision combination.
+	// Ownership invariant: every block id and order key belongs to exactly one
+	// change (or an unchanged anchor), so any mixed accept/reject combination
+	// stays valid. This rules out moves and boundary churn that could duplicate
+	// or drop a block under some combination.
 	const ownership = checkOwnership(segments, unchanged);
 	if (ownership) return unsafe(ownership);
 

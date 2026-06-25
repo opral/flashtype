@@ -17,19 +17,17 @@ export type GranularReviewResolutionResult = {
 /**
  * Persist a granular review resolution atomically.
  *
- * The mixed/all-rejected path runs inside a single Lix transaction that reads
- * the current `lix_file.data`, compares it byte-for-byte with the review's
- * after-state, and only writes when they still match. This guarantees a newer
- * external write is never overwritten. Self-write suppression is registered
- * with the exact canonical hash immediately before the update and canceled if
- * the transaction never commits, so the resolution write does not reopen a
- * fresh review of itself while never masking an unrelated write.
+ * The mixed/all-rejected path runs in one Lix transaction that compares the
+ * current `lix_file.data` byte-for-byte with the review's after-state and only
+ * writes when they still match, so a newer external write is left intact.
+ * Self-write suppression is registered with the canonical hash just before the
+ * update and canceled if the transaction does not commit, so the write neither
+ * reopens a review of itself nor masks an unrelated write.
  *
- * The all-accepted path performs no write, but still reads the current
- * `lix_file.data` to confirm the file is exactly the after-state. A newer
- * external write that landed after the review opened makes the resolution
- * `stale` (and a deleted file `missing`), so the review is never silently
- * cleared against a buffer the user never saw.
+ * The all-accepted path writes nothing but still reads `lix_file.data` to
+ * confirm it equals the after-state: a newer external write makes the
+ * resolution `stale` (a deleted file `missing`) rather than clearing the review
+ * against content the user did not see.
  */
 export async function applyGranularReviewResolution(
 	lix: Lix,
