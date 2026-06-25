@@ -582,7 +582,7 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
-	test("watches transient directories on demand and imports watched-only files before opening", async () => {
+	test("watches transient directories on demand and delegates watched-only file opens", async () => {
 		const lix = await openLix();
 		const originalDesktop = window.flashtypeDesktop;
 		const openFile = vi.fn();
@@ -619,13 +619,9 @@ describe("FilesView", () => {
 			async ({ paths }: { paths: string[] }) =>
 				paths.includes("/docs/") ? nestedEntries : rootEntries,
 		);
-		const readEphemeralFile = vi.fn(async () =>
-			new TextEncoder().encode("Nested text"),
-		);
 		window.flashtypeDesktop = {
 			workspace: {
 				setEphemeralWatchedDirectories,
-				readEphemeralFile,
 				onEphemeralWatchedFileTreeChanged: vi.fn(() => () => {}),
 			},
 		} as unknown as Window["flashtypeDesktop"];
@@ -680,21 +676,15 @@ describe("FilesView", () => {
 			});
 
 			await waitFor(async () => {
-				expect(readEphemeralFile).toHaveBeenCalledWith({
-					path: "/docs/nested.txt",
-				});
 				const file = await qb(lix)
 					.selectFrom("lix_file")
 					.select(["id", "path", "data"])
 					.where("path", "=", "/docs/nested.txt")
 					.executeTakeFirst();
-				expect(file?.path).toBe("/docs/nested.txt");
-				expect(new TextDecoder().decode(file?.data as Uint8Array)).toBe(
-					"Nested text",
-				);
+				expect(file).toBeUndefined();
 				expect(openFile).toHaveBeenCalledWith({
 					panel: "central",
-					fileId: file?.id,
+					fileId: "watched:/docs/nested.txt",
 					filePath: "/docs/nested.txt",
 					focus: false,
 				});
@@ -812,7 +802,7 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
-	test("lists ephemeral watched directories and imports watched-only files on open", async () => {
+	test("lists ephemeral watched directories and delegates watched-only file opens", async () => {
 		const lix = await openLix();
 		const originalDesktop = window.flashtypeDesktop;
 		const openFile = vi.fn();
@@ -849,14 +839,10 @@ describe("FilesView", () => {
 			async ({ paths }: { paths: string[] }) =>
 				paths.includes("/docs/") ? nestedEntries : rootEntries,
 		);
-		const readEphemeralFile = vi.fn(async () =>
-			new TextEncoder().encode("Loose text\n"),
-		);
 		window.flashtypeDesktop = {
 			workspace: {
 				setEphemeralWatchedDirectories,
 				onEphemeralWatchedFileTreeChanged: vi.fn(() => () => {}),
-				readEphemeralFile,
 			},
 		} as unknown as Window["flashtypeDesktop"];
 
@@ -913,11 +899,10 @@ describe("FilesView", () => {
 					.select(["id", "path"])
 					.where("path", "=", "/loose.txt")
 					.executeTakeFirst();
-				expect(row?.path).toBe("/loose.txt");
-				expect(readEphemeralFile).toHaveBeenCalledWith({ path: "/loose.txt" });
+				expect(row).toBeUndefined();
 				expect(openFile).toHaveBeenCalledWith({
 					panel: "central",
-					fileId: row?.id,
+					fileId: "watched:/loose.txt",
 					filePath: "/loose.txt",
 					focus: false,
 				});

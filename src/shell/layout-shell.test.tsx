@@ -7,7 +7,7 @@ import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
 import { openLix } from "@/test-utils/node-lix-sdk";
 import { qb } from "@/lib/lix-kysely";
 import { FILES_EXTENSION_KIND } from "@/extension-runtime/extension-instance-helpers";
-import { V2LayoutShell } from "./layout-shell";
+import { resolveLixFileForOpen, V2LayoutShell } from "./layout-shell";
 import type { FlashtypeUiState } from "./ui-state";
 import type { Lix } from "@/lib/lix-types";
 
@@ -21,6 +21,123 @@ const originalDesktop = window.flashtypeDesktop;
 afterEach(() => {
 	cleanup();
 	window.flashtypeDesktop = originalDesktop;
+});
+
+describe("resolveLixFileForOpen", () => {
+	test("uses the existing Lix row for normalized file paths", async () => {
+		const lix = await openLix();
+		const readEphemeralFile = vi.fn(async () =>
+			new TextEncoder().encode("Disk content"),
+		);
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "real_file",
+				path: "/docs/readme.md",
+				data: new TextEncoder().encode("Lix content"),
+			})
+			.execute();
+
+		const resolved = await resolveLixFileForOpen({
+			lix,
+			workspace: ephemeralWorkspace(),
+			filePath: "docs/./readme.md",
+			readEphemeralFile,
+		});
+
+		expect(resolved).toEqual({ id: "real_file", path: "/docs/readme.md" });
+		expect(readEphemeralFile).not.toHaveBeenCalled();
+		await lix.close();
+	});
+
+	test("imports an ephemeral disk file and returns the inserted Lix id", async () => {
+		const lix = await openLix();
+		const readEphemeralFile = vi.fn(async () =>
+			new TextEncoder().encode("# Imported"),
+		);
+
+		const resolved = await resolveLixFileForOpen({
+			lix,
+			workspace: ephemeralWorkspace(),
+			filePath: "/notes.md",
+			readEphemeralFile,
+		});
+
+		expect(readEphemeralFile).toHaveBeenCalledWith({ path: "/notes.md" });
+		expect(resolved?.path).toBe("/notes.md");
+		expect(resolved?.id).toBeTruthy();
+		const row = await qb(lix)
+			.selectFrom("lix_file")
+			.select(["id", "path", "data"])
+			.where("path", "=", "/notes.md")
+			.executeTakeFirstOrThrow();
+		expect(row.id).toBe(resolved?.id);
+		expect(new TextDecoder().decode(row.data as Uint8Array)).toBe("# Imported");
+		await lix.close();
+	});
+
+	test("does not overwrite a Lix row created while importing", async () => {
+		const lix = await openLix();
+		const readEphemeralFile = vi.fn(async () => {
+			await qb(lix)
+				.insertInto("lix_file")
+				.values({
+					id: "raced_file",
+					path: "/race.md",
+					data: new TextEncoder().encode("Existing Lix data"),
+				})
+				.execute();
+			return new TextEncoder().encode("Disk data");
+		});
+
+		const resolved = await resolveLixFileForOpen({
+			lix,
+			workspace: ephemeralWorkspace(),
+			filePath: "/race.md",
+			readEphemeralFile,
+		});
+
+		expect(resolved).toEqual({ id: "raced_file", path: "/race.md" });
+		const row = await qb(lix)
+			.selectFrom("lix_file")
+			.select(["data"])
+			.where("path", "=", "/race.md")
+			.executeTakeFirstOrThrow();
+		expect(new TextDecoder().decode(row.data as Uint8Array)).toBe(
+			"Existing Lix data",
+		);
+		await lix.close();
+	});
+
+	test("refuses files that cannot be found or imported", async () => {
+		const lix = await openLix();
+		const readEphemeralFile = vi.fn(async () => undefined);
+
+		await expect(
+			resolveLixFileForOpen({
+				lix,
+				workspace: {
+					ephemeral: false,
+					path: "/workspace/.lix",
+					name: "workspace",
+				},
+				filePath: "/missing.md",
+				readEphemeralFile,
+			}),
+		).resolves.toBeNull();
+		expect(readEphemeralFile).not.toHaveBeenCalled();
+
+		await expect(
+			resolveLixFileForOpen({
+				lix,
+				workspace: ephemeralWorkspace(),
+				filePath: "/missing.md",
+				readEphemeralFile,
+			}),
+		).resolves.toBeNull();
+		expect(readEphemeralFile).toHaveBeenCalledWith({ path: "/missing.md" });
+		await lix.close();
+	});
 });
 
 describe("V2LayoutShell native New File", () => {
@@ -228,7 +345,10 @@ function collapsedFilesViewState(): FlashtypeUiState {
 	};
 }
 
-async function findFilePath(lix: Lix, path: string): Promise<string | undefined> {
+async function findFilePath(
+	lix: Lix,
+	path: string,
+): Promise<string | undefined> {
 	return (
 		await qb(lix)
 			.selectFrom("lix_file")
@@ -236,4 +356,13 @@ async function findFilePath(lix: Lix, path: string): Promise<string | undefined>
 			.where("path", "=", path)
 			.executeTakeFirst()
 	)?.path;
+}
+
+function ephemeralWorkspace() {
+	return {
+		ephemeral: true,
+		path: "/workspace",
+		name: "workspace",
+		includePaths: [],
+	} as const;
 }

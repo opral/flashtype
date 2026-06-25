@@ -140,7 +140,7 @@ export interface ExtensionContext {
 		readonly trackTelemetry?: boolean;
 		readonly trackDocumentOpenAttempt?: boolean;
 		readonly trackDocumentViewed?: boolean;
-	}) => void;
+	}) => void | Promise<void>;
 	readonly acceptExternalWriteReview?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;

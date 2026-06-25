@@ -94,20 +94,6 @@ function FilesViewContent({
 				.map((entry) => entry.path),
 		);
 	}, [combinedEntries]);
-	const lixFilePathSet = useMemo(() => {
-		return new Set(
-			(entries ?? [])
-				.filter((entry) => entry.kind === "file")
-				.map((entry) => entry.path),
-		);
-	}, [entries]);
-	const watchedFilePathSet = useMemo(() => {
-		return new Set(
-			(watchedEntries ?? [])
-				.filter((entry) => entry.kind === "file")
-				.map((entry) => entry.path),
-		);
-	}, [watchedEntries]);
 	const existingFilePaths = useMemo(() => {
 		const combined = new Set(entryPathSet);
 		for (const path of pendingPaths) {
@@ -336,45 +322,18 @@ function FilesViewContent({
 	}, [context, draft, existingDirectoryPaths, existingFilePaths, lix]);
 
 	const handleOpenFile = useCallback(
-		async (fileId: string, path: string) => {
-			if (
-				isEphemeralWorkspace &&
-				watchedFilePathSet.has(path) &&
-				!lixFilePathSet.has(path)
-			) {
-				const data =
-					await window.flashtypeDesktop?.workspace.readEphemeralFile?.({
-						path,
-					});
-				if (!data) {
-					throw new Error(`Unable to read transient workspace file: ${path}`);
-				}
-				await qb(lix)
-					.insertInto("lix_file")
-					.values({
-						path,
-						data,
-					})
-					.onConflict((oc) => oc.column("path").doUpdateSet({ data }))
-					.execute();
-				const importedFile = await qb(lix)
-					.selectFrom("lix_file")
-					.select("id")
-					.where("path", "=", path)
-					.executeTakeFirstOrThrow();
-				fileId = importedFile.id as string;
-			}
+		(fileId: string, path: string) => {
 			setSelectedPath(path);
 			setSelectedFileId(fileId);
 			setSelectedKind("file");
-			context?.openFile?.({
+			void context?.openFile?.({
 				panel: "central",
 				fileId,
 				filePath: path,
 				focus: false,
 			});
 		},
-		[context, isEphemeralWorkspace, lix, lixFilePathSet, watchedFilePathSet],
+		[context],
 	);
 
 	const handleOpenDirectoriesChange = useCallback(
