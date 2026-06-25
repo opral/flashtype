@@ -44,6 +44,23 @@ export async function bundledPluginArchives(): Promise<BundledPluginArchive[]> {
 	return await sdk.bundledPluginArchives();
 }
 
+/**
+ * Construct a filesystem-backed Lix backend for tests that need to reproduce
+ * the real desktop ingest path (files scanned from disk are ingested as
+ * untracked state with no observed commit). Pass the result as
+ * `openLix({ backend })`.
+ */
+export async function createFsBackend(options: {
+	path: string;
+	storage?: "persistent" | "memory";
+}): Promise<NonNullable<SdkOpenLixOptions["backend"]>> {
+	const sdk = await loadSdk();
+	return new sdk.FsBackend({
+		path: options.path,
+		storage: options.storage ?? "persistent",
+	});
+}
+
 async function loadSdk(): Promise<SdkModule> {
 	if (!sdkModulePromise) {
 		const sdkPath = resolve(

@@ -43,7 +43,12 @@ import {
 	type ReviewGuard,
 } from "./external-write-review-guard";
 import { ExternalWriteReviewAbandonDialog } from "./external-write-review-abandon-dialog";
+import {
+	keepProposedThenContinue,
+	type KeepProposedOutcome,
+} from "./external-write-review-abandon";
 import { markFlashtypeFileWrite } from "@/extension-runtime/external-write-tracking";
+import { ensureMarkdownReviewBaseline } from "@/extension-runtime/markdown-review-baseline";
 import {
 	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
 	type ExternalWriteReview,
@@ -1195,20 +1200,25 @@ function LayoutShellContent({
 	);
 
 	const handleAcceptExternalWriteReview = useCallback(
-		(args: { readonly fileId: string; readonly reviewId: string }) => {
+		async (args: {
+			readonly fileId: string;
+			readonly reviewId: string;
+		}): Promise<KeepProposedOutcome> => {
 			const review = getExternalWriteReviewForFile(args);
 			if (!review) {
 				clearExternalWriteReview(args);
-				return;
+				return "noop";
 			}
-			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return;
-			void (async () => {
-				const outcome = (await isExternalWriteReviewCurrent(review))
-					? "accepted"
-					: "abandoned";
-				resolveDiffReviewTelemetry(review, outcome);
-				clearExternalWriteReview(args);
-			})();
+			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return "noop";
+			// Accepting keeps the proposed (after) bytes that are already on disk —
+			// no write happens. If the file changed since the review opened the
+			// proposed state is stale, so report "abandoned" rather than "accepted".
+			const outcome = (await isExternalWriteReviewCurrent(review))
+				? "accepted"
+				: "abandoned";
+			resolveDiffReviewTelemetry(review, outcome);
+			clearExternalWriteReview(args);
+			return outcome;
 		},
 		[
 			getExternalWriteReviewForFile,
@@ -1315,6 +1325,26 @@ function LayoutShellContent({
 		[],
 	);
 
+	// Track, per review, whether it holds partial decisions, and push the
+	// aggregate to the desktop main process. This lets the main process decide
+	// window-close/quit synchronously and only round-trip to this renderer (and
+	// wait on the abandon dialog) when a partial review would actually be lost.
+	const reviewPendingByIdRef = useRef(new Map<string, boolean>());
+	const [anyReviewPending, setAnyReviewPending] = useState(false);
+	const setExternalWriteReviewPending = useCallback(
+		(reviewId: string, hasPendingDecisions: boolean) => {
+			const map = reviewPendingByIdRef.current;
+			if (hasPendingDecisions) map.set(reviewId, true);
+			else map.delete(reviewId);
+			const any = map.size > 0;
+			setAnyReviewPending((prev) => (prev === any ? prev : any));
+		},
+		[],
+	);
+	useEffect(() => {
+		window.flashtypeDesktop?.reviewGuard?.setPending?.(anyReviewPending);
+	}, [anyReviewPending]);
+
 	// Answer the Electron main process's window-close query: prompt only when a
 	// review holds partial decisions, otherwise allow the close immediately.
 	useEffect(() => {
@@ -1359,13 +1389,19 @@ function LayoutShellContent({
 		const dialog = abandonDialog;
 		setAbandonDialog(null);
 		if (!dialog) return;
-		// Keep the proposed (after) changes by accepting the whole review, then
-		// continue the original destructive action.
-		handleAcceptExternalWriteReview({
-			fileId: dialog.guard.fileId,
-			reviewId: dialog.guard.reviewId,
+		// Keep the proposed (after) changes by accepting the whole review, and only
+		// continue the destructive action once that acceptance has resolved. If the
+		// file changed since the review opened, cancel instead of continuing
+		// silently against a buffer the user never saw.
+		void keepProposedThenContinue({
+			accept: () =>
+				handleAcceptExternalWriteReview({
+					fileId: dialog.guard.fileId,
+					reviewId: dialog.guard.reviewId,
+				}),
+			continuation: dialog.continuation,
+			cancel: dialog.onCancel,
 		});
-		dialog.continuation();
 	}, [abandonDialog, handleAcceptExternalWriteReview]);
 
 	const handleAbandonRejectAll = useCallback(() => {
@@ -1381,6 +1417,20 @@ function LayoutShellContent({
 			dialog.continuation();
 		})();
 	}, [abandonDialog, handleRejectExternalWriteReview]);
+
+	// Establish a tracked Lix baseline the first time each reviewable Markdown
+	// file is observed, so its FIRST external edit can be reviewed per-change
+	// rather than all-or-nothing. The write is identical-bytes (no disk change),
+	// idempotent, and self-write-suppressed; deduped per file for this session.
+	const baselinedFileIdsRef = useRef(new Set<string>());
+	const ensureReviewBaseline = useCallback(
+		(fileId: string) => {
+			if (baselinedFileIdsRef.current.has(fileId)) return;
+			baselinedFileIdsRef.current.add(fileId);
+			void ensureMarkdownReviewBaseline(lix, fileId);
+		},
+		[lix],
+	);
 
 	const handleExternalFileWrites = useCallback(
 		(writes: ExternalFileWrite[]) => {
@@ -2010,6 +2060,7 @@ function LayoutShellContent({
 			resolveExternalWriteReviewGranular:
 				handleResolveExternalWriteReviewGranular,
 			registerExternalWriteReviewGuard,
+			setExternalWriteReviewPending,
 			lix,
 		}),
 		[
@@ -2023,6 +2074,7 @@ function LayoutShellContent({
 			handleRejectExternalWriteReview,
 			handleResolveExternalWriteReviewGranular,
 			registerExternalWriteReviewGuard,
+			setExternalWriteReviewPending,
 			focusPanel,
 			lix,
 		],
@@ -2187,7 +2239,10 @@ function LayoutShellContent({
 			onDragStart={handleDragStart}
 			onDragEnd={handleDragEnd}
 		>
-			<ExternalWriteDetector onExternalWrites={handleExternalFileWrites} />
+			<ExternalWriteDetector
+				onExternalWrites={handleExternalFileWrites}
+				onReviewableFileFirstObserved={ensureReviewBaseline}
+			/>
 			<ExternalWriteReviewAbandonDialog
 				open={abandonDialog !== null}
 				onKeepReviewing={closeAbandonDialog}

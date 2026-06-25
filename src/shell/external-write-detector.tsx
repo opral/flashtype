@@ -34,8 +34,15 @@ const REVIEWABLE_FILE_OBSERVE_SQL = `
 
 export function ExternalWriteDetector({
 	onExternalWrites,
+	onReviewableFileFirstObserved,
 }: {
 	onExternalWrites: (writes: ExternalFileWrite[]) => void;
+	/**
+	 * Called once the first time each reviewable file is observed (at boot and
+	 * for files added later). The shell uses this to establish a tracked Lix
+	 * baseline so the file's FIRST external edit can be reviewed per-change.
+	 */
+	onReviewableFileFirstObserved?: (fileId: string) => void;
 }) {
 	const lix = useLix();
 	const lastHashesRef = useRef(new Map<string, string>());
@@ -54,7 +61,9 @@ export function ExternalWriteDetector({
 			const externalWrites: ExternalFileWrite[] = [];
 
 			for (const row of reviewableRows) {
+				const firstSeen = !lastHashesRef.current.has(row.id);
 				nextHashes.set(row.id, row.hash);
+				if (firstSeen) onReviewableFileFirstObserved?.(row.id);
 				if (!hasInitialSnapshotRef.current) continue;
 
 				const previousHash = lastHashesRef.current.get(row.id);
@@ -93,7 +102,7 @@ export function ExternalWriteDetector({
 			cancelled = true;
 			observeEvents.close();
 		};
-	}, [lix, onExternalWrites]);
+	}, [lix, onExternalWrites, onReviewableFileFirstObserved]);
 
 	return null;
 }

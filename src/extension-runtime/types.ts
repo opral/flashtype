@@ -147,6 +147,15 @@ export interface ExtensionContext {
 	readonly registerExternalWriteReviewGuard?: (
 		guard: ReviewGuard,
 	) => () => void;
+	/**
+	 * Report whether a specific review currently holds partial (some decided,
+	 * some pending) decisions, so the shell can tell the desktop main process to
+	 * guard window-close/quit only when something would actually be lost.
+	 */
+	readonly setExternalWriteReviewPending?: (
+		reviewId: string,
+		hasPendingDecisions: boolean,
+	) => void;
 	readonly closeExtension?: (args: {
 		readonly panel?: PanelSide;
 		readonly instance?: string;
