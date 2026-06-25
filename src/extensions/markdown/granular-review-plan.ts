@@ -39,6 +39,18 @@ export type GranularReviewChange = {
 	readonly beforeBlockIds: readonly string[];
 	readonly afterBlockIds: readonly string[];
 	readonly displayOrder: number;
+	/**
+	 * Stable identity of this change across re-plans (the involved block ids).
+	 * Used to carry a decision when sequential external writes fold into the same
+	 * open review and the plan is recomputed.
+	 */
+	readonly key: string;
+	/**
+	 * Content fingerprint of the change's before/after blocks. A carried decision
+	 * is only reused when the signature still matches, so a change whose content
+	 * evolved is re-reviewed rather than silently re-deciding unseen content.
+	 */
+	readonly signature: string;
 };
 
 export type GranularReviewPlan = {
@@ -151,6 +163,8 @@ export function planGranularReview(
 			beforeBlockIds: beforeGap.map((block) => block.id),
 			afterBlockIds: afterGap.map((block) => block.id),
 			displayOrder,
+			key: changeKey(beforeGap, afterGap),
+			signature: changeSignature(beforeGap, afterGap),
 		});
 		displayOrder += 1;
 	};
@@ -282,6 +296,36 @@ function sameSequence(
 ): boolean {
 	if (left.length !== right.length) return false;
 	return left.every((id, index) => id === right[index]);
+}
+
+function changeKey(
+	before: readonly MarkdownBlockSnapshot[],
+	after: readonly MarkdownBlockSnapshot[],
+): string {
+	const ids = new Set<string>();
+	for (const block of before) ids.add(block.id);
+	for (const block of after) ids.add(block.id);
+	return [...ids].sort().join("|");
+}
+
+function changeSignature(
+	before: readonly MarkdownBlockSnapshot[],
+	after: readonly MarkdownBlockSnapshot[],
+): string {
+	const part = (blocks: readonly MarkdownBlockSnapshot[]) =>
+		blocks
+			.map((block) => `${block.id} ${block.orderKey} ${block.block}`)
+			.join("");
+	return hashString(`${part(before)}${part(after)}`);
+}
+
+function hashString(value: string): string {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < value.length; i += 1) {
+		hash ^= value.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function classifyGap(

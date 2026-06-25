@@ -47,7 +47,10 @@ import {
 	keepProposedThenContinue,
 	type KeepProposedOutcome,
 } from "./external-write-review-abandon";
-import { markFlashtypeFileWrite } from "@/extension-runtime/external-write-tracking";
+import {
+	markFlashtypeFileWrite,
+	hashFileData,
+} from "@/extension-runtime/external-write-tracking";
 import { ensureMarkdownReviewBaseline } from "@/extension-runtime/markdown-review-baseline";
 import {
 	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
@@ -1440,21 +1443,50 @@ function LayoutShellContent({
 						clearExternalWriteReview({ fileId: write.fileId });
 						continue;
 					}
-					const review = await getExternalWriteReview(
+					const latest = await getExternalWriteReview(
 						lix,
 						write.fileId,
 						write.path,
 					);
+					if (!latest) continue;
 					const existingReview = getOpenExternalWriteReviewForFile(
 						write.fileId,
 					);
-					if (!review) continue;
-					if (existingReview && existingReview.reviewId !== review.reviewId) {
-						resolveDiffReviewTelemetry(existingReview, "abandoned");
+
+					// Fold a sequential external write into the review already open for
+					// this file: keep its original "before" anchor and only advance the
+					// "after" to the latest state. The cumulative diff is reviewed as one
+					// growing set of changes, so an earlier change is never silently
+					// dropped when the next write arrives.
+					let review = latest;
+					if (existingReview) {
+						if (fileBytesEqual(existingReview.beforeData, latest.afterData)) {
+							// The latest write reverted to the review's baseline: nothing
+							// left to review.
+							clearExternalWriteReview({ fileId: write.fileId });
+							continue;
+						}
+						review = {
+							...latest,
+							beforeData: existingReview.beforeData,
+							beforeCommitId: existingReview.beforeCommitId,
+							beforeDepth: existingReview.beforeDepth,
+							reviewId: `${write.fileId}:${hashFileData(
+								existingReview.beforeData,
+							)}:${hashFileData(latest.afterData)}`,
+						};
 					}
-					if (!diffOpenedReviewIdsRef.current.has(review.reviewId)) {
+
+					// Keep the open-review ref pointing at the current (possibly folded)
+					// review so the next write folds from the same anchor.
+					openDiffReviewByFileIdRef.current.set(write.fileId, review);
+					// One "diff_opened" per session: emit only when a fresh review opens,
+					// not on each fold of the same session.
+					if (
+						!existingReview &&
+						!diffOpenedReviewIdsRef.current.has(review.reviewId)
+					) {
 						diffOpenedReviewIdsRef.current.add(review.reviewId);
-						openDiffReviewByFileIdRef.current.set(write.fileId, review);
 						captureWorkspaceTelemetry("diff_opened", {
 							diff_review_id: review.reviewId,
 							file_extension: fileExtensionProperty(write.path),
@@ -1478,7 +1510,6 @@ function LayoutShellContent({
 			clearExternalWriteReview,
 			captureWorkspaceTelemetry,
 			getOpenExternalWriteReviewForFile,
-			resolveDiffReviewTelemetry,
 		],
 	);
 

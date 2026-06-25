@@ -27,7 +27,10 @@ import {
 	type GranularReviewPlan,
 } from "./granular-review-plan";
 import { MarkdownReviewStepper } from "./markdown-review-stepper";
-import type { GranularReviewResolutionOutcome } from "@/extension-runtime/external-write-review";
+import type {
+	GranularReviewResolution,
+	GranularReviewResolutionOutcome,
+} from "@/extension-runtime/external-write-review";
 
 const b = (
 	id: string,
@@ -218,6 +221,59 @@ describe("MarkdownReviewStepper", () => {
 		expect(reject.disabled).toBe(true);
 		// "Applying…" is delayed, so it has not flashed in for this fast path.
 		expect(screen.queryByText("Applying…")).toBeNull();
+	});
+
+	test("carries prior decisions when a later write folds into the review", async () => {
+		// Same baseline (before-anchor) for both plans; the second adds a change.
+		const baseline = [b("h", "10", "# T"), b("p", "20", "Alpha"), b("q", "30", "Beta")];
+		const v1 = [b("h", "10", "# T"), b("p", "20", "Alpha v2"), b("q", "30", "Beta v2")];
+		const v2 = [
+			b("h", "10", "# T"),
+			b("p", "20", "Alpha v2"),
+			b("q", "30", "Beta v2"),
+			b("r", "40", "Gamma"),
+		];
+		const first = buildPlan(baseline, v1);
+		const second = buildPlan(baseline, v2);
+		expect(first.plan.changes).toHaveLength(2);
+		expect(second.plan.changes).toHaveLength(3);
+
+		const ref = createRef<HTMLElement>();
+		const onResolve = vi.fn<
+			(r: GranularReviewResolution) => Promise<GranularReviewResolutionOutcome>
+		>(async () => "applied");
+		const propsFor = (
+			built: typeof first,
+			reviewId: string,
+		): React.ComponentProps<typeof MarkdownReviewStepper> => ({
+			plan: built.plan,
+			reviewId,
+			fileId: "file-1",
+			beforeData: built.beforeData,
+			afterData: built.afterData,
+			isActive: true,
+			diffContainerRef: ref,
+			onResolve,
+		});
+
+		const { rerender } = render(
+			<MarkdownReviewStepper {...propsFor(first, "review-v1")} />,
+		);
+		// Accept the first change, leaving the second pending.
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		expect(screen.getByText("2 of 2")).toBeTruthy();
+
+		// A sequential write folds in: same before-anchor, new reviewId, 3 changes.
+		rerender(<MarkdownReviewStepper {...propsFor(second, "review-v2")} />);
+
+		// The first change stays accepted, so deciding only the two pending ones
+		// completes the cumulative review. If the decision had been reset, two
+		// clicks would leave one change pending and never resolve.
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Accept/ }));
+		await waitFor(() => expect(onResolve).toHaveBeenCalledTimes(1));
+		expect(onResolve.mock.calls[0]![0].acceptedCount).toBe(3);
+		expect(onResolve.mock.calls[0]![0].rejectedCount).toBe(0);
 	});
 
 	test("a failed resolution keeps decisions and offers Retry", async () => {

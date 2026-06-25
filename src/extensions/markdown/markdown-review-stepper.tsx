@@ -26,7 +26,13 @@ import type {
 	GranularReviewResolution,
 	GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
+import { hashFileData } from "@/extension-runtime/external-write-tracking";
 import "./markdown-review-stepper.css";
+
+type CarriedDecision = {
+	readonly decision: "accepted" | "rejected";
+	readonly signature: string;
+};
 
 const APPLYING_DELAY_MS = 150;
 
@@ -49,6 +55,12 @@ type StepperState = {
 
 type StepperAction =
 	| { type: "reset"; reviewId: string; count: number }
+	| {
+			type: "rehydrate";
+			reviewId: string;
+			decisions: readonly ReviewDecision[];
+			activeIndex: number;
+	  }
 	| { type: "decide"; index: number; decision: "accepted" | "rejected" }
 	| { type: "decideRemaining"; decision: "accepted" | "rejected" }
 	| { type: "navigate"; index: number }
@@ -82,6 +94,15 @@ function reducer(state: StepperState, action: StepperAction): StepperState {
 	switch (action.type) {
 		case "reset":
 			return initState(action);
+		case "rehydrate":
+			return {
+				reviewId: action.reviewId,
+				decisions: action.decisions,
+				activeIndex: action.activeIndex,
+				submitting: false,
+				showApplying: false,
+				error: false,
+			};
 		case "decide": {
 			const decisions = state.decisions.map((decision, index) =>
 				index === action.index ? action.decision : decision,
@@ -153,14 +174,61 @@ export function MarkdownReviewStepper({
 	const [menuOpen, setMenuOpen] = useState(false);
 	const submittedRef = useRef(false);
 	const applyTimerRef = useRef<number | null>(null);
+	// Decisions already made in this review session, keyed by stable change key.
+	// Lets a sequential external write that folds into the open review (new
+	// reviewId, same before-anchor) keep prior accept/reject choices instead of
+	// resetting them. Cleared when the session's before-anchor changes.
+	const decidedByKeyRef = useRef(new Map<string, CarriedDecision>());
+	const sessionBeforeRef = useRef<string | null>(null);
 
-	// Reset the buffer whenever a new review takes over this overlay.
+	// Take over for a new (or folded) review: carry any decision whose change is
+	// unchanged (same key and content signature), reset evolved ones, and add new
+	// changes as pending. A change of before-anchor starts a fresh session.
 	useEffect(() => {
-		if (state.reviewId !== reviewId) {
-			submittedRef.current = false;
-			dispatch({ type: "reset", reviewId, count: changes.length });
+		if (state.reviewId === reviewId) {
+			// Anchor the session on first mount so the first fold is not mistaken
+			// for a new session (which would clear the carried decisions).
+			if (sessionBeforeRef.current === null) {
+				sessionBeforeRef.current = hashFileData(beforeData);
+			}
+			return;
 		}
-	}, [reviewId, changes.length, state.reviewId]);
+		submittedRef.current = false;
+		const beforeKey = hashFileData(beforeData);
+		if (sessionBeforeRef.current !== beforeKey) {
+			decidedByKeyRef.current.clear();
+			sessionBeforeRef.current = beforeKey;
+		}
+		const decisions: ReviewDecision[] = changes.map((change) => {
+			const carried = decidedByKeyRef.current.get(change.key);
+			return carried && carried.signature === change.signature
+				? carried.decision
+				: "pending";
+		});
+		const firstPending = decisions.findIndex((d) => d === "pending");
+		dispatch({
+			type: "rehydrate",
+			reviewId,
+			decisions,
+			activeIndex: firstPending < 0 ? 0 : firstPending,
+		});
+	}, [reviewId, changes, beforeData, state.reviewId]);
+
+	// Record decisions for the current plan so they can be carried if the review
+	// folds. Guarded on reviewId match so it never records the stale decisions of
+	// the previous plan against the new plan's changes.
+	useEffect(() => {
+		if (state.reviewId !== reviewId) return;
+		changes.forEach((change, index) => {
+			const decision = state.decisions[index];
+			if (decision === "accepted" || decision === "rejected") {
+				decidedByKeyRef.current.set(change.key, {
+					decision,
+					signature: change.signature,
+				});
+			}
+		});
+	}, [state.decisions, changes, reviewId, state.reviewId]);
 
 	const total = changes.length;
 	const activeChange = changes[state.activeIndex];

@@ -131,6 +131,37 @@ describe("planGranularReview eligibility", () => {
 		).toMatchObject({ status: "unsafe", reason: "extended_markdown" });
 	});
 
+	test("a change keeps the same key and signature when a later change is added", () => {
+		// Same baseline; the second plan adds a trailing block. The first change's
+		// identity must be stable so a folded review can carry its decision.
+		const baseline = [b("h", "10", "# T"), b("p", "20", "Alpha")];
+		const v1 = [b("h", "10", "# T"), b("p", "20", "Alpha v2")];
+		const v2 = [
+			b("h", "10", "# T"),
+			b("p", "20", "Alpha v2"),
+			b("r", "40", "Gamma"),
+		];
+		const planV1 = expectSafe(plan(baseline, v1));
+		const planV2 = expectSafe(plan(baseline, v2));
+		const pV1 = planV1.changes.find((c) => c.key === "p");
+		const pV2 = planV2.changes.find((c) => c.key === "p");
+		expect(pV1).toBeDefined();
+		expect(pV2).toBeDefined();
+		expect(pV2!.signature).toBe(pV1!.signature);
+		// The added block is a distinct change with its own key.
+		expect(planV2.changes.some((c) => c.key === "r")).toBe(true);
+	});
+
+	test("a change's signature changes when its content evolves", () => {
+		const baseline = [b("p", "20", "Alpha")];
+		const planA = expectSafe(plan(baseline, [b("p", "20", "Alpha v2")]));
+		const planB = expectSafe(plan(baseline, [b("p", "20", "Alpha v3")]));
+		const a = planA.changes.find((c) => c.key === "p")!;
+		const bChange = planB.changes.find((c) => c.key === "p")!;
+		expect(a.key).toBe(bChange.key);
+		expect(a.signature).not.toBe(bChange.signature);
+	});
+
 	test("ordinary prose with a single dollar sign stays eligible", () => {
 		const before = [b("h", "20", "# Doc"), b("p", "40", "It costs $5 today.")];
 		const after = [b("h", "20", "# Doc"), b("p", "40", "It costs $6 today.")];
