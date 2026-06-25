@@ -50,6 +50,60 @@ describe("resolveLixFileForOpen", () => {
 		await lix.close();
 	});
 
+	test("preserves backslashes as filename characters in Lix paths", async () => {
+		const lix = await openLix();
+		const readEphemeralFile = vi.fn(async () => undefined);
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "backslash_file",
+				path: "/erjtyjtyr\\treytj.md",
+				data: new TextEncoder().encode("Lix content"),
+			})
+			.execute();
+
+		const resolved = await resolveLixFileForOpen({
+			lix,
+			workspace: ephemeralWorkspace(),
+			filePath: "/erjtyjtyr\\treytj.md",
+			readEphemeralFile,
+		});
+
+		expect(resolved).toEqual({
+			id: "backslash_file",
+			path: "/erjtyjtyr\\treytj.md",
+		});
+		expect(readEphemeralFile).not.toHaveBeenCalled();
+		await lix.close();
+	});
+
+	test("preserves surrounding whitespace in Lix path segments", async () => {
+		const lix = await openLix();
+		const readEphemeralFile = vi.fn(async () => undefined);
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "spaced_file",
+				path: "/ notes.md ",
+				data: new TextEncoder().encode("Lix content"),
+			})
+			.execute();
+
+		const resolved = await resolveLixFileForOpen({
+			lix,
+			workspace: ephemeralWorkspace(),
+			filePath: "/ notes.md ",
+			readEphemeralFile,
+		});
+
+		expect(resolved).toEqual({
+			id: "spaced_file",
+			path: "/ notes.md ",
+		});
+		expect(readEphemeralFile).not.toHaveBeenCalled();
+		await lix.close();
+	});
+
 	test("imports an ephemeral disk file and returns the inserted Lix id", async () => {
 		const lix = await openLix();
 		const readEphemeralFile = vi.fn(async () =>

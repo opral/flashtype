@@ -428,9 +428,8 @@ type ReadEphemeralFile = (payload: {
 }) => Promise<Uint8Array | undefined>;
 
 function normalizeLixFileOpenPath(filePath: string): string | null {
-	const rawPath = filePath.replace(/\\/g, "/").trim();
-	if (!rawPath) return null;
-	const rootedPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+	if (!filePath) return null;
+	const rootedPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
 	const segments: string[] = [];
 	for (const segment of rootedPath.split("/")) {
 		if (!segment || segment === ".") continue;
