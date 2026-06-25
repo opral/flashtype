@@ -24,6 +24,12 @@ export type GranularReviewResolutionResult = {
  * with the exact canonical hash immediately before the update and canceled if
  * the transaction never commits, so the resolution write does not reopen a
  * fresh review of itself while never masking an unrelated write.
+ *
+ * The all-accepted path performs no write, but still reads the current
+ * `lix_file.data` to confirm the file is exactly the after-state. A newer
+ * external write that landed after the review opened makes the resolution
+ * `stale` (and a deleted file `missing`), so the review is never silently
+ * cleared against a buffer the user never saw.
  */
 export async function applyGranularReviewResolution(
 	lix: Lix,
@@ -32,10 +38,30 @@ export async function applyGranularReviewResolution(
 	const { fileId, resolvedData, afterData, acceptedCount, rejectedCount } =
 		resolution;
 
-	// All accepted: the file already holds the after-state, so no write is
-	// needed and no fresh review can be triggered.
+	// All accepted: the file should already hold the after-state, so no write is
+	// needed. Confirm it still matches byte-for-byte before reporting success, so
+	// a newer external write cannot be mistaken for an accepted resolution.
 	if (rejectedCount === 0 && acceptedCount > 0) {
-		return { outcome: "accepted_existing" };
+		try {
+			return await lix.transaction(async (tx) => {
+				const current = await tx.execute(
+					"SELECT data FROM lix_file WHERE id = ?",
+					[fileId],
+				);
+				if (current.rows.length === 0) {
+					return { outcome: "missing" as const };
+				}
+				const currentData = decodeFileDataToBytes(
+					current.rows[0]?.get("data"),
+				);
+				if (!bytesEqual(currentData, afterData)) {
+					return { outcome: "stale" as const };
+				}
+				return { outcome: "accepted_existing" as const };
+			});
+		} catch (error) {
+			return { outcome: "failed", error };
+		}
 	}
 
 	// Register the exact canonical self-write expectation before the write can

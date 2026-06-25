@@ -126,6 +126,50 @@ describe("applyGranularReviewResolution", () => {
 		}
 	});
 
+	test("all accepted reports stale when the file changed after the review opened", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			// A newer external write lands after the review opened but before the
+			// user accepts every change.
+			await writeFile(
+				fixture.lix,
+				"/fixtures/resolution.md",
+				"# Title\n\nSomething else entirely.\n",
+			);
+			const result = await applyGranularReviewResolution(
+				fixture.lix,
+				resolution(fixture, {
+					resolvedData: fixture.afterData,
+					acceptedCount: 2,
+					rejectedCount: 0,
+				}),
+			);
+			expect(result.outcome).toBe("stale");
+			// The newer write is preserved untouched — the review is not applied.
+			const observed = await fileData(fixture.lix, fixture.fileId);
+			expect(dec(observed)).toBe("# Title\n\nSomething else entirely.\n");
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
+	test("all accepted reports missing when the file no longer exists", async () => {
+		const fixture = await openReviewFixture();
+		try {
+			const result = await applyGranularReviewResolution(fixture.lix, {
+				...resolution(fixture, {
+					resolvedData: fixture.afterData,
+					acceptedCount: 2,
+					rejectedCount: 0,
+				}),
+				fileId: "does-not-exist",
+			});
+			expect(result.outcome).toBe("missing");
+		} finally {
+			await fixture.lix.close();
+		}
+	});
+
 	test("all rejected writes the exact before-state", async () => {
 		const fixture = await openReviewFixture();
 		try {
