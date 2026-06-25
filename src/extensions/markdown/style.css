@@ -14,13 +14,6 @@
 	min-height: 0;
 }
 
-/* Scroll lives here so the scrollbar sits flush to the panel's right edge.
-   The writing gutter lives inside ProseMirror so the whole canvas remains
-   editable while the scrollbar stays at the border edge. */
-.markdown-view .tiptap-container {
-	padding-top: 2rem;
-}
-
 /* Hide the native scrollbar; a lightweight overlay thumb mirrors scroll
    position so fade behavior is reliable across Electron/Chromium repaints. */
 .markdown-view .tiptap-container {
@@ -124,7 +117,7 @@
 	font-size: 14.5px;
 	line-height: 1.7;
 	min-height: 100%;
-	padding: 0 max(2rem, calc((100% - 760px) / 2)) 4rem;
+	padding: 2rem max(2rem, calc((100% - 760px) / 2)) 4rem;
 	caret-color: var(--color-ring-focus-visible);
 	cursor: auto;
 	width: 100%;
