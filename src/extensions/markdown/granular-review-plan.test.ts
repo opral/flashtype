@@ -76,6 +76,66 @@ describe("planGranularReview eligibility", () => {
 			reason: "projection_mismatch",
 		});
 	});
+
+	// Extended Markdown is intentionally kept on the classic path (see the
+	// `extended_markdown` reason). These assert the conservative textual signal
+	// over the projection bytes, independent of how Lix materializes blocks.
+	const extended = (markdown: string): GranularReviewEligibility => {
+		const data = new TextEncoder().encode(markdown);
+		return planGranularReview({
+			beforeBlocks: [b("a", "20", "# Doc")],
+			afterBlocks: [b("a", "20", "# Doc")],
+			beforeData: data,
+			afterData: data,
+		});
+	};
+
+	test("YAML frontmatter falls back to classic", () => {
+		expect(extended("---\ntitle: Doc\n---\n\n# Doc\n\nBody.\n")).toMatchObject({
+			status: "unsafe",
+			reason: "extended_markdown",
+		});
+	});
+
+	test("footnotes fall back to classic", () => {
+		expect(
+			extended("# Doc\n\nA claim.[^1]\n\n[^1]: The supporting note.\n"),
+		).toMatchObject({ status: "unsafe", reason: "extended_markdown" });
+	});
+
+	test("inline math falls back to classic", () => {
+		expect(extended("# Doc\n\nMass-energy: $E = mc^2$.\n")).toMatchObject({
+			status: "unsafe",
+			reason: "extended_markdown",
+		});
+	});
+
+	test("block math falls back to classic", () => {
+		expect(extended("# Doc\n\n$$\nE = mc^2\n$$\n")).toMatchObject({
+			status: "unsafe",
+			reason: "extended_markdown",
+		});
+	});
+
+	test("extended-markdown detection precedes other fallback reasons", () => {
+		// Snapshots disagree with the bytes (would be projection_mismatch), but the
+		// extended-markdown signal is reported first so telemetry stays specific.
+		const data = new TextEncoder().encode("# Doc\n\nClaim.[^1]\n");
+		expect(
+			planGranularReview({
+				beforeBlocks: [b("a", "20", "# Doc")],
+				afterBlocks: [b("a", "20", "# Doc")],
+				beforeData: data,
+				afterData: new TextEncoder().encode("unrelated bytes"),
+			}),
+		).toMatchObject({ status: "unsafe", reason: "extended_markdown" });
+	});
+
+	test("ordinary prose with a single dollar sign stays eligible", () => {
+		const before = [b("h", "20", "# Doc"), b("p", "40", "It costs $5 today.")];
+		const after = [b("h", "20", "# Doc"), b("p", "40", "It costs $6 today.")];
+		expect(plan(before, after).status).toBe("safe");
+	});
 });
 
 describe("planGranularReview change detection", () => {

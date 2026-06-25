@@ -11,6 +11,7 @@ import {
 	renderMarkdownProjection,
 	renderMarkdownProjectionText,
 } from "./granular-review-projection";
+import { planGranularReview } from "./granular-review-plan";
 
 // These tests characterize the real bundled Lix Markdown plugin. They are the
 // authoritative proof that `renderMarkdownProjection` reproduces the canonical
@@ -237,6 +238,42 @@ describe("renderMarkdownProjection characterizes the Lix projection contract", (
 		expect(review.afterBlocks.length).toBeGreaterThan(
 			review.beforeBlocks.length,
 		);
+	});
+});
+
+describe("extended Markdown falls back to classic review end-to-end", () => {
+	test("a real footnote edit is kept off the granular path", async () => {
+		const review = await characterizeExternalWrite(
+			"# Doc\n\nA claim.[^1]\n\n[^1]: The original note.\n",
+			"# Doc\n\nA claim.[^1]\n\n[^1]: The revised note.\n",
+		);
+		// The footnote syntax survives in the canonical projection bytes...
+		expect(new TextDecoder().decode(review.afterData)).toContain("[^1]");
+		// ...so the planner conservatively reports the extended-markdown fallback.
+		expect(
+			planGranularReview({
+				beforeBlocks: review.beforeBlocks,
+				afterBlocks: review.afterBlocks,
+				beforeData: review.beforeData,
+				afterData: review.afterData,
+			}),
+		).toMatchObject({ status: "unsafe", reason: "extended_markdown" });
+	});
+
+	test("a real inline-math edit is kept off the granular path", async () => {
+		const review = await characterizeExternalWrite(
+			"# Doc\n\nEnergy is $E = mc^2$ exactly.\n",
+			"# Doc\n\nEnergy is $E = mc^2$ precisely.\n",
+		);
+		expect(new TextDecoder().decode(review.afterData)).toContain("$E = mc^2$");
+		expect(
+			planGranularReview({
+				beforeBlocks: review.beforeBlocks,
+				afterBlocks: review.afterBlocks,
+				beforeData: review.beforeData,
+				afterData: review.afterData,
+			}),
+		).toMatchObject({ status: "unsafe", reason: "extended_markdown" });
 	});
 });
 

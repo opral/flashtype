@@ -22,7 +22,8 @@ export type GranularReviewFallbackReason =
 	| "projection_mismatch"
 	| "ambiguous_identity"
 	| "ambiguous_order"
-	| "unsupported_compound";
+	| "unsupported_compound"
+	| "extended_markdown";
 
 export type ReviewDecision = "pending" | "accepted" | "rejected";
 
@@ -85,6 +86,21 @@ export function planGranularReview(
 ): GranularReviewEligibility {
 	const { beforeBlocks, afterBlocks, beforeData, afterData } = input;
 	if (!beforeBlocks || !afterBlocks) return unsafe("missing_snapshots");
+
+	// Extended Markdown (YAML frontmatter, footnotes, math) is deliberately kept
+	// on the classic all-or-nothing path. Even when the block projection happens
+	// to round-trip these constructs byte-for-byte, the per-change diff display
+	// and block highlighting do not map cleanly onto them, so granular review
+	// could mislead. This is a cheap, conservative textual signal over the
+	// projection bytes themselves — it never parses with `markdown-wc` and never
+	// treats that parser as the source of truth for granularity. False positives
+	// only ever degrade to classic, which is always safe.
+	if (
+		hasExtendedMarkdown(decodeProjection(beforeData)) ||
+		hasExtendedMarkdown(decodeProjection(afterData))
+	) {
+		return unsafe("extended_markdown");
+	}
 
 	const beforeValidation = validateSide(beforeBlocks);
 	const afterValidation = validateSide(afterBlocks);
@@ -312,4 +328,27 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 		if (left[i] !== right[i]) return false;
 	}
 	return true;
+}
+
+// YAML frontmatter fenced at the very start of the document.
+const FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
+// Footnote reference or definition, e.g. `[^1]` / `[^note]:`.
+const FOOTNOTE_PATTERN = /\[\^[^\]\s]+\]/;
+// Block math fences `$$ … $$`.
+const BLOCK_MATH_PATTERN = /\$\$/;
+// Inline math `$ … $` on a single line. Intentionally broad: prose mentioning
+// two dollar amounts will also match and fall back to classic, which is safe.
+const INLINE_MATH_PATTERN = /\$[^$\n]+\$/;
+
+function decodeProjection(data: Uint8Array): string {
+	return new TextDecoder().decode(data);
+}
+
+function hasExtendedMarkdown(text: string): boolean {
+	return (
+		FRONTMATTER_PATTERN.test(text) ||
+		FOOTNOTE_PATTERN.test(text) ||
+		BLOCK_MATH_PATTERN.test(text) ||
+		INLINE_MATH_PATTERN.test(text)
+	);
 }
