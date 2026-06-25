@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 - 2026-06-25
+
+- crash recovery for opening large directories
+
 ## 0.6.0 - 2026-06-25
 
 - Flashtype can now open any folder without crashing.
