@@ -16,7 +16,11 @@
 		0 1px 0 rgba(255, 255, 255, 0.08) inset;
 	transform: translateX(-50%);
 	backdrop-filter: blur(16px);
-	container-type: inline-size;
+	/* Width comes from the toolbar's own content (a horizontal row). The query
+	   container lives on `.markdown-review-overlay` (the panel) so the
+	   max-width queries below adapt to the panel width, not this element. */
+	width: max-content;
+	max-width: calc(100cqi - 2rem);
 }
 
 .markdown-review-loading {

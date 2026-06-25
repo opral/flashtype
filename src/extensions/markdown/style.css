@@ -348,6 +348,11 @@
 	min-height: 0;
 	flex-direction: column;
 	background: var(--background);
+	/* Query container for the floating review toolbar so it can adapt to the
+	   panel width. The container must live here, not on the toolbar itself: an
+	   auto-width absolutely-positioned element with inline-size containment
+	   collapses toward zero width and would always match the narrow query. */
+	container-type: inline-size;
 }
 
 .markdown-review .markdown-review-surface {
