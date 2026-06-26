@@ -540,6 +540,26 @@ describe("blocks", () => {
 });
 
 describe("inline", () => {
+	test("resolved image render src does not change serialized markdown src", () => {
+		const ast = parseMarkdown('![Alt](images/logo.png "Logo")');
+		const editor = new Editor({
+			extensions: MarkdownWc({
+				resolveImageSrc: (src) => `file:///workspace/docs/${src}`,
+			}),
+			content: astToTiptapDoc(ast),
+		});
+
+		const image = editor.view.dom.querySelector("img");
+		expect(image?.getAttribute("src")).toBe(
+			"file:///workspace/docs/images/logo.png",
+		);
+
+		const markdown = serializeAst(tiptapDocToAst(editor.getJSON() as any));
+		expect(markdown).toContain("images/logo.png");
+		expect(markdown).not.toContain("file:///workspace");
+		editor.destroy();
+	});
+
 	test("hard break", () => {
 		const input: Ast = {
 			type: "root",

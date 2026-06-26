@@ -1,4 +1,8 @@
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+export const TRANSPARENT_GIF_DATA_URL =
+	"data:image/gif;base64,R0lGODlhAQABAIABAP///wAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 
 export function workspaceRelativeFilePath(workspacePath, filePath) {
 	const workspaceRoot = path.resolve(workspacePath);
@@ -57,6 +61,105 @@ export function uniqueWorkspaceRelativeFilePaths(filePaths) {
 		uniqueFilePaths.push(filePath);
 	}
 	return uniqueFilePaths;
+}
+
+export function resolveMarkdownImageSrc(payload) {
+	const src = typeof payload?.src === "string" ? payload.src : "";
+	if (src.length === 0) {
+		return TRANSPARENT_GIF_DATA_URL;
+	}
+
+	const absoluteUrl = parseUrl(src);
+	if (absoluteUrl?.protocol === "http:" || absoluteUrl?.protocol === "https:") {
+		return src;
+	}
+	if (absoluteUrl) {
+		return TRANSPARENT_GIF_DATA_URL;
+	}
+
+	const workspacePath =
+		typeof payload?.workspacePath === "string" ? payload.workspacePath : "";
+	const sourceFilePath =
+		typeof payload?.sourceFilePath === "string" ? payload.sourceFilePath : "";
+	const sourceLocalFilePath = workspaceLocalFilePathForSource(
+		workspacePath,
+		sourceFilePath,
+	);
+	if (!sourceLocalFilePath) {
+		return TRANSPARENT_GIF_DATA_URL;
+	}
+
+	const workspaceRootRelative = path.posix.isAbsolute(src);
+	const imageUrl = workspaceRootRelative
+		? parseUrl(
+				path.posix.relative("/", src),
+				workspaceRootFileUrl(workspacePath),
+			)
+		: parseUrl(src, pathToFileURL(sourceLocalFilePath));
+	if (!imageUrl || imageUrl.protocol !== "file:") {
+		return TRANSPARENT_GIF_DATA_URL;
+	}
+
+	let imageLocalFilePath;
+	try {
+		imageLocalFilePath = fileURLToPath(imageUrl);
+	} catch {
+		return TRANSPARENT_GIF_DATA_URL;
+	}
+
+	const imageWorkspaceRelativePath = workspaceRelativeFilePath(
+		workspacePath,
+		imageLocalFilePath,
+	);
+	if (!imageWorkspaceRelativePath) {
+		return TRANSPARENT_GIF_DATA_URL;
+	}
+
+	const normalizedImageLocalFilePath = workspaceLocalFilePath(
+		workspacePath,
+		imageWorkspaceRelativePath,
+	);
+	if (!normalizedImageLocalFilePath) {
+		return TRANSPARENT_GIF_DATA_URL;
+	}
+
+	const normalizedImageUrl = pathToFileURL(normalizedImageLocalFilePath);
+	normalizedImageUrl.search = imageUrl.search;
+	normalizedImageUrl.hash = imageUrl.hash;
+	return normalizedImageUrl.href;
+}
+
+function workspaceLocalFilePathForSource(workspacePath, sourceFilePath) {
+	if (!workspacePath || !sourceFilePath) {
+		return null;
+	}
+
+	const sourceWorkspaceRelativePath = sourceFilePath.startsWith("/")
+		? sourceFilePath.slice(1)
+		: sourceFilePath;
+	const sourceLocalFilePath = workspaceLocalFilePath(
+		workspacePath,
+		sourceWorkspaceRelativePath,
+	);
+	if (!sourceLocalFilePath) {
+		return null;
+	}
+
+	return workspaceRelativeFilePath(workspacePath, sourceLocalFilePath)
+		? sourceLocalFilePath
+		: null;
+}
+
+function parseUrl(value, base) {
+	try {
+		return base ? new URL(value, base) : new URL(value);
+	} catch {
+		return null;
+	}
+}
+
+function workspaceRootFileUrl(workspacePath) {
+	return pathToFileURL(path.join(path.resolve(workspacePath), path.sep));
 }
 
 function isValidRelativePathSegments(segments) {
