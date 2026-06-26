@@ -120,9 +120,6 @@ type ActiveAgentTurn = {
 	readonly beforeCommitIdPromise: Promise<string | null>;
 };
 
-const AGENT_TURN_SYNC_QUIET_MS = 750;
-const AGENT_TURN_SYNC_MAX_MS = 5000;
-
 const stripLaunchArgs = (view: ExtensionInstance): ExtensionInstance => {
 	const { launchArgs: _omitLaunch, ...rest } = view as any;
 	const state = sanitizeExtensionStateForPersistence(rest.state);
@@ -423,40 +420,15 @@ function fileBytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 	return true;
 }
 
-async function waitForActiveCommitToSettle(lix: Lix): Promise<string | null> {
-	let latestCommitId = await readActiveBranchCommitId(lix);
-	const events = lix.observe(
-		"SELECT lix_active_branch_commit_id() AS commit_id",
-	);
-	const deadline = Date.now() + AGENT_TURN_SYNC_MAX_MS;
-	try {
-		while (Date.now() < deadline) {
-			const waitMs = Math.min(
-				AGENT_TURN_SYNC_QUIET_MS,
-				Math.max(0, deadline - Date.now()),
-			);
-			if (waitMs <= 0) break;
-			const event = await promiseWithTimeout(events.next(), waitMs);
-			if (event === "timeout" || event === undefined) {
-				break;
-			}
-			latestCommitId =
-				activeCommitIdFromQueryResult(event.result) ?? latestCommitId;
-		}
-	} finally {
-		events.close();
-	}
-	return latestCommitId ?? readActiveBranchCommitId(lix);
+async function readSyncedActiveCommitId(lix: Lix): Promise<string | null> {
+	await lix.syncDiskToLix();
+	return readActiveBranchCommitId(lix);
 }
 
 async function readActiveBranchCommitId(lix: Lix): Promise<string | null> {
 	const result = await lix.execute(
 		"SELECT lix_active_branch_commit_id() AS commit_id",
 	);
-	return activeCommitIdFromQueryResult(result);
-}
-
-function activeCommitIdFromQueryResult(result: unknown): string | null {
 	const rows =
 		result && typeof result === "object" && Array.isArray((result as any).rows)
 			? ((result as any).rows as unknown[])
@@ -475,25 +447,6 @@ function readQueryRowValue(row: unknown, column: string): unknown {
 		return (row as { toObject(): Record<string, unknown> }).toObject()[column];
 	}
 	return (row as Record<string, unknown>)[column];
-}
-
-async function promiseWithTimeout<T>(
-	promise: Promise<T>,
-	timeoutMs: number,
-): Promise<T | "timeout"> {
-	let timeoutId: ReturnType<typeof setTimeout> | undefined;
-	try {
-		return await Promise.race([
-			promise,
-			new Promise<"timeout">((resolve) => {
-				timeoutId = setTimeout(() => resolve("timeout"), timeoutMs);
-			}),
-		]);
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
-	}
 }
 
 function isAgentHookTurnEvent(value: unknown): value is AgentHookTurnEvent {
@@ -910,7 +863,7 @@ function LayoutShellLoadedContent({
 		async (event: AgentHookTurnEvent) => {
 			const key = agentTurnKey(event);
 			if (event.phase === "turn-start") {
-				const beforeCommitIdPromise = waitForActiveCommitToSettle(lix).catch(
+				const beforeCommitIdPromise = readSyncedActiveCommitId(lix).catch(
 					(error: unknown) => {
 						console.warn(
 							"[agent-turn-review] failed to capture start commit",
@@ -933,7 +886,7 @@ function LayoutShellLoadedContent({
 				const beforeCommitId = activeTurn
 					? await activeTurn.beforeCommitIdPromise
 					: null;
-				const afterCommitId = await waitForActiveCommitToSettle(lix);
+				const afterCommitId = await readSyncedActiveCommitId(lix);
 				activeAgentTurnsRef.current.delete(key);
 
 				if (

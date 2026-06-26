@@ -7,6 +7,7 @@ import { MarkdownView } from "./index";
 import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
 import { qb } from "@/lib/lix-kysely";
+import { writeAgentTurnCommitRange } from "@/shell/agent-turn-review-range";
 
 describe("MarkdownView", () => {
 	test("throws when no file id is provided", () => {
@@ -350,6 +351,69 @@ describe("MarkdownView", () => {
 		});
 	});
 
+	test("shows review controls for a file already mounted before the range is persisted", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_review_startup",
+				path: "/review-startup.md",
+				data: new TextEncoder().encode("# Before"),
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_review_startup"
+								filePath="/review-startup.md"
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		expect(await screen.findByTestId("tiptap-editor")).toBeInTheDocument();
+		const beforeCommitId = await activeCommitId(lix);
+
+		await act(async () => {
+			await qb(lix)
+				.updateTable("lix_file")
+				.set({ data: new TextEncoder().encode("# After") })
+				.where("id", "=", "file_review_startup")
+				.execute();
+		});
+		const afterCommitId = await activeCommitId(lix);
+
+		await act(async () => {
+			await writeAgentTurnCommitRange(lix, {
+				id: "range-review-startup",
+				agent: "codex",
+				beforeCommitId,
+				afterCommitId,
+				startedAt: 1,
+				completedAt: 2,
+			});
+		});
+
+		expect(
+			await screen.findByRole("button", { name: /accept/i }),
+		).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+	});
+
 	test("shows a not found message when the file is missing", async () => {
 		const lix = await openLix();
 
@@ -374,3 +438,10 @@ describe("MarkdownView", () => {
 		});
 	});
 });
+
+async function activeCommitId(lix: Awaited<ReturnType<typeof openLix>>) {
+	const result = await lix.execute(
+		"SELECT lix_active_branch_commit_id() AS commit_id",
+	);
+	return result.rows[0]?.get("commit_id") as string;
+}

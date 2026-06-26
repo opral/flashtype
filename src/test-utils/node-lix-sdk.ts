@@ -156,6 +156,9 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 		async importFilesystemPaths(paths) {
 			await sdkLix.importFilesystemPaths(paths);
 		},
+		async syncDiskToLix() {
+			await sdkLix.syncDiskToLix();
+		},
 		async mergeBranchPreview(options) {
 			return await sdkLix.mergeBranchPreview(options);
 		},

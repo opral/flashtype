@@ -243,6 +243,11 @@ export async function openDesktopLix(): Promise<Lix> {
 		await runQueued(() => desktop.lix.importFilesystemPaths({ paths }));
 	};
 
+	const syncDiskToLix = async (): Promise<void> => {
+		ensureOpen("syncDiskToLix");
+		await runQueued(() => desktop.lix.syncDiskToLix());
+	};
+
 	const close = async (): Promise<void> => {
 		if (closed) {
 			return;
@@ -269,6 +274,7 @@ export async function openDesktopLix(): Promise<Lix> {
 		createBranch,
 		switchBranch,
 		importFilesystemPaths,
+		syncDiskToLix,
 		close,
 	};
 	return lix satisfies Lix;

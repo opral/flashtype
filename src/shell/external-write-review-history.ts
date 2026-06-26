@@ -110,7 +110,7 @@ async function getFileHistorySnapshotAtCommit(
 		.select("data")
 		.where("lixcol_start_commit_id", "=", commitId)
 		.where("id", "=", fileId)
-		.where("lixcol_depth", "=", 0)
+		.orderBy("lixcol_depth", "asc")
 		.limit(1)
 		.executeTakeFirst()) as FileHistoryRow | undefined;
 	return row ?? null;

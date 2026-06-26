@@ -391,6 +391,9 @@ function createDesktopLixHandle(nativeLix, workspaceDir) {
 				nativeLix.importFilesystemPaths([...(paths ?? [])]),
 			);
 		},
+		async syncDiskToLix() {
+			return await runQueued(() => nativeLix.syncDiskToLix());
+		},
 		async close() {
 			await runQueued(() => nativeLix.close());
 		},

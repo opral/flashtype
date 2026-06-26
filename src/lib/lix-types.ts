@@ -65,6 +65,7 @@ export interface FlashtypeLix extends SdkLixBase {
 	importFilesystemPaths(paths: readonly string[]): Promise<void>;
 	mergeBranchPreview?: SdkLix["mergeBranchPreview"];
 	mergeBranch?: SdkLix["mergeBranch"];
+	syncDiskToLix(): Promise<void>;
 }
 
 export type Lix = FlashtypeLix;

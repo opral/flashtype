@@ -82,6 +82,7 @@ export type DesktopLixApi = {
 		branchId: string;
 	}): Promise<DesktopSwitchBranchResult>;
 	importFilesystemPaths(payload: { paths: readonly string[] }): Promise<void>;
+	syncDiskToLix(): Promise<void>;
 	close(): Promise<void>;
 };
 

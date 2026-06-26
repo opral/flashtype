@@ -278,6 +278,11 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		await lix.importFilesystemPaths(paths);
 	});
 
+	ipcMain.handle("lix:syncDiskToLix", async (event) => {
+		const lix = await ensureLixOpenForEvent(event);
+		await lix.syncDiskToLix();
+	});
+
 	ipcMain.handle("lix:close", async (event) => {
 		await closeLixSession(getWindowForIpcEvent(event));
 	});

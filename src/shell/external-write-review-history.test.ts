@@ -1,7 +1,14 @@
+import { createElement, Suspense, useEffect, type ComponentType } from "react";
+import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
+import { LixProvider } from "@/lib/lix-react";
 import { openLix, type Lix } from "@/test-utils/node-lix-sdk";
 import { qb } from "@/lib/lix-kysely";
-import { getExternalWriteReview } from "./external-write-review-history";
+import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import {
+	getExternalWriteReview,
+	useExternalWriteReview,
+} from "./external-write-review-history";
 import {
 	readAgentTurnCommitRange,
 	writeAgentTurnCommitRange,
@@ -60,6 +67,49 @@ describe("getExternalWriteReview", () => {
 		}
 	});
 
+	test("uses the nearest inherited file history snapshot at the before commit", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(
+				lix,
+				"inherited-file",
+				"/docs/inherited.md",
+				"inherited before",
+			);
+			await writeFile(
+				lix,
+				"other-file",
+				"/docs/other.md",
+				"unrelated turn start",
+			);
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(
+				lix,
+				"inherited-file",
+				"/docs/inherited.md",
+				"inherited after",
+			);
+			const afterCommitId = await activeCommitId(lix);
+
+			await writeAgentTurnCommitRange(
+				lix,
+				agentRange({ id: "range-inherited", beforeCommitId, afterCommitId }),
+			);
+
+			const review = await getExternalWriteReview(
+				lix,
+				"inherited-file",
+				"/docs/inherited.md",
+			);
+
+			expect(review?.agentTurnRangeId).toBe("range-inherited");
+			expect(decode(review?.beforeData)).toBe("inherited before");
+			expect(decode(review?.afterData)).toBe("inherited after");
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("returns no review for a no-op agent turn range", async () => {
 		const lix = await openLix();
 		try {
@@ -107,7 +157,81 @@ describe("getExternalWriteReview", () => {
 			await lix.close();
 		}
 	});
+
+	test("updates an already mounted review hook when the persisted range appears", async () => {
+		const lix = await openLix();
+		let utils: ReturnType<typeof render> | undefined;
+		try {
+			await writeFile(lix, "live-file", "/docs/live.md", "live before");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "live-file", "/docs/live.md", "live after");
+			const afterCommitId = await activeCommitId(lix);
+			const reviews: Array<ExternalWriteReview | null> = [];
+
+			await act(async () => {
+				utils = render(
+					createElement(
+						LixProvider as ComponentType<{ lix: Lix }>,
+						{ lix },
+						createElement(
+							Suspense,
+							{ fallback: null },
+							createElement(ExternalWriteReviewProbe, {
+								fileId: "live-file",
+								path: "/docs/live.md",
+								onReview: (review) => reviews.push(review),
+							}),
+						),
+					),
+				);
+			});
+
+			await waitFor(() => {
+				expect(reviews.length).toBeGreaterThan(0);
+				expect(reviews.at(-1)).toBeNull();
+			});
+
+			await act(async () => {
+				await writeAgentTurnCommitRange(
+					lix,
+					agentRange({
+						id: "range-live-hook",
+						beforeCommitId,
+						afterCommitId,
+					}),
+				);
+			});
+
+			await waitFor(() => {
+				const review = reviews.at(-1);
+				expect(review?.agentTurnRangeId).toBe("range-live-hook");
+				expect(decode(review?.beforeData)).toBe("live before");
+				expect(decode(review?.afterData)).toBe("live after");
+			});
+		} finally {
+			await act(async () => {
+				utils?.unmount();
+			});
+			await lix.close();
+		}
+	});
 });
+
+function ExternalWriteReviewProbe({
+	fileId,
+	path,
+	onReview,
+}: {
+	readonly fileId: string;
+	readonly path: string;
+	readonly onReview: (review: ExternalWriteReview | null) => void;
+}) {
+	const review = useExternalWriteReview({ fileId, path });
+	useEffect(() => {
+		onReview(review);
+	}, [onReview, review]);
+	return null;
+}
 
 async function writeFile(
 	lix: Lix,

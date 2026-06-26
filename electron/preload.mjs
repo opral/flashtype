@@ -83,6 +83,7 @@ const lix = {
 	switchBranch: (payload) => ipcRenderer.invoke("lix:switchBranch", payload),
 	importFilesystemPaths: (payload) =>
 		ipcRenderer.invoke("lix:importFilesystemPaths", payload),
+	syncDiskToLix: () => ipcRenderer.invoke("lix:syncDiskToLix"),
 	close: () => ipcRenderer.invoke("lix:close"),
 };
 
