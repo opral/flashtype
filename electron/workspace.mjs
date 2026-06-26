@@ -350,15 +350,17 @@ export async function getWorkspaceFsBackendOptions(window) {
 		throw new Error("No workspace is open. Open a folder before using lix.");
 	}
 	if (workspace.ephemeral === true) {
-		const lixDir = await ensureExternalLixDir(window);
 		const includePaths = Array.isArray(workspace.includePaths)
 			? workspace.includePaths
 			: [];
-		return {
+		const options = {
 			path: workspace.path,
-			lixDir,
-			filter: { includePaths: [...includePaths] },
+			storage: "memory",
 		};
+		if (includePaths.length > 0) {
+			options.filter = { includePaths: [...includePaths] };
+		}
+		return options;
 	}
 	return { path: workspace.path };
 }
@@ -962,15 +964,6 @@ function isWorkspaceSessionEntryLike(value) {
 		typeof value.path === "string" &&
 		Array.isArray(value.openFilePaths)
 	);
-}
-
-async function ensureExternalLixDir(window) {
-	const state = getOrCreateWindowState(window);
-	if (state.externalLixDir) {
-		return state.externalLixDir;
-	}
-	await createExternalLixSlot(state);
-	return state.externalLixDir;
 }
 
 async function createExternalLixSlot(state) {

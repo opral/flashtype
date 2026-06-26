@@ -328,16 +328,16 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 
 		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
+		await expectTrackChangesSettled(electronApp, workspaceDir, true);
+		await expectLixFilePath(page, "/marker.md");
 		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
-		await expectTrackChangesMenuChecked(electronApp, true);
-		await expectPathExists(path.join(workspaceDir, ".lix"));
 		await expectInstalledPluginArchives(workspaceDir);
 
 		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
+		await expectTrackChangesSettled(electronApp, workspaceDir, false);
+		await expectLixFilePath(page, "/marker.md");
 		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
-		await expectTrackChangesMenuChecked(electronApp, false);
-		await expectPathMissing(path.join(workspaceDir, ".lix"));
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -807,6 +807,38 @@ async function expectTrackChangesMenuChecked(
 			}),
 		)
 		.toBe(checked);
+}
+
+async function expectTrackChangesSettled(
+	electronApp: ElectronApplication,
+	workspaceDir: string,
+	enabled: boolean,
+): Promise<void> {
+	await expectTrackChangesMenuChecked(electronApp, enabled);
+	if (enabled) {
+		await expectPathExists(path.join(workspaceDir, ".lix"));
+	} else {
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
+	}
+}
+
+async function expectLixFilePath(page: Page, filePath: string): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				const result = await page.evaluate(async (pathToFind) => {
+					const queryResult = await window.flashtypeDesktop?.lix.execute({
+						sql: "SELECT path FROM lix_file WHERE path = $1",
+						params: [pathToFind],
+					});
+					return (queryResult?.rows?.length ?? 0) > 0;
+				}, filePath);
+				return result === true;
+			} catch {
+				return false;
+			}
+		})
+		.toBe(true);
 }
 
 async function expectPathExists(filePath: string): Promise<void> {

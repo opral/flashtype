@@ -6,6 +6,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
 	profileWorkspaceFilesystem,
 	disposeWorkspaceWindowState,
+	getWorkspaceFsBackendOptions,
 	readEphemeralWorkspaceFile,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
@@ -102,6 +103,57 @@ describe("workspace resolution", () => {
 			},
 			pendingOpenFilePaths: [],
 		});
+	});
+
+	test("uses memory storage without filters for whole-directory transient workspaces", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(directory, { recursive: true });
+		await writeFile(path.join(directory, "marker.md"), "# Marker\n");
+
+		const window = createTestWindow();
+		try {
+			await setWorkspaceFromPath(directory, window);
+
+			await expect(getWorkspaceFsBackendOptions(window)).resolves.toMatchObject({
+				path: directory,
+				storage: "memory",
+			});
+			await expect(getWorkspaceFsBackendOptions(window)).resolves.not.toHaveProperty(
+				"filter",
+			);
+		} finally {
+			await disposeWorkspaceWindowState(window);
+		}
+	});
+
+	test("keeps filters with memory storage for file-scoped transient workspaces", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const markerPath = path.join(directory, "marker.md");
+		await mkdir(directory, { recursive: true });
+		await writeFile(markerPath, "# Marker\n");
+
+		const window = createTestWindow();
+		try {
+			await setWorkspaceFromPath(markerPath, window);
+
+			await expect(getWorkspaceFsBackendOptions(window)).resolves.toMatchObject({
+				path: directory,
+				storage: "memory",
+				filter: { includePaths: ["marker.md"] },
+			});
+		} finally {
+			await disposeWorkspaceWindowState(window);
+		}
 	});
 
 	test("resolves directory paths inside Lix workspaces to the workspace root", async () => {
