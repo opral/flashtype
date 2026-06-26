@@ -163,6 +163,31 @@ describe("getExternalWriteReview", () => {
 		}
 	});
 
+	test("serializes concurrent agent turn range appends", async () => {
+		const lix = await openLix();
+		try {
+			const ranges = Array.from({ length: 8 }, (_, index) =>
+				agentRange({
+					id: `range-concurrent-${index}`,
+					beforeCommitId: `commit-before-${index}`,
+					afterCommitId: `commit-after-${index}`,
+				}),
+			);
+
+			await Promise.all(
+				ranges.map((range) => appendAgentTurnCommitRange(lix, range)),
+			);
+
+			const persistedRanges = await readAgentTurnCommitRanges(lix);
+			expect(persistedRanges).toHaveLength(ranges.length);
+			expect(persistedRanges.map((range) => range.id).sort()).toEqual(
+				ranges.map((range) => range.id).sort(),
+			);
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("persists cleared files in the agent turn range", async () => {
 		const lix = await openLix();
 		try {

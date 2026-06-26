@@ -61,8 +61,6 @@ export function buildAgentTerminalInitialCommand(args: {
 	if (args.agentIcon === "claude") {
 		return [
 			args.command,
-			"--setting-sources",
-			shellQuote(""),
 			"--settings",
 			shellQuote(JSON.stringify(buildClaudeHookSettings())),
 			args.prompt ? `--append-system-prompt ${shellQuote(args.prompt)}` : null,

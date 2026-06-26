@@ -36,7 +36,7 @@ describe("buildAgentLaunchArgsWithActiveFile", () => {
 
 		const command = String(launchArgs?.[TERMINAL_INITIAL_COMMAND_LAUNCH_ARG]);
 		expect(command).toContain("claude --dangerously-skip-permissions");
-		expect(command).toContain("--setting-sources ''");
+		expect(command).not.toContain("--setting-sources");
 		expect(command).toContain("--settings");
 		expect(command).toContain("UserPromptSubmit");
 		expect(command).toContain("StopFailure");
@@ -95,10 +95,25 @@ describe("buildAgentLaunchArgsWithActiveFile", () => {
 		});
 
 		expect(command).toContain("claude --dangerously-skip-permissions");
+		expect(command).not.toContain("--setting-sources");
 		expect(command).toContain("--settings");
 		expect(command).toContain("UserPromptSubmit");
 		expect(command).toContain("StopFailure");
 		expect(command).not.toContain("--append-system-prompt");
+	});
+
+	test("keeps Claude setting sources from the configured command", () => {
+		const command = buildTerminalInitialCommand({
+			state: {
+				command:
+					"claude --setting-sources user,project --dangerously-skip-permissions",
+				flashtype: { icon: "claude" },
+			},
+		});
+
+		expect(command).toContain("--setting-sources user,project");
+		expect(command).not.toContain("--setting-sources ''");
+		expect(command).toContain("--settings");
 	});
 
 	test("does not alter non-agent terminal launches", () => {

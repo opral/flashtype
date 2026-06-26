@@ -5,6 +5,7 @@ export const AGENT_TURN_COMMIT_RANGE_KEY =
 	"flashtype_agent_turn_commit_range" as const;
 
 const GLOBAL_BRANCH_ID = "global";
+const agentTurnCommitRangeMutationQueues = new WeakMap<Lix, Promise<void>>();
 
 export type AgentTurnCommitRange = {
 	readonly id: string;
@@ -46,11 +47,13 @@ export async function appendAgentTurnCommitRange(
 	lix: Lix,
 	range: AgentTurnCommitRange,
 ): Promise<void> {
-	const ranges = await readAgentTurnCommitRanges(lix);
-	await writeAgentTurnCommitRanges(lix, [
-		...ranges.filter((existing) => existing.id !== range.id),
-		range,
-	]);
+	await runAgentTurnCommitRangeMutation(lix, async () => {
+		const ranges = await readAgentTurnCommitRanges(lix);
+		await writeAgentTurnCommitRanges(lix, [
+			...ranges.filter((existing) => existing.id !== range.id),
+			range,
+		]);
+	});
 }
 
 async function writeAgentTurnCommitRanges(
@@ -81,31 +84,56 @@ export async function clearAgentTurnCommitRangeFile(
 		readonly agentTurnRangeIds?: readonly string[];
 	},
 ): Promise<boolean> {
-	const ranges = await readAgentTurnCommitRanges(lix);
-	const rangeIds = args.agentTurnRangeIds ?? [];
-	if (rangeIds.length === 0) {
-		return false;
-	}
-	if (
-		args.reviewId &&
-		args.reviewId !== agentTurnReviewId(args.fileId, rangeIds)
-	) {
-		return false;
-	}
-	const rangeIdSet = new Set(rangeIds);
-	let changed = false;
-	const nextRanges = ranges.map((range) => {
-		if (!rangeIdSet.has(range.id)) return range;
-		if (range.clearedFileIds?.includes(args.fileId)) return range;
-		changed = true;
-		return {
-			...range,
-			clearedFileIds: [...(range.clearedFileIds ?? []), args.fileId],
-		};
+	return await runAgentTurnCommitRangeMutation(lix, async () => {
+		const ranges = await readAgentTurnCommitRanges(lix);
+		const rangeIds = args.agentTurnRangeIds ?? [];
+		if (rangeIds.length === 0) {
+			return false;
+		}
+		if (
+			args.reviewId &&
+			args.reviewId !== agentTurnReviewId(args.fileId, rangeIds)
+		) {
+			return false;
+		}
+		const rangeIdSet = new Set(rangeIds);
+		let changed = false;
+		const nextRanges = ranges.map((range) => {
+			if (!rangeIdSet.has(range.id)) return range;
+			if (range.clearedFileIds?.includes(args.fileId)) return range;
+			changed = true;
+			return {
+				...range,
+				clearedFileIds: [...(range.clearedFileIds ?? []), args.fileId],
+			};
+		});
+		if (!changed) return false;
+		await writeAgentTurnCommitRanges(lix, nextRanges);
+		return true;
 	});
-	if (!changed) return false;
-	await writeAgentTurnCommitRanges(lix, nextRanges);
-	return true;
+}
+
+async function runAgentTurnCommitRangeMutation<T>(
+	lix: Lix,
+	operation: () => Promise<T>,
+): Promise<T> {
+	const previous =
+		agentTurnCommitRangeMutationQueues.get(lix) ?? Promise.resolve();
+	let releaseCurrent: (() => void) | undefined;
+	const current = new Promise<void>((resolve) => {
+		releaseCurrent = resolve;
+	});
+	const next = previous.catch(() => undefined).then(() => current);
+	agentTurnCommitRangeMutationQueues.set(lix, next);
+	await previous.catch(() => undefined);
+	try {
+		return await operation();
+	} finally {
+		releaseCurrent?.();
+		if (agentTurnCommitRangeMutationQueues.get(lix) === next) {
+			agentTurnCommitRangeMutationQueues.delete(lix);
+		}
+	}
 }
 
 export function isAgentTurnCommitRangeStore(
