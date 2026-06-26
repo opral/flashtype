@@ -156,6 +156,7 @@ function MarkdownViewLoaded({
 						<TipTapEditor
 							className="h-full"
 							fileId={fileRow.id}
+							filePath={fileRow.path}
 							isActiveView={isActiveView}
 							focusOnLoad={focusOnLoad}
 							defaultBlock={defaultBlock}

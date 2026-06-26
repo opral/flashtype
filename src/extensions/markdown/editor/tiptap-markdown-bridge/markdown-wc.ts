@@ -3,6 +3,11 @@ import { markdownWcNodes } from "./nodes";
 import { MarkdownWcShortcuts } from "./shortcuts";
 import { createAssignDataIdExtension } from "./assign-data-id";
 
+export type MarkdownWcOptions = {
+	readonly idProvider?: () => string;
+	readonly resolveImageSrc?: (src: string) => string;
+};
+
 // --- TipTap minimal extensions (no HTML parsing, schema only) ---
 
 /**
@@ -40,9 +45,9 @@ import { createAssignDataIdExtension } from "./assign-data-id";
  * })
  * ```
  */
-export function MarkdownWc(opts?: { idProvider?: () => string }): Extensions {
+export function MarkdownWc(opts?: MarkdownWcOptions): Extensions {
 	return [
-		...markdownWcNodes(),
+		...markdownWcNodes({ resolveImageSrc: opts?.resolveImageSrc }),
 		createAssignDataIdExtension(opts),
 		MarkdownWcShortcuts,
 	];

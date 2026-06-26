@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { resolveMarkdownImageSrc } from "./workspace-paths.mjs";
 
 const app = {
 	checkForUpdates: () => ipcRenderer.invoke("app:checkForUpdates"),
@@ -57,6 +58,7 @@ const workspace = {
 	resetLixRepository: () => ipcRenderer.invoke("workspace:resetLixRepository"),
 	disableTrackChanges: () =>
 		ipcRenderer.invoke("workspace:disableTrackChanges"),
+	resolveMarkdownImageSrc: (payload) => resolveMarkdownImageSrc(payload),
 	// Resolves the on-disk path of a File dropped onto the window.
 	getPathForFile: (file) => webUtils.getPathForFile(file),
 };

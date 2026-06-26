@@ -199,6 +199,11 @@ export type DesktopWorkspaceApi = {
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	disableTrackChanges(): Promise<DesktopWorkspace>;
+	resolveMarkdownImageSrc(payload: {
+		src: string;
+		sourceFilePath: string;
+		workspacePath: string;
+	}): string;
 	getPathForFile(file: File): string;
 };
 

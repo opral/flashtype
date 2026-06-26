@@ -1,5 +1,7 @@
 import { Node, Mark, type Extensions, type CommandProps } from "@tiptap/core";
 
+export type MarkdownImageSrcResolver = (src: string) => string;
+
 // Extend TipTap's command types
 declare module "@tiptap/core" {
 	interface Commands<ReturnType> {
@@ -25,7 +27,10 @@ function diffAttrs(node: any, mode: "words" | "element" = "words"): any {
 	};
 }
 
-export function markdownWcNodes(): Extensions {
+export function markdownWcNodes(
+	options: { readonly resolveImageSrc?: MarkdownImageSrcResolver } = {},
+): Extensions {
+	const resolveImageSrc = options.resolveImageSrc;
 	return [
 		// doc
 		Node.create({ name: "doc", topNode: true, content: "block+" }),
@@ -388,7 +393,9 @@ export function markdownWcNodes(): Extensions {
 			renderHTML({ node }) {
 				const attrs: any = {};
 				const src = (node as any).attrs?.src;
-				if (src) attrs.src = src;
+				if (typeof src === "string" && src.length > 0) {
+					attrs.src = resolveRenderedImageSrc(src, resolveImageSrc);
+				}
 				const alt = (node as any).attrs?.alt;
 				if (alt) attrs.alt = alt;
 				const title = (node as any).attrs?.title;
@@ -397,4 +404,18 @@ export function markdownWcNodes(): Extensions {
 			},
 		}),
 	];
+}
+
+function resolveRenderedImageSrc(
+	src: string,
+	resolveImageSrc: MarkdownImageSrcResolver | undefined,
+): string {
+	if (!resolveImageSrc) {
+		return src;
+	}
+	try {
+		return resolveImageSrc(src);
+	} catch {
+		return src;
+	}
 }
