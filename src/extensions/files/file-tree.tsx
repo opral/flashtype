@@ -30,6 +30,8 @@ export type FileTreeProps = {
 	readonly selectedPath?: string;
 	readonly isPanelFocused?: boolean;
 	readonly onSelectItem?: (path: string, kind: "file" | "directory") => void;
+	readonly openDirectories?: ReadonlySet<string>;
+	readonly onOpenDirectoriesChange?: (paths: ReadonlySet<string>) => void;
 };
 
 const sanitizeForTestId = (value: string): string =>
@@ -54,23 +56,34 @@ export function FileTree({
 	selectedPath,
 	isPanelFocused = false,
 	onSelectItem,
+	openDirectories,
+	onOpenDirectoriesChange,
 }: FileTreeProps) {
-	const [openDirectories, setOpenDirectories] = useState(
+	const [internalOpenDirectories, setInternalOpenDirectories] = useState(
 		() => new Set<string>(),
 	);
+	const resolvedOpenDirectories = openDirectories ?? internalOpenDirectories;
 	const sortedNodes = useMemo(() => sortNodes(nodes), [nodes]);
 
-	const toggleDirectory = useCallback((path: string) => {
-		setOpenDirectories((prev) => {
-			const next = new Set(prev);
-			if (next.has(path)) {
-				next.delete(path);
-			} else {
-				next.add(path);
+	const toggleDirectory = useCallback(
+		(path: string) => {
+			const update = (prev: ReadonlySet<string>) => {
+				const next = new Set(prev);
+				if (next.has(path)) {
+					next.delete(path);
+				} else {
+					next.add(path);
+				}
+				return next;
+			};
+			if (openDirectories && onOpenDirectoriesChange) {
+				onOpenDirectoriesChange(update(openDirectories));
+				return;
 			}
-			return next;
-		});
-	}, []);
+			setInternalOpenDirectories(update);
+		},
+		[onOpenDirectoriesChange, openDirectories],
+	);
 
 	const isEmpty = sortedNodes.length === 0 && !draft;
 
@@ -95,7 +108,7 @@ export function FileTree({
 					node={node}
 					depth={0}
 					onToggleDirectory={toggleDirectory}
-					openDirectories={openDirectories}
+					openDirectories={resolvedOpenDirectories}
 					openFileView={openFileView}
 					draft={draft}
 					selectedPath={selectedPath}
@@ -121,7 +134,7 @@ function FileTreeNode({
 	readonly node: FilesystemTreeNode;
 	readonly depth: number;
 	readonly onToggleDirectory: (path: string) => void;
-	readonly openDirectories: Set<string>;
+	readonly openDirectories: ReadonlySet<string>;
 	readonly openFileView?: (
 		fileId: string,
 		path: string,

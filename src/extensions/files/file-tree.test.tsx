@@ -32,6 +32,33 @@ describe("FileTree", () => {
 		expect(screen.queryByText("guides")).toBeNull();
 	});
 
+	test("supports controlled opened directories", () => {
+		const handleOpenDirectoriesChange = vi.fn();
+		const { rerender } = render(
+			<FileTree
+				nodes={mockTree}
+				openDirectories={new Set<string>()}
+				onOpenDirectoriesChange={handleOpenDirectoriesChange}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /docs/i }));
+
+		expect(handleOpenDirectoriesChange).toHaveBeenCalledWith(
+			new Set(["/docs"]),
+		);
+		expect(screen.queryByText("guides")).toBeNull();
+
+		rerender(
+			<FileTree
+				nodes={mockTree}
+				openDirectories={new Set(["/docs"])}
+				onOpenDirectoriesChange={handleOpenDirectoriesChange}
+			/>,
+		);
+		expect(screen.getByText("guides")).toBeInTheDocument();
+	});
+
 	test("preserves opened directories when the tree data refreshes", () => {
 		const { rerender } = render(<FileTree nodes={mockTree} />);
 
@@ -61,6 +88,34 @@ describe("FileTree", () => {
 			"aria-expanded",
 			"false",
 		);
+	});
+
+	test("reports controlled open directory changes", () => {
+		const handleOpenDirectoriesChange = vi.fn();
+		const { rerender } = render(
+			<FileTree
+				nodes={mockTree}
+				openDirectories={new Set()}
+				onOpenDirectoriesChange={handleOpenDirectoriesChange}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /docs/i }));
+		expect([...handleOpenDirectoriesChange.mock.calls.at(-1)![0]]).toEqual([
+			"/docs",
+		]);
+
+		rerender(
+			<FileTree
+				nodes={mockTree}
+				openDirectories={new Set(["/docs", "/docs/guides"])}
+				onOpenDirectoriesChange={handleOpenDirectoriesChange}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: /docs/i }));
+		expect([...handleOpenDirectoriesChange.mock.calls.at(-1)![0]]).toEqual([
+			"/docs/guides",
+		]);
 	});
 
 	test("invokes openFileView when a file is selected", () => {

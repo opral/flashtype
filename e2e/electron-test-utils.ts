@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { _electron as electron, type ElectronApplication } from "playwright";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -151,6 +151,20 @@ export async function waitForWorkspaceReady(page: Page): Promise<void> {
 	await expect(page.getByTestId("central-panel-empty-state")).toBeVisible({
 		timeout: 60_000,
 	});
+}
+
+export async function expectPathMissing(filePath: string): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				await stat(filePath);
+				return false;
+			} catch (error) {
+				expect(error).toMatchObject({ code: "ENOENT" });
+				return true;
+			}
+		})
+		.toBe(true);
 }
 
 export async function closeElectronApp(

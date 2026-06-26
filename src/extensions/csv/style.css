@@ -32,29 +32,29 @@
 }
 
 .csv-review-table th {
-	height: 2.5rem;
+	height: 40px;
 	border-right: 1px solid var(--color-border-table-grid);
 	border-bottom: 1px solid var(--color-border-subtle);
-	background: var(--color-bg-panel-muted);
+	background: var(--background);
 	padding: 0 1rem;
-	color: var(--color-text-secondary);
-	font-size: 11px;
+	color: var(--color-text-primary);
+	font-size: 14px;
 	font-weight: 700;
-	letter-spacing: 0.04em;
+	letter-spacing: 0;
 	text-align: left;
-	text-transform: uppercase;
+	text-transform: none;
 }
 
 .csv-review-table td {
 	min-width: 72px;
-	min-height: 3rem;
+	height: 48px;
 	border-right: 1px solid var(--color-border-table-grid);
 	border-bottom: 1px solid var(--color-border-table-grid);
-	padding: 0.65rem 1rem;
+	padding: 0 1rem;
 	color: var(--color-text-primary);
-	font-size: 13.5px;
+	font-size: 14px;
 	font-weight: 400;
-	line-height: 1.35;
+	line-height: 1.2;
 	white-space: normal;
 	word-break: break-word;
 }

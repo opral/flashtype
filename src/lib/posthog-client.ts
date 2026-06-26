@@ -33,6 +33,11 @@ async function activatePostHogRecordingUncached() {
 			blockSelector: ".ph-no-capture",
 		},
 	});
+	posthog.register({
+		surface: "electron_app",
+		environment: config.environment,
+		telemetry_environment: config.environment,
+	});
 	posthog.identify(config.distinctId);
 	syncPostHogSessionContext();
 

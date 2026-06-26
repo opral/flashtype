@@ -1,12 +1,13 @@
-import { Suspense, useMemo, useRef, type CSSProperties } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Table2 } from "lucide-react";
 import {
-	flexRender,
-	getCoreRowModel,
-	useReactTable,
-	type ColumnDef,
-} from "@tanstack/react-table";
-import { useVirtualizer } from "@tanstack/react-virtual";
+	DataEditor,
+	GridCellKind,
+	type GridCell,
+	type GridColumn,
+	type Item,
+} from "@glideapps/glide-data-grid";
+import "@glideapps/glide-data-grid/dist/index.css";
 import { LixProvider, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
 import { decodeFileDataToText } from "@/lib/decode-file-data";
@@ -36,8 +37,25 @@ type CsvViewProps = {
 	}) => Promise<void>;
 };
 
-const COLUMN_MIN_WIDTH = 72;
+const COLUMN_MIN_WIDTH = 112;
+const COLUMN_MAX_WIDTH = 520;
+const COLUMN_SAMPLE_ROW_LIMIT = 100;
 const ROW_HEIGHT = 48;
+const HEADER_HEIGHT = 40;
+const CSV_GRID_THEME = {
+	accentColor: "rgb(194, 65, 12)",
+	accentFg: "rgb(255, 255, 255)",
+	accentLight: "rgb(251, 239, 228)",
+	bgHeader: "rgb(255, 255, 255)",
+	bgHeaderHasFocus: "rgb(255, 255, 255)",
+	bgHeaderHovered: "rgb(255, 255, 255)",
+	borderColor: "rgb(244, 241, 236)",
+	headerBottomBorderColor: "rgb(244, 241, 236)",
+	horizontalBorderColor: "rgb(244, 241, 236)",
+	linkColor: "rgb(194, 65, 12)",
+	resizeIndicatorColor: "rgb(234, 88, 12)",
+	textHeaderSelected: "rgb(124, 45, 18)",
+};
 
 type CsvFileRow = {
 	readonly id: string;
@@ -183,120 +201,97 @@ function CsvReviewOverlay({
 }
 
 function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
-	const parentRef = useRef<HTMLDivElement | null>(null);
-	const columns = useMemo<ColumnDef<CsvRow>[]>(() => {
-		return parsed.columns.map((header, index) => ({
-			id: `column_${index}`,
-			header,
-			accessorFn: (row: CsvRow) => row.cells[index] ?? "",
+	const initialColumnWidths = useMemo(
+		() =>
+			parsed.columns.map((header, index) =>
+				measureColumnWidth(header, parsed.rows, index),
+			),
+		[parsed.columns, parsed.rows],
+	);
+	const [columnWidthOverrides, setColumnWidthOverrides] = useState<
+		Record<number, number>
+	>({});
+	useEffect(() => {
+		setColumnWidthOverrides({});
+	}, [parsed]);
+	const columns = useMemo<GridColumn[]>(() => {
+		return parsed.columns.map((title, index) => ({
+			id: String(index),
+			title,
+			width: columnWidthOverrides[index] ?? initialColumnWidths[index],
 		}));
-	}, [parsed.columns]);
-	const table = useReactTable({
-		data: [...parsed.rows],
-		columns,
-		getCoreRowModel: getCoreRowModel(),
-	});
-	const rows = table.getRowModel().rows;
-	const virtualizer = useVirtualizer({
-		count: rows.length,
-		getScrollElement: () => parentRef.current,
-		estimateSize: () => ROW_HEIGHT,
-		measureElement:
-			typeof window !== "undefined" && !navigator.userAgent.includes("Firefox")
-				? (element) => element?.getBoundingClientRect().height
-				: undefined,
-		overscan: 12,
-	});
-	const totalWidth = parsed.columns.length * COLUMN_MIN_WIDTH;
+	}, [columnWidthOverrides, initialColumnWidths, parsed.columns]);
+	const getCellContent = useCallback(
+		([columnIndex, rowIndex]: Item): GridCell => {
+			const value = parsed.rows[rowIndex]?.cells[columnIndex] ?? "";
+			const linkUrl = toExternalLinkUrl(value);
+			if (linkUrl) {
+				return {
+					kind: GridCellKind.Uri,
+					data: linkUrl,
+					displayData: value,
+					hoverEffect: true,
+					allowOverlay: false,
+					readonly: true,
+					copyData: value,
+					onClickUri: (event) => {
+						event.preventDefault();
+						void window.flashtypeDesktop?.app.openExternal({ url: linkUrl });
+					},
+				};
+			}
+			return {
+				kind: GridCellKind.Text,
+				data: value,
+				displayData: value,
+				allowOverlay: false,
+				readonly: true,
+				copyData: value,
+			};
+		},
+		[parsed.rows],
+	);
+	const onColumnResizeEnd = useCallback(
+		(_column: GridColumn, newSize: number, columnIndex: number) => {
+			setColumnWidthOverrides((current) => ({
+				...current,
+				[columnIndex]: clamp(newSize, COLUMN_MIN_WIDTH, COLUMN_MAX_WIDTH),
+			}));
+		},
+		[],
+	);
 
 	return (
-		<div
-			ref={parentRef}
-			className="ph-mask h-full min-h-0 flex-1 overflow-auto bg-background"
-		>
-			<div style={{ minWidth: totalWidth }} className="relative w-full">
-				<div className="sticky top-0 z-10 flex h-10 w-full border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-panel-muted)] text-[11px] font-bold uppercase tracking-[0.04em] text-[var(--color-text-secondary)]">
-					{table.getHeaderGroups()[0]?.headers.map((header) => (
-						<div
-							key={header.id}
-							className="flex h-10 items-center border-r border-[var(--color-border-table-grid)] px-4 last:border-r-0"
-							style={columnStyle()}
-						>
-							<div className="truncate">
-								{flexRender(
-									header.column.columnDef.header,
-									header.getContext(),
-								)}
-							</div>
-						</div>
-					))}
-				</div>
-				<div
-					className="relative"
-					style={{ height: virtualizer.getTotalSize() }}
-				>
-					{virtualizer.getVirtualItems().map((virtualRow) => {
-						const row = rows[virtualRow.index];
-						if (!row) return null;
-						return (
-							<div
-								key={row.id}
-								data-index={virtualRow.index}
-								ref={virtualizer.measureElement}
-								className="absolute left-0 flex w-full border-b border-[var(--color-border-table-grid)] text-[13.5px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-table-row-hover)]"
-								style={{
-									minHeight: virtualRow.size,
-									transform: `translateY(${virtualRow.start}px)`,
-								}}
-							>
-								{row.getVisibleCells().map((cell) => (
-									<div
-										key={cell.id}
-										className="border-r border-[var(--color-border-table-grid)] px-4 py-0 last:border-r-0"
-										style={columnStyle()}
-									>
-										<div
-											className={cellValueClassName(
-												String(cell.getValue() ?? ""),
-												cell.column.id === "column_0",
-											)}
-										>
-											{flexRender(
-												cell.column.columnDef.cell,
-												cell.getContext(),
-											)}
-										</div>
-									</div>
-								))}
-							</div>
-						);
-					})}
-				</div>
-			</div>
+		<div className="ph-mask ph-no-capture h-full min-h-0 flex-1 bg-background">
+			<DataEditor
+				className="csv-data-grid"
+				columns={columns}
+				rows={parsed.rows.length}
+				getCellContent={getCellContent}
+				getCellsForSelection={true}
+				width="100%"
+				height="100%"
+				rowHeight={ROW_HEIGHT}
+				headerHeight={HEADER_HEIGHT}
+				minColumnWidth={COLUMN_MIN_WIDTH}
+				maxColumnWidth={COLUMN_MAX_WIDTH}
+				maxColumnAutoWidth={COLUMN_MAX_WIDTH}
+				onColumnResizeEnd={onColumnResizeEnd}
+				rowMarkers="number"
+				rangeSelect="multi-rect"
+				columnSelect="multi"
+				rowSelect="multi"
+				copyHeaders={true}
+				onPaste={false}
+				fillHandle={false}
+				freezeColumns={0}
+				fixedShadowX={false}
+				fixedShadowY={false}
+				smoothScrollX={true}
+				theme={CSV_GRID_THEME}
+			/>
 		</div>
 	);
-}
-
-function cellValueClassName(value: string, isFirstColumn: boolean): string {
-	const base = "flex min-h-12 items-center whitespace-normal break-words py-2";
-	if (isEmailLike(value)) {
-		return `${base} font-mono text-[12.5px] text-[var(--color-text-link-hover)]`;
-	}
-	if (isNumericValue(value)) {
-		return `${base} font-mono text-[13px] text-[var(--color-text-secondary)]`;
-	}
-	if (isFirstColumn) {
-		return `${base} font-mono text-[12.5px] text-[var(--color-icon-tertiary)]`;
-	}
-	return `${base} font-normal text-[var(--color-text-primary)]`;
-}
-
-function isEmailLike(value: string): boolean {
-	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function isNumericValue(value: string): boolean {
-	return value.trim() !== "" && /^-?\d+(?:\.\d+)?$/.test(value.trim());
 }
 
 function CsvEmptyState({ filePath }: { readonly filePath: string }) {
@@ -330,11 +325,55 @@ function CsvLoadingSpinner() {
 
 export { parseCsv, renderCsvReviewDiffHtml };
 
-function columnStyle(): CSSProperties {
-	return {
-		flex: "1 0 0",
-		minWidth: COLUMN_MIN_WIDTH,
-	};
+function measureColumnWidth(
+	header: string,
+	rows: readonly CsvRow[],
+	columnIndex: number,
+): number {
+	let widest = textWidthEstimate(header, true);
+	for (const row of rows.slice(0, COLUMN_SAMPLE_ROW_LIMIT)) {
+		widest = Math.max(
+			widest,
+			textWidthEstimate(row.cells[columnIndex] ?? "", false),
+		);
+	}
+	return clamp(Math.ceil(widest + 32), COLUMN_MIN_WIDTH, COLUMN_MAX_WIDTH);
+}
+
+function textWidthEstimate(value: string, isHeader: boolean): number {
+	const text = value.trim();
+	if (text.length === 0) return 0;
+
+	let width = isHeader ? 10 : 0;
+	for (const char of text) {
+		if (char === " " || char === "," || char === "." || char === ":") {
+			width += 4;
+		} else if (/[ilIj|]/.test(char)) {
+			width += 4.5;
+		} else if (/[mwMW@%#]/.test(char)) {
+			width += 11;
+		} else if (/[A-Z0-9]/.test(char)) {
+			width += 8;
+		} else {
+			width += 7;
+		}
+	}
+	return width;
+}
+
+function toExternalLinkUrl(value: string): string | null {
+	const text = value.trim();
+	if (/^https?:\/\/\S+$/i.test(text)) {
+		return text;
+	}
+	if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
+		return `mailto:${text}`;
+	}
+	return null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
 }
 
 function assertFileId(fileId: unknown): asserts fileId is string {

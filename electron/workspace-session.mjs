@@ -7,13 +7,18 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import {
+	uniqueWorkspaceRelativeFilePaths,
+	workspaceLocalFilePath,
+	workspaceRelativeFilePath,
+} from "./workspace-paths.mjs";
 
 export const WORKSPACE_SESSION_FILE = "workspace-session.json";
 export const WORKSPACE_SESSION_RECOVERY_BACKUP_FILE =
 	"workspace-session.recovery-backup.json";
 export const WORKSPACE_SESSION_BOOT_GUARD_FILE =
 	"workspace-session-boot-in-progress";
-export const WORKSPACE_SESSION_VERSION = 3;
+export const WORKSPACE_SESSION_VERSION = 4;
 
 export async function readWorkspaceSessionEntries(userDataPath) {
 	try {
@@ -26,6 +31,9 @@ export async function readWorkspaceSessionEntries(userDataPath) {
 			Array.isArray(store.workspaces)
 		) {
 			return normalizeWorkspaceSessionEntries(store.workspaces);
+		}
+		if (store?.version === 3 && Array.isArray(store.workspaces)) {
+			return normalizeLegacyWorkspaceSessionEntries(store.workspaces);
 		}
 		return [];
 	} catch {
@@ -91,61 +99,49 @@ export async function filterExistingWorkspaceEntries(workspaceEntries) {
 	for (const workspaceEntry of normalizeWorkspaceSessionEntries(
 		workspaceEntries,
 	)) {
-		if (workspaceEntry.ephemeral === false) {
-			try {
-				if ((await fs.stat(workspaceEntry.path)).isDirectory()) {
-					existingWorkspaceEntries.push(workspaceEntry);
-				}
-			} catch {
-				// Ignore stale saved paths; explicit launch paths are handled elsewhere.
+		try {
+			if (!(await fs.stat(workspaceEntry.path)).isDirectory()) {
+				continue;
 			}
+		} catch {
+			// Ignore stale saved paths; explicit launch paths are handled elsewhere.
 			continue;
 		}
 
-		if (workspaceEntry.ephemeral === true) {
-			const sourceFilePaths = [];
-			for (const sourceFilePath of workspaceEntry.sourceFilePaths) {
-				try {
-					if ((await fs.stat(sourceFilePath)).isFile()) {
-						sourceFilePaths.push(sourceFilePath);
-					}
-				} catch {
-					// Drop missing files from a restored transient workspace.
+		const openFilePaths = [];
+		for (const openFilePath of workspaceEntry.openFilePaths) {
+			const localFilePath = workspaceLocalFilePath(
+				workspaceEntry.path,
+				openFilePath,
+			);
+			if (!localFilePath) {
+				continue;
+			}
+			try {
+				if ((await fs.stat(localFilePath)).isFile()) {
+					openFilePaths.push(openFilePath);
 				}
+			} catch {
+				// Drop stale open file paths while preserving the workspace path.
 			}
-			if (sourceFilePaths.length > 0) {
-				existingWorkspaceEntries.push({
-					ephemeral: true,
-					sourceFilePaths,
-				});
-			}
-			continue;
 		}
+		existingWorkspaceEntries.push({ path: workspaceEntry.path, openFilePaths });
 	}
 	return existingWorkspaceEntries;
 }
 
-export function workspaceToSessionEntry(workspace) {
-	if (!workspace) {
+export function workspaceToSessionEntry(workspace, openFilePaths = []) {
+	if (
+		!workspace ||
+		typeof workspace.path !== "string" ||
+		workspace.path === ""
+	) {
 		return null;
 	}
-	if (workspace.ephemeral === false) {
-		return {
-			ephemeral: false,
-			path: path.resolve(workspace.path),
-		};
-	}
-	if (workspace.ephemeral === true) {
-		const sourceFilePaths = normalizeWorkspacePaths(workspace.sourceFilePaths);
-		if (sourceFilePaths.length === 0) {
-			return null;
-		}
-		return {
-			ephemeral: true,
-			sourceFilePaths,
-		};
-	}
-	return null;
+	return {
+		path: path.resolve(workspace.path),
+		openFilePaths: normalizeWorkspaceOpenFilePaths(openFilePaths),
+	};
 }
 
 export function normalizeWorkspaceSessionEntries(workspaceEntries) {
@@ -171,6 +167,14 @@ export function normalizeWorkspaceSessionEntries(workspaceEntries) {
 	return normalizedWorkspaceEntries;
 }
 
+function normalizeLegacyWorkspaceSessionEntries(workspaceEntries) {
+	return mergeWorkspaceSessionEntries(
+		workspaceEntries
+			.map(normalizeLegacyWorkspaceSessionEntry)
+			.filter((workspaceEntry) => workspaceEntry !== null),
+	);
+}
+
 export function normalizeWorkspacePaths(workspacePaths) {
 	if (!Array.isArray(workspacePaths)) {
 		return [];
@@ -192,6 +196,14 @@ export function normalizeWorkspacePaths(workspacePaths) {
 	return normalizedWorkspacePaths;
 }
 
+export function normalizeWorkspaceOpenFilePaths(openFilePaths) {
+	if (!Array.isArray(openFilePaths)) {
+		return [];
+	}
+
+	return uniqueWorkspaceRelativeFilePaths(openFilePaths);
+}
+
 export function mergeRestoredAndExplicitWorkspaceRequests(
 	restoredWorkspaceEntries,
 	explicitWorkspacePaths,
@@ -199,7 +211,6 @@ export function mergeRestoredAndExplicitWorkspaceRequests(
 	const normalizedExplicitWorkspacePaths = normalizeWorkspacePaths(
 		explicitWorkspacePaths,
 	);
-	const explicitWorkspacePathSet = new Set(normalizedExplicitWorkspacePaths);
 	const restoredOnlyWorkspaceEntries = normalizeWorkspaceSessionEntries(
 		restoredWorkspaceEntries,
 	).filter(
@@ -207,7 +218,6 @@ export function mergeRestoredAndExplicitWorkspaceRequests(
 			!workspaceEntryOverlapsExplicitPaths(
 				workspaceEntry,
 				normalizedExplicitWorkspacePaths,
-				explicitWorkspacePathSet,
 			),
 	);
 
@@ -230,14 +240,26 @@ function normalizeWorkspaceSessionEntry(workspaceEntry) {
 	if (!workspaceEntry || typeof workspaceEntry !== "object") {
 		return null;
 	}
+	if (typeof workspaceEntry.path !== "string" || workspaceEntry.path === "") {
+		return null;
+	}
+	return {
+		path: path.resolve(workspaceEntry.path),
+		openFilePaths: normalizeWorkspaceOpenFilePaths(
+			workspaceEntry.openFilePaths,
+		),
+	};
+}
+
+function normalizeLegacyWorkspaceSessionEntry(workspaceEntry) {
+	if (!workspaceEntry || typeof workspaceEntry !== "object") {
+		return null;
+	}
 	if (workspaceEntry.ephemeral === false) {
 		if (typeof workspaceEntry.path !== "string" || workspaceEntry.path === "") {
 			return null;
 		}
-		return {
-			ephemeral: false,
-			path: path.resolve(workspaceEntry.path),
-		};
+		return { path: path.resolve(workspaceEntry.path), openFilePaths: [] };
 	}
 	if (workspaceEntry.ephemeral === true) {
 		const sourceFilePaths = normalizeWorkspacePaths(
@@ -246,43 +268,86 @@ function normalizeWorkspaceSessionEntry(workspaceEntry) {
 		if (sourceFilePaths.length === 0) {
 			return null;
 		}
+		const workspacePath = deepestCommonParent(
+			sourceFilePaths.map((sourceFilePath) => path.dirname(sourceFilePath)),
+		);
 		return {
-			ephemeral: true,
-			sourceFilePaths,
+			path: workspacePath,
+			openFilePaths: normalizeWorkspaceOpenFilePaths(
+				sourceFilePaths
+					.map((sourceFilePath) =>
+						workspaceRelativeFilePath(workspacePath, sourceFilePath),
+					)
+					.filter(Boolean),
+			),
 		};
 	}
 	return null;
 }
 
 function workspaceSessionEntryKey(workspaceEntry) {
-	if (workspaceEntry.ephemeral === true) {
-		return `ephemeral:${workspaceEntry.sourceFilePaths.join("\0")}`;
+	return workspaceEntry.path;
+}
+
+function mergeWorkspaceSessionEntries(workspaceEntries) {
+	const entriesByPath = new Map();
+	for (const workspaceEntry of workspaceEntries) {
+		const existing = entriesByPath.get(workspaceEntry.path);
+		if (!existing) {
+			entriesByPath.set(workspaceEntry.path, workspaceEntry);
+			continue;
+		}
+		existing.openFilePaths = normalizeWorkspaceOpenFilePaths([
+			...existing.openFilePaths,
+			...workspaceEntry.openFilePaths,
+		]);
 	}
-	return `directory:${workspaceEntry.path}`;
+	return [...entriesByPath.values()];
+}
+
+function deepestCommonParent(directories) {
+	if (directories.length === 0) {
+		return path.resolve(".");
+	}
+	const [firstDirectory, ...remainingDirectories] = directories.map(
+		(directory) => path.resolve(directory),
+	);
+	const root = path.parse(firstDirectory).root;
+	const commonSegments = firstDirectory
+		.slice(root.length)
+		.split(path.sep)
+		.filter(Boolean);
+	for (const directory of remainingDirectories) {
+		const directoryRoot = path.parse(directory).root;
+		if (directoryRoot !== root) {
+			return root;
+		}
+		const segments = directory
+			.slice(root.length)
+			.split(path.sep)
+			.filter(Boolean);
+		let index = 0;
+		while (
+			index < commonSegments.length &&
+			index < segments.length &&
+			commonSegments[index] === segments[index]
+		) {
+			index += 1;
+		}
+		commonSegments.length = index;
+	}
+	return path.join(root, ...commonSegments);
 }
 
 function workspaceEntryOverlapsExplicitPaths(
 	workspaceEntry,
 	explicitWorkspacePaths,
-	explicitWorkspacePathSet,
 ) {
-	if (workspaceEntry.ephemeral === false) {
-		return explicitWorkspacePaths.some(
-			(explicitWorkspacePath) =>
-				isSamePathOrInside(workspaceEntry.path, explicitWorkspacePath) ||
-				isSamePathOrInside(explicitWorkspacePath, workspaceEntry.path),
-		);
-	}
-	if (workspaceEntry.ephemeral === true) {
-		return workspaceEntry.sourceFilePaths.some(
-			(sourceFilePath) =>
-				explicitWorkspacePathSet.has(sourceFilePath) ||
-				explicitWorkspacePaths.some((explicitWorkspacePath) =>
-					isSamePathOrInside(explicitWorkspacePath, sourceFilePath),
-				),
-		);
-	}
-	return false;
+	return explicitWorkspacePaths.some(
+		(explicitWorkspacePath) =>
+			isSamePathOrInside(workspaceEntry.path, explicitWorkspacePath) ||
+			isSamePathOrInside(explicitWorkspacePath, workspaceEntry.path),
+	);
 }
 
 function isSamePathOrInside(parentPath, childPath) {

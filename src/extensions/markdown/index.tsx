@@ -12,6 +12,7 @@ import { qb } from "@/lib/lix-kysely";
 import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
 import { EditorProvider } from "@/extensions/markdown/editor/editor-context";
 import { TipTapEditor } from "@/extensions/markdown/editor/tip-tap-editor";
+import type { EmptyMarkdownDefaultBlock } from "@/extensions/markdown/editor/tiptap-markdown-bridge";
 import { renderMarkdownReviewDiffHtml } from "./render-review-diff-html";
 import "./style.css";
 import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
@@ -38,6 +39,7 @@ type MarkdownViewProps = {
 	readonly isActiveView?: boolean;
 	readonly isPanelFocused?: boolean;
 	readonly focusOnLoad?: boolean;
+	readonly defaultBlock?: EmptyMarkdownDefaultBlock;
 	readonly syncActiveFile?: boolean;
 	readonly externalWriteReview?: ExternalWriteReview | null;
 	readonly onAcceptReviewDiff?: (args: {
@@ -79,6 +81,7 @@ export function MarkdownView({
 	isActiveView = true,
 	isPanelFocused = true,
 	focusOnLoad = false,
+	defaultBlock,
 	syncActiveFile = true,
 	externalWriteReview = null,
 	onAcceptReviewDiff,
@@ -95,6 +98,7 @@ export function MarkdownView({
 				isActiveView={isActiveView}
 				isPanelFocused={isPanelFocused}
 				focusOnLoad={focusOnLoad}
+				defaultBlock={defaultBlock}
 				syncActiveFile={syncActiveFile}
 				externalWriteReview={externalWriteReview}
 				onAcceptReviewDiff={onAcceptReviewDiff}
@@ -128,6 +132,7 @@ function MarkdownViewLoaded({
 	isActiveView = true,
 	isPanelFocused = true,
 	focusOnLoad = false,
+	defaultBlock,
 	syncActiveFile = true,
 	externalWriteReview = null,
 	onAcceptReviewDiff,
@@ -175,6 +180,7 @@ function MarkdownViewLoaded({
 							fileId={fileRow.id}
 							isActiveView={isActiveView}
 							focusOnLoad={focusOnLoad}
+							defaultBlock={defaultBlock}
 						/>
 						<MarkdownAutosaveHint
 							enabled={isActiveView && isPanelFocused && !reviewDiff}
@@ -695,6 +701,9 @@ export const extension = createReactExtensionDefinition({
 				isActiveView={context.isActiveView ?? false}
 				isPanelFocused={context.isPanelFocused ?? false}
 				focusOnLoad={Boolean(instance.state?.focusOnLoad)}
+				defaultBlock={
+					instance.state?.defaultBlock === "heading1" ? "heading1" : undefined
+				}
 				syncActiveFile={false}
 				externalWriteReview={
 					(instance.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG] as

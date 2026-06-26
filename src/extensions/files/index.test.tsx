@@ -61,7 +61,7 @@ describe("FilesView", () => {
 	test("prevents text selection on the new file row", async () => {
 		const lix = await openLix();
 
-		let utils: ReturnType<typeof render>;
+		let utils: ReturnType<typeof render> | null = null;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
@@ -85,7 +85,7 @@ describe("FilesView", () => {
 		const lix = await openLix();
 		const openFile = vi.fn();
 
-		let utils: ReturnType<typeof render>;
+		let utils: ReturnType<typeof render> | null = null;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
@@ -135,11 +135,76 @@ describe("FilesView", () => {
 				panel: "central",
 				fileId: createdId,
 				filePath: "/notes.md",
-				state: { focusOnLoad: true },
+				state: { focusOnLoad: true, defaultBlock: "heading1" },
 				focus: true,
 				documentOrigin: "new",
 			});
 		});
+
+		utils!.unmount();
+		await lix.close();
+	});
+
+	test("does not subscribe to the native New File menu item directly", async () => {
+		const lix = await openLix();
+		const originalDesktop = window.flashtypeDesktop;
+		const onNewFile = vi.fn();
+		window.flashtypeDesktop = {
+			workspace: {
+				onNewFile,
+			},
+		} as unknown as Window["flashtypeDesktop"];
+
+		let utils: ReturnType<typeof render>;
+		try {
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView context={createViewContext(lix)} />
+						</Suspense>
+					</LixProvider>,
+				);
+			});
+			await waitForFilesViewReady(utils!);
+
+			expect(onNewFile).not.toHaveBeenCalled();
+
+			utils!.unmount();
+		} finally {
+			window.flashtypeDesktop = originalDesktop;
+			await lix.close();
+		}
+	});
+
+	test("focuses the inline draft without forcing the left panel", async () => {
+		const lix = await openLix();
+		const focusPanel = vi.fn();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView context={createViewContext(lix, { focusPanel })} />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+		const newFileButton = await waitForFilesViewReady(utils!);
+
+		await act(async () => {
+			fireEvent.click(newFileButton);
+		});
+
+		const input = (await utils!.findByTestId(
+			"files-view-draft-input",
+		)) as HTMLInputElement;
+		await waitFor(() => {
+			expect(document.activeElement).toBe(input);
+		});
+		expect(input.value).toBe("new-file");
+		expect(focusPanel).not.toHaveBeenCalled();
 
 		utils!.unmount();
 		await lix.close();
@@ -517,6 +582,131 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
+	test("watches transient directories on demand and delegates watched-only file opens", async () => {
+		const lix = await openLix();
+		const originalDesktop = window.flashtypeDesktop;
+		const openFile = vi.fn();
+		const rootEntries = [
+			{
+				id: "watched:/docs/",
+				parent_id: null,
+				path: "/docs/",
+				display_name: "docs",
+				kind: "directory" as const,
+				source: "watched" as const,
+			},
+			{
+				id: "watched:/notes.txt",
+				parent_id: null,
+				path: "/notes.txt",
+				display_name: "notes.txt",
+				kind: "file" as const,
+				source: "watched" as const,
+			},
+		];
+		const nestedEntries = [
+			...rootEntries,
+			{
+				id: "watched:/docs/nested.txt",
+				parent_id: "watched:/docs/",
+				path: "/docs/nested.txt",
+				display_name: "nested.txt",
+				kind: "file" as const,
+				source: "watched" as const,
+			},
+		];
+		const setEphemeralWatchedDirectories = vi.fn(
+			async ({ paths }: { paths: string[] }) =>
+				paths.includes("/docs/") ? nestedEntries : rootEntries,
+		);
+		window.flashtypeDesktop = {
+			workspace: {
+				setEphemeralWatchedDirectories,
+				onEphemeralWatchedFileTreeChanged: vi.fn(() => () => {}),
+			},
+		} as unknown as Window["flashtypeDesktop"];
+
+		let utils: ReturnType<typeof render>;
+		let cleanup: (() => void) | undefined;
+		try {
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView
+								context={createViewContext(lix, {
+									openFile,
+									viewInstance: "files-view-test",
+									workspace: {
+										ephemeral: true,
+										path: "/workspace",
+										name: "workspace",
+										includePaths: [],
+									},
+								})}
+							/>
+						</Suspense>
+					</LixProvider>,
+				);
+				cleanup = () => utils.unmount();
+			});
+
+			await waitFor(() => {
+				expect(utils!.getByText("docs")).toBeInTheDocument();
+				expect(utils!.getByText("notes.txt")).toBeInTheDocument();
+			});
+			expect(setEphemeralWatchedDirectories).toHaveBeenCalledWith({
+				ownerId: "files-view:files-view-test",
+				paths: ["/"],
+			});
+
+			await act(async () => {
+				fireEvent.click(utils!.getByText("docs"));
+			});
+			await waitFor(() => {
+				expect(setEphemeralWatchedDirectories).toHaveBeenCalledWith({
+					ownerId: "files-view:files-view-test",
+					paths: ["/", "/docs/"],
+				});
+				expect(utils!.getByText("nested.txt")).toBeInTheDocument();
+			});
+
+			await act(async () => {
+				fireEvent.click(utils!.getByText("nested.txt"));
+			});
+
+			await waitFor(async () => {
+				const file = await qb(lix)
+					.selectFrom("lix_file")
+					.select(["id", "path", "data"])
+					.where("path", "=", "/docs/nested.txt")
+					.executeTakeFirst();
+				expect(file).toBeUndefined();
+				expect(openFile).toHaveBeenCalledWith({
+					panel: "central",
+					fileId: "watched:/docs/nested.txt",
+					filePath: "/docs/nested.txt",
+					focus: false,
+				});
+			});
+
+			await act(async () => {
+				fireEvent.click(utils!.getByText("docs"));
+			});
+			await waitFor(() => {
+				expect(setEphemeralWatchedDirectories).toHaveBeenLastCalledWith({
+					ownerId: "files-view:files-view-test",
+					paths: ["/"],
+				});
+				expect(utils!.queryByText("nested.txt")).toBeNull();
+			});
+		} finally {
+			cleanup?.();
+			window.flashtypeDesktop = originalDesktop;
+			await lix.close();
+		}
+	});
+
 	test("Cmd+Backspace deletes the selected directory", async () => {
 		const lix = await openLix();
 		await qb(lix)
@@ -610,6 +800,119 @@ describe("FilesView", () => {
 
 		utils!.unmount();
 		await lix.close();
+	});
+
+	test("lists ephemeral watched directories and delegates watched-only file opens", async () => {
+		const lix = await openLix();
+		const originalDesktop = window.flashtypeDesktop;
+		const openFile = vi.fn();
+		const rootEntries = [
+			{
+				id: "watched:/docs/",
+				parent_id: null,
+				path: "/docs/",
+				display_name: "docs",
+				kind: "directory" as const,
+				source: "watched" as const,
+			},
+			{
+				id: "watched:/loose.txt",
+				parent_id: null,
+				path: "/loose.txt",
+				display_name: "loose.txt",
+				kind: "file" as const,
+				source: "watched" as const,
+			},
+		];
+		const nestedEntries = [
+			...rootEntries,
+			{
+				id: "watched:/docs/nested.txt",
+				parent_id: "watched:/docs/",
+				path: "/docs/nested.txt",
+				display_name: "nested.txt",
+				kind: "file" as const,
+				source: "watched" as const,
+			},
+		];
+		const setEphemeralWatchedDirectories = vi.fn(
+			async ({ paths }: { paths: string[] }) =>
+				paths.includes("/docs/") ? nestedEntries : rootEntries,
+		);
+		window.flashtypeDesktop = {
+			workspace: {
+				setEphemeralWatchedDirectories,
+				onEphemeralWatchedFileTreeChanged: vi.fn(() => () => {}),
+			},
+		} as unknown as Window["flashtypeDesktop"];
+
+		let utils: ReturnType<typeof render>;
+		try {
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView
+								context={createViewContext(lix, {
+									openFile,
+									viewInstance: "files-test",
+									workspace: {
+										ephemeral: true,
+										path: "/tmp/workspace",
+										name: "workspace",
+										includePaths: [],
+									},
+								})}
+							/>
+						</Suspense>
+					</LixProvider>,
+				);
+			});
+
+			await waitFor(() => {
+				expect(utils!.getByText("docs")).toBeInTheDocument();
+				expect(utils!.getByText("loose.txt")).toBeInTheDocument();
+			});
+			expect(setEphemeralWatchedDirectories).toHaveBeenCalledWith({
+				ownerId: "files-view:files-test",
+				paths: ["/"],
+			});
+
+			await act(async () => {
+				fireEvent.click(utils!.getByText("docs"));
+			});
+			await waitFor(() => {
+				expect(utils!.getByText("nested.txt")).toBeInTheDocument();
+			});
+			expect(setEphemeralWatchedDirectories).toHaveBeenCalledWith({
+				ownerId: "files-view:files-test",
+				paths: ["/", "/docs/"],
+			});
+
+			await act(async () => {
+				fireEvent.click(utils!.getByText("loose.txt"));
+			});
+
+			await waitFor(async () => {
+				const row = await qb(lix)
+					.selectFrom("lix_file")
+					.select(["id", "path"])
+					.where("path", "=", "/loose.txt")
+					.executeTakeFirst();
+				expect(row).toBeUndefined();
+				expect(openFile).toHaveBeenCalledWith({
+					panel: "central",
+					fileId: "watched:/loose.txt",
+					filePath: "/loose.txt",
+					focus: false,
+				});
+			});
+
+			utils!.unmount();
+		} finally {
+			window.flashtypeDesktop = originalDesktop;
+			await lix.close();
+		}
 	});
 
 	test("renders the file tree inside a vertical scroll region", async () => {

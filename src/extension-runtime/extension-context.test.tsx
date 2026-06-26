@@ -24,7 +24,12 @@ describe("useExtensionContext", () => {
 
 		const parent = createParentContext({ isPanelFocused: true });
 		const { result, rerender } = renderHook(useExtensionContext, {
-			initialProps: { panel, isFocused: true, parentContext: parent },
+			initialProps: {
+				panel,
+				panelSide: "left" as const,
+				isFocused: true,
+				parentContext: parent,
+			},
 		});
 
 		expect(result.current.badgeCounts).toEqual({});
@@ -44,6 +49,7 @@ describe("useExtensionContext", () => {
 
 		rerender({
 			panel: { views: [], activeInstance: null },
+			panelSide: "left" as const,
 			isFocused: true,
 			parentContext: parent,
 		});
@@ -60,7 +66,12 @@ describe("useExtensionContext", () => {
 		};
 
 		const { result } = renderHook(useExtensionContext, {
-			initialProps: { panel, isFocused: true, parentContext: parent },
+			initialProps: {
+				panel,
+				panelSide: "right" as const,
+				isFocused: true,
+				parentContext: parent,
+			},
 		});
 
 		const context = result.current.makeContext(panel.views[0]!);
@@ -69,6 +80,27 @@ describe("useExtensionContext", () => {
 			context.setTabBadgeCount(5);
 		});
 		expect(result.current.badgeCounts.beta).toBe(5);
+	});
+
+	test("includes panel and instance metadata", () => {
+		const parent = createParentContext();
+		const panel: PanelState = {
+			views: [{ instance: "files-default", kind: "flashtype_files" }],
+			activeInstance: "files-default",
+		};
+
+		const { result } = renderHook(useExtensionContext, {
+			initialProps: {
+				panel,
+				panelSide: "left" as const,
+				isFocused: true,
+				parentContext: parent,
+			},
+		});
+
+		const context = result.current.makeContext(panel.views[0]!);
+		expect(context.panelSide).toBe("left");
+		expect(context.viewInstance).toBe("files-default");
 	});
 
 	test("marks only the active view as active", () => {
@@ -82,7 +114,12 @@ describe("useExtensionContext", () => {
 		};
 
 		const { result, rerender } = renderHook(useExtensionContext, {
-			initialProps: { panel, isFocused: true, parentContext: parent },
+			initialProps: {
+				panel,
+				panelSide: "central" as const,
+				isFocused: true,
+				parentContext: parent,
+			},
 		});
 
 		const alphaCtx = result.current.makeContext(panel.views[0]!);
@@ -92,6 +129,7 @@ describe("useExtensionContext", () => {
 
 		rerender({
 			panel: { ...panel, activeInstance: "beta" },
+			panelSide: "central" as const,
 			isFocused: true,
 			parentContext: parent,
 		});

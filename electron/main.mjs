@@ -7,13 +7,15 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
 	applyWorkspaceWindowChrome,
+	disableWorkspaceTrackChanges,
+	disposeAllWorkspaceWindowStates,
+	disposeWorkspaceWindowState,
 	getWorkspace,
-	isWorkspaceTooLargeError,
 	registerWorkspaceIpc,
-	resolveDirectLaunchWorkspaceTargets,
 	resolveWorkspaceTargets,
 	setWorkspaceFromTarget,
-	showWorkspaceTooLargeWarning,
+	setWorkspaceTrackChanges,
+	showWorkspaceDialog,
 } from "./workspace.mjs";
 import {
 	captureAppOpened,
@@ -54,6 +56,14 @@ import {
 	writeRecentWorkspaceEntriesSync,
 } from "./recent-workspaces.mjs";
 import { createWindowCloseGuard } from "./window-close-guard.mjs";
+import {
+	clearWorkspaceRecoverySync,
+	readWorkspaceRecoveries,
+	readWorkspaceRecovery,
+	recoverPendingWorkspaceLixOpenSync,
+	workspaceRecoveryToSessionEntry,
+	writeWorkspaceRecoverySync,
+} from "./workspace-recovery.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -87,6 +97,7 @@ const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
 const closedWorkspaceEntryWindowIds = new Set();
 const activeFilePathsByWindowId = new Map();
+const openFilePathsByWindowId = new Map();
 const pendingWorkspaceOpenRequests = [];
 let readyForWorkspaceOpens = false;
 let initialWorkspaceOpenInProgress = false;
@@ -201,7 +212,9 @@ function performQuitTeardown() {
 	) {
 		clearWorkspaceBootRecoveryGuard();
 	}
-	void disposeLixIpc();
+	void disposeLixIpc().finally(() => {
+		void disposeAllWorkspaceWindowStates();
+	});
 	disposeTerminalIpc();
 }
 
@@ -320,17 +333,8 @@ async function openWorkspaceRequests(
 		requestsBySource.set(taggedRequest.requestedSource, requests);
 	}
 
-	for (const requests of requestsBySource.values()) {
-		let workspaceTargets;
-		try {
-			workspaceTargets = await resolveDirectLaunchWorkspaceTargets(requests);
-		} catch (error) {
-			if (isWorkspaceTooLargeError(error)) {
-				await showWorkspaceTooLargeWarning(null, error);
-				continue;
-			}
-			throw error;
-		}
+	for (const [_source, requests] of requestsBySource) {
+		const workspaceTargets = await resolveWorkspaceTargets(requests);
 		for (const workspaceTarget of workspaceTargets) {
 			await createMainWindow(workspaceTarget);
 			openedWindowCount += 1;
@@ -345,6 +349,60 @@ function createWorkspaceOpenRequest(request, requestedSource) {
 
 function isCrashLikeProcessGoneReason(reason) {
 	return CRASH_LIKE_PROCESS_GONE_REASONS.has(reason);
+}
+
+async function reloadPersistentWorkspaceIntoRecovery(window, details) {
+	if (isQuitting || !window || window.isDestroyed()) {
+		return false;
+	}
+	const workspace = getWorkspace(window);
+	if (!workspace || workspace.ephemeral === true) {
+		return false;
+	}
+	writeWorkspaceRecoverySync(
+		app.getPath("userData"),
+		createTrackChangesRecovery(workspace, {
+			reason: "renderer_crash",
+			exitCode: details.exitCode,
+			message: `Renderer process exited: ${details.reason} (${details.exitCode ?? "n/a"})`,
+		}),
+	);
+	void closeLixSession(window, { ignoreOpenError: true });
+	if (window.isDestroyed() || window.webContents.isDestroyed()) {
+		return true;
+	}
+	void loadWorkspaceWindow(window);
+	return true;
+}
+
+function clearWorkspaceRecoveryForWorkspace(workspace) {
+	if (!workspace) {
+		return;
+	}
+	clearWorkspaceRecoverySync(app.getPath("userData"), workspace.path);
+}
+
+function createTrackChangesRecovery(workspace, options) {
+	const recovery = {
+		kind: "track_changes",
+		workspacePath: workspace.path,
+		workspaceName: workspace.name,
+		reason: options.reason,
+		message: options.message,
+		createdAt: new Date().toISOString(),
+	};
+	if (Number.isFinite(options.exitCode)) {
+		recovery.exitCode = options.exitCode;
+	}
+	return recovery;
+}
+
+async function loadWorkspaceWindow(window) {
+	if (app.isPackaged) {
+		await window.loadFile(path.join(__dirname, "../dist/index.html"));
+		return;
+	}
+	await window.loadURL(DEV_SERVER_URL);
 }
 
 function shouldUseWorkspaceBootRecoveryGuard() {
@@ -408,20 +466,11 @@ function resolveWorkspaceRequestSource(workspaceRequest, explicitSourceByPath) {
 	if (!workspaceRequest || typeof workspaceRequest !== "object") {
 		return "unknown";
 	}
-	if (workspaceRequest.ephemeral === false) {
+	if (typeof workspaceRequest.path === "string") {
 		return (
 			explicitSourceByPath.get(path.resolve(workspaceRequest.path)) ??
 			"app_restore"
 		);
-	}
-	if (workspaceRequest.ephemeral === true) {
-		for (const sourceFilePath of workspaceRequest.sourceFilePaths ?? []) {
-			const source = explicitSourceByPath.get(path.resolve(sourceFilePath));
-			if (source) {
-				return source;
-			}
-		}
-		return "app_restore";
 	}
 	return "unknown";
 }
@@ -472,6 +521,30 @@ async function focusOrCreateWorkspaceWindow() {
 	return true;
 }
 
+function getFocusedWorkspaceWindow() {
+	const focusedWindow = BrowserWindow.getFocusedWindow();
+	if (
+		focusedWindow &&
+		workspaceWindows.has(focusedWindow) &&
+		!focusedWindow.isDestroyed()
+	) {
+		return focusedWindow;
+	}
+	return null;
+}
+
+function getWorkspaceWindowForFileAction() {
+	const focusedWindow = getFocusedWorkspaceWindow();
+	if (focusedWindow && getWorkspace(focusedWindow)) {
+		return focusedWindow;
+	}
+	return (
+		[...workspaceWindows]
+			.reverse()
+			.find((window) => !window.isDestroyed() && getWorkspace(window)) ?? null
+	);
+}
+
 function focusMostRecentWorkspaceWindow() {
 	const windows = [...workspaceWindows].filter(
 		(window) => !window.isDestroyed(),
@@ -495,20 +568,132 @@ function focusMostRecentWorkspaceWindow() {
 	return true;
 }
 
-function recordOpenWorkspacePath(window, workspace) {
+function createWorkspaceChangeOptions() {
+	return {
+		beforeChange: (_nextWorkspace, window) =>
+			closeLixSession(window, { ignoreOpenError: true }),
+		afterChange: (workspace, window, workspaceTarget) => {
+			recordOpenWorkspacePath(window, workspace, {
+				pendingOpenFilePaths: workspaceTarget?.pendingOpenFilePaths ?? [],
+			});
+		},
+	};
+}
+
+function canOpenWorkspaceWindows() {
+	return (
+		readyForWorkspaceOpens && !initialWorkspaceOpenInProgress && !isQuitting
+	);
+}
+
+async function createNewWindowFromApplicationMenu() {
+	if (!canOpenWorkspaceWindows()) {
+		return null;
+	}
+	return await createMainWindow();
+}
+
+function requestNewFileFromApplicationMenu() {
+	if (!canOpenWorkspaceWindows()) {
+		return;
+	}
+	const window = getWorkspaceWindowForFileAction();
+	if (!window || window.webContents.isDestroyed()) {
+		return;
+	}
+	if (!isHeadless) {
+		if (window.isMinimized()) {
+			window.restore();
+		}
+		window.show();
+		window.focus();
+	}
+	window.webContents.send("workspace:newFile");
+}
+
+async function toggleTrackChangesFromApplicationMenu(trackChanges) {
+	const window = getWorkspaceWindowForFileAction();
+	if (!window || window.isDestroyed() || !getWorkspace(window)) {
+		return null;
+	}
+	await closeLixSession(window, { ignoreOpenError: true });
+	const workspace = await setWorkspaceTrackChanges(window, trackChanges);
+	if (!trackChanges) {
+		clearWorkspaceRecoveryForWorkspace(workspace);
+	}
+	recordOpenWorkspacePath(window, workspace);
+	persistOpenWorkspacePathsSoon();
+	applyDockWindowChrome(window);
+	updateDockMenu();
+	installApplicationMenu();
+	if (!window.webContents.isDestroyed()) {
+		window.webContents.reload();
+	}
+	return workspace;
+}
+
+async function openWorkspacePathInNewWindow(
+	requestedPath,
+	_requestedSource = "open_in_new_window",
+) {
+	const workspaceTarget = (await resolveWorkspaceTargets([requestedPath]))[0];
+	if (!workspaceTarget) {
+		return null;
+	}
+	const window = await createMainWindow(workspaceTarget);
+	return getWorkspace(window);
+}
+
+async function openFolderFromApplicationMenu() {
+	if (!canOpenWorkspaceWindows()) {
+		return null;
+	}
+	const sourceWindow = getFocusedWorkspaceWindow();
+	const result = await showWorkspaceDialog(sourceWindow);
+	const dir = result.filePaths[0];
+	if (result.canceled || dir === undefined) {
+		return null;
+	}
+
+	const canReuseSourceWindow =
+		sourceWindow && !sourceWindow.isDestroyed() && !getWorkspace(sourceWindow);
+	if (!canReuseSourceWindow) {
+		return await openWorkspacePathInNewWindow(dir, "workspace_picker");
+	}
+
+	const workspaceTarget = (await resolveWorkspaceTargets([dir]))[0];
+	if (!workspaceTarget) {
+		return null;
+	}
+	await setWorkspaceFromTarget(
+		workspaceTarget,
+		sourceWindow,
+		createWorkspaceChangeOptions(),
+	);
+	return getWorkspace(sourceWindow);
+}
+
+function recordOpenWorkspacePath(window, workspace, options = {}) {
 	if (!window || window.isDestroyed() || !workspace) {
 		return;
 	}
-	const workspaceEntry = workspaceToSessionEntry(workspace);
+	const openFilePaths =
+		openFilePathsByWindowId.get(window.id) ??
+		options.openFilePaths ??
+		options.pendingOpenFilePaths ??
+		[];
+	const workspaceEntry = workspaceToSessionEntry(workspace, openFilePaths);
 	if (!workspaceEntry) {
 		return;
 	}
+	openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 	recordRecentWorkspace(workspace);
 	void syncMacOSDockRecentWorkspaceDocuments();
 	persistOpenWorkspacePathsSoon();
 	updateDockMenu();
+	installApplicationMenu();
 }
 
 function forgetOpenWorkspacePath(window, { persist = true } = {}) {
@@ -518,6 +703,7 @@ function forgetOpenWorkspacePath(window, { persist = true } = {}) {
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.delete(window.id);
 	activeFilePathsByWindowId.delete(window.id);
+	openFilePathsByWindowId.delete(window.id);
 	if (persist && !isQuitting) {
 		persistOpenWorkspacePathsSoon();
 	}
@@ -539,6 +725,7 @@ function pruneClosedWorkspaceEntries() {
 	for (const windowId of closedWorkspaceEntryWindowIds) {
 		openWorkspaceEntriesByWindowId.delete(windowId);
 		activeFilePathsByWindowId.delete(windowId);
+		openFilePathsByWindowId.delete(windowId);
 	}
 	closedWorkspaceEntryWindowIds.clear();
 }
@@ -647,7 +834,9 @@ async function createMainWindow(workspaceRequest) {
 				: (await resolveWorkspaceTargets([taggedRequest.request]))[0];
 		await setWorkspaceFromTarget(workspaceTarget, window, {
 			afterChange: (workspace, changedWindow) =>
-				recordOpenWorkspacePath(changedWindow, workspace),
+				recordOpenWorkspacePath(changedWindow, workspace, {
+					pendingOpenFilePaths: workspaceTarget?.pendingOpenFilePaths ?? [],
+				}),
 		});
 	} else {
 		applyWorkspaceWindowChrome(window);
@@ -676,12 +865,18 @@ async function createMainWindow(workspaceRequest) {
 		forgetTelemetrySessionContextForWebContents(window.webContents);
 		workspaceWindows.delete(window);
 		forgetClosedWorkspaceIfOtherWindowsRemain(window);
-		void closeLixSession(window, { ignoreOpenError: true });
+		void closeLixSession(window, { ignoreOpenError: true }).finally(() => {
+			void disposeWorkspaceWindowState(window.id);
+		});
 	};
 
 	window.on("close", (event) => guardWindowCloseEvent(window, event));
 	window.on("closed", cleanupWorkspaceWindow);
 	window.webContents.once("destroyed", cleanupWorkspaceWindow);
+	window.on("focus", () => {
+		installApplicationMenu();
+		updateDockMenu();
+	});
 
 	window.webContents.on(
 		"did-fail-load",
@@ -704,7 +899,8 @@ async function createMainWindow(workspaceRequest) {
 		console.error(
 			`Renderer process exited: ${details.reason} (${details.exitCode ?? "n/a"})`,
 		);
-		if (isCrashLikeProcessGoneReason(details.reason)) {
+		const crashLike = isCrashLikeProcessGoneReason(details.reason);
+		if (crashLike) {
 			void captureTelemetryException(
 				new Error(
 					`Renderer process exited: ${details.reason} (${details.exitCode ?? "n/a"})`,
@@ -717,6 +913,7 @@ async function createMainWindow(workspaceRequest) {
 					source: "electron-renderer",
 				},
 			);
+			void reloadPersistentWorkspaceIntoRecovery(window, details);
 		}
 		void triggerRecoveryUpdateCheck(
 			new Error(
@@ -730,11 +927,7 @@ async function createMainWindow(workspaceRequest) {
 		return { action: "deny" };
 	});
 
-	if (app.isPackaged) {
-		void window.loadFile(path.join(__dirname, "../dist/index.html"));
-	} else {
-		void window.loadURL(DEV_SERVER_URL);
-	}
+	void loadWorkspaceWindow(window);
 
 	return window;
 }
@@ -781,19 +974,37 @@ async function startWorkspaceLifecycle() {
 	if (isQuitting) {
 		return;
 	}
-	registerLixIpc((event) => BrowserWindow.fromWebContents(event.sender));
+	const userDataPath = app.getPath("userData");
+	recoverPendingWorkspaceLixOpenSync(userDataPath);
+	registerLixIpc((event) => BrowserWindow.fromWebContents(event.sender), {
+		disableTrackChanges: async (window) => {
+			const workspace = await disableWorkspaceTrackChanges(window);
+			clearWorkspaceRecoveryForWorkspace(workspace);
+			recordOpenWorkspacePath(window, workspace);
+			persistOpenWorkspacePathsSoon();
+			applyDockWindowChrome(window);
+			updateDockMenu();
+			installApplicationMenu();
+			return workspace;
+		},
+	});
 	registerTerminalIpc();
 	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender), {
-		beforeChange: (_nextWorkspace, window) =>
-			closeLixSession(window, { ignoreOpenError: true }),
-		afterChange: (workspace, window) =>
-			recordOpenWorkspacePath(window, workspace),
+		...createWorkspaceChangeOptions(),
+		getRecovery: async (workspace) => {
+			if (!workspace) {
+				return null;
+			}
+			return await readWorkspaceRecovery(userDataPath, workspace.path);
+		},
+		clearRecovery: async (workspace) => {
+			clearWorkspaceRecoveryForWorkspace(workspace);
+		},
 		openInNewWindow: async (requestedPath) => {
-			const workspaceTarget = (
-				await resolveDirectLaunchWorkspaceTargets([requestedPath])
-			)[0];
-			const window = await createMainWindow(workspaceTarget);
-			return getWorkspace(window);
+			return await openWorkspacePathInNewWindow(
+				requestedPath,
+				"open_in_new_window",
+			);
 		},
 	});
 	void registerMarkdownDefaultHandler({
@@ -804,21 +1015,20 @@ async function startWorkspaceLifecycle() {
 	}).catch((error) => {
 		console.warn("Failed to register Flashtype as the Markdown editor", error);
 	});
-	const savedWorkspaceEntries = await readWorkspaceSessionEntries(
-		app.getPath("userData"),
-	);
-	const restorableSavedWorkspaceEntries = await filterExistingWorkspaceEntries(
-		savedWorkspaceEntries,
-	);
+	const savedWorkspaceEntries = await readWorkspaceSessionEntries(userDataPath);
+	const recoveryWorkspaceEntries = (await readWorkspaceRecoveries(userDataPath))
+		.map(workspaceRecoveryToSessionEntry)
+		.filter(Boolean);
+	const restorableSavedWorkspaceEntries = await filterExistingWorkspaceEntries([
+		...savedWorkspaceEntries,
+		...recoveryWorkspaceEntries,
+	]);
 	recentWorkspaceEntries = await filterExistingRecentWorkspaceEntries(
-		await readRecentWorkspaceEntries(app.getPath("userData")),
+		await readRecentWorkspaceEntries(userDataPath),
 	);
 	void syncMacOSDockRecentWorkspaceDocuments();
 	try {
-		writeRecentWorkspaceEntriesSync(
-			app.getPath("userData"),
-			recentWorkspaceEntries,
-		);
+		writeRecentWorkspaceEntriesSync(userDataPath, recentWorkspaceEntries);
 	} catch (error) {
 		console.warn("Failed to clean Flashtype recent workspaces", error);
 	}
@@ -826,7 +1036,7 @@ async function startWorkspaceLifecycle() {
 	if (restorableSavedWorkspaceEntries.length !== savedWorkspaceEntries.length) {
 		try {
 			writeWorkspaceSessionEntriesSync(
-				app.getPath("userData"),
+				userDataPath,
 				restorableSavedWorkspaceEntries,
 			);
 		} catch (error) {
@@ -907,6 +1117,8 @@ async function startWorkspaceLifecycle() {
 		workspaceBootRecoveryInitialWindowsCreated = true;
 	} finally {
 		initialWorkspaceOpenInProgress = false;
+		installApplicationMenu();
+		updateDockMenu();
 	}
 }
 
@@ -952,7 +1164,9 @@ app.on("will-quit", (event) => {
 		// synchronously (e.g. with no network in tests), calling app.quit() here
 		// would land inside the current will-quit dispatch and be ignored, leaving
 		// the process alive until it is force-killed.
-		setImmediate(() => app.quit());
+		setImmediate(() => {
+			app.quit();
+		});
 	});
 });
 
@@ -993,6 +1207,17 @@ function canUseAutoUpdates() {
 	return app.isPackaged && process.env.FLASHTYPE_DISABLE_AUTO_UPDATE !== "1";
 }
 
+function validateExternalUrl(value) {
+	if (typeof value !== "string") {
+		throw new Error("External URL must be a string");
+	}
+	const url = new URL(value);
+	if (!["http:", "https:", "mailto:"].includes(url.protocol)) {
+		throw new Error(`Unsupported external URL protocol: ${url.protocol}`);
+	}
+	return url.toString();
+}
+
 function registerAppIpc() {
 	ipcMain.handle("app:checkForUpdates", async () => {
 		return await checkForUpdatesFromMenu({ manual: true });
@@ -1002,6 +1227,11 @@ function registerAppIpc() {
 	});
 	ipcMain.handle("app:installUpdate", async () => {
 		return installDownloadedUpdate();
+	});
+	ipcMain.handle("app:openExternal", async (_event, payload) => {
+		const url = validateExternalUrl(payload?.url);
+		await shell.openExternal(url);
+		return { status: "opened" };
 	});
 	ipcMain.handle("workspace:setActiveFilePath", (event, payload) => {
 		const window = BrowserWindow.fromWebContents(event.sender);
@@ -1019,6 +1249,27 @@ function registerAppIpc() {
 		}
 		applyDockWindowChrome(window);
 		updateDockMenu();
+	});
+	ipcMain.handle("workspace:setOpenFilePaths", (event, payload) => {
+		const window = BrowserWindow.fromWebContents(event.sender);
+		if (!window || window.isDestroyed()) {
+			return;
+		}
+		const workspace = getWorkspace(window);
+		if (!workspace) {
+			openFilePathsByWindowId.delete(window.id);
+			return;
+		}
+		const filePaths = Array.isArray(payload?.filePaths)
+			? payload.filePaths
+			: [];
+		const workspaceEntry = workspaceToSessionEntry(workspace, filePaths);
+		if (!workspaceEntry) {
+			return;
+		}
+		openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
+		openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
+		persistOpenWorkspacePathsSoon();
 	});
 }
 
@@ -1605,6 +1856,7 @@ function getApplicationIconBasePath() {
 
 function installApplicationMenu() {
 	const isUpdateBusy = updateCheckInProgress || updateDownloadInProgress;
+	const fileMenu = buildFileMenu();
 	const checkForUpdatesItem = {
 		label: updateInstallReady
 			? "Restart to Install Update"
@@ -1643,7 +1895,7 @@ function installApplicationMenu() {
 						{ label: `Quit ${APP_DISPLAY_NAME}`, role: "quit" },
 					],
 				},
-				{ role: "fileMenu" },
+				fileMenu,
 				{ role: "editMenu" },
 				{ role: "viewMenu" },
 				{ role: "windowMenu" },
@@ -1654,7 +1906,7 @@ function installApplicationMenu() {
 
 	Menu.setApplicationMenu(
 		Menu.buildFromTemplate([
-			{ role: "fileMenu" },
+			fileMenu,
 			{ role: "editMenu" },
 			{ role: "viewMenu" },
 			{ role: "windowMenu" },
@@ -1666,17 +1918,99 @@ function installApplicationMenu() {
 	);
 }
 
+function buildFileMenu() {
+	const trackingWindow = getWorkspaceWindowForFileAction();
+	const trackingWorkspace = trackingWindow
+		? getWorkspace(trackingWindow)
+		: null;
+	return {
+		label: "File",
+		submenu: [
+			{
+				label: "New Window",
+				accelerator: "CmdOrCtrl+N",
+				enabled: true,
+				click: () => {
+					void createNewWindowFromApplicationMenu();
+				},
+			},
+			{
+				label: "Open Folder...",
+				accelerator: "CmdOrCtrl+O",
+				enabled: true,
+				click: () => {
+					void openFolderFromApplicationMenu();
+				},
+			},
+			{ type: "separator" },
+			{
+				label: "New File...",
+				enabled: Boolean(getWorkspaceWindowForFileAction()),
+				click: () => {
+					requestNewFileFromApplicationMenu();
+				},
+			},
+			{
+				id: "track-changes",
+				label: "Track Changes",
+				type: "checkbox",
+				enabled: Boolean(trackingWorkspace),
+				checked: trackingWorkspace
+					? trackingWorkspace.ephemeral !== true
+					: false,
+				click: (menuItem) => {
+					void toggleTrackChangesFromApplicationMenu(menuItem.checked);
+				},
+			},
+			{ type: "separator" },
+			{ role: "close" },
+		],
+	};
+}
+
 function updateDockMenu() {
 	if (process.platform !== "darwin" || isHeadless || !app.dock) {
 		return;
 	}
+	const trackingWindow = getWorkspaceWindowForFileAction();
+	const trackingWorkspace = trackingWindow
+		? getWorkspace(trackingWindow)
+		: null;
 
 	app.dock.setMenu(
 		Menu.buildFromTemplate([
 			{
 				label: "New Window",
+				enabled: true,
 				click: () => {
-					void createMainWindow();
+					void createNewWindowFromApplicationMenu();
+				},
+			},
+			{
+				label: "Open Folder...",
+				enabled: true,
+				click: () => {
+					void openFolderFromApplicationMenu();
+				},
+			},
+			{ type: "separator" },
+			{
+				label: "New File...",
+				enabled: Boolean(getWorkspaceWindowForFileAction()),
+				click: () => {
+					requestNewFileFromApplicationMenu();
+				},
+			},
+			{
+				id: "dock-track-changes",
+				label: "Track Changes",
+				type: "checkbox",
+				enabled: Boolean(trackingWorkspace),
+				checked: trackingWorkspace
+					? trackingWorkspace.ephemeral !== true
+					: false,
+				click: (menuItem) => {
+					void toggleTrackChangesFromApplicationMenu(menuItem.checked);
 				},
 			},
 		]),

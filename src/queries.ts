@@ -7,6 +7,7 @@ export type FilesystemEntryRow = {
 	path: string;
 	display_name: string;
 	kind: "directory" | "file";
+	source?: "lix" | "watched";
 };
 
 /**
@@ -25,6 +26,7 @@ export function selectFilesystemEntries(lix: Lix) {
 			eb.ref("lix_directory.path").as("path"),
 			eb.ref("lix_directory.name").as("display_name"),
 			sql<string>`'directory'`.as("kind"),
+			sql<string>`'lix'`.as("source"),
 		])
 		.unionAll(
 			qb(lix)
@@ -35,6 +37,7 @@ export function selectFilesystemEntries(lix: Lix) {
 					eb.ref("lix_file.path").as("path"),
 					eb.ref("lix_file.name").as("display_name"),
 					sql<string>`'file'`.as("kind"),
+					sql<string>`'lix'`.as("source"),
 				]),
 		)
 		.orderBy("path", "asc")

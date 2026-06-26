@@ -104,7 +104,6 @@ jobs:
           shared-key: ${{ github.job }}
           workspaces: |
             submodule/lix -> ../../target
-            submodule/markdown-wc/js -> target
           cache-on-failure: true
 
       - name: Resolve Lix SDK cache key

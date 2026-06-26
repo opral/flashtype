@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PanelState, ExtensionContext, ExtensionInstance } from "./types";
+import type {
+	PanelSide,
+	PanelState,
+	ExtensionContext,
+	ExtensionInstance,
+} from "./types";
 
 type UsePanelViewContextArgs = {
 	panel: PanelState;
+	panelSide: PanelSide;
 	isFocused: boolean;
 	parentContext: ExtensionContext;
 };
 
 export function useExtensionContext({
 	panel,
+	panelSide,
 	isFocused,
 	parentContext,
 }: UsePanelViewContextArgs): {
@@ -93,6 +100,8 @@ export function useExtensionContext({
 				cached &&
 				cached.baseContext === baseContext &&
 				cached.context.setTabBadgeCount === setCount &&
+				cached.context.panelSide === panelSide &&
+				cached.context.viewInstance === instance.instance &&
 				cached.context.isPanelFocused === focusValue &&
 				cached.context.isActiveView === isActiveView
 			) {
@@ -102,13 +111,15 @@ export function useExtensionContext({
 			const next: ExtensionContext = {
 				...baseContext,
 				setTabBadgeCount: setCount,
+				panelSide,
+				viewInstance: instance.instance,
 				isActiveView,
 				isPanelFocused: focusValue,
 			};
 			contextRef.current[instance.instance] = { baseContext, context: next };
 			return next;
 		},
-		[baseContext, getBadgeSetter, isFocused, panel.activeInstance],
+		[baseContext, getBadgeSetter, isFocused, panel.activeInstance, panelSide],
 	);
 
 	return { badgeCounts, makeContext };

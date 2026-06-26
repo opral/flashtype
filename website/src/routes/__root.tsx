@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { GITHUB_LATEST_RELEASE_URL, GITHUB_URL } from "../download";
+import { PostHogAnalytics } from "../posthog-analytics";
 import appCss from "../styles.css?url";
 
 const GA_MEASUREMENT_ID = "G-1M7SY9LBT7";
@@ -147,6 +148,7 @@ export const Route = createRootRoute({
 
 function GoogleAnalyticsPageViews() {
 	const router = useRouter();
+	const history = router.history;
 
 	useEffect(() => {
 		if (!import.meta.env.PROD) return;
@@ -171,15 +173,15 @@ function GoogleAnalyticsPageViews() {
 			});
 		};
 
-		sendPageView(router.history.location);
-		const unsubscribe = router.history.subscribe(({ location }) => {
+		sendPageView(history.location);
+		const unsubscribe = history.subscribe(({ location }) => {
 			sendPageView(location);
 		});
 
 		return () => {
 			unsubscribe();
 		};
-	}, []);
+	}, [history]);
 
 	return null;
 }
@@ -198,6 +200,7 @@ function RootDocument({ children }: { children: ReactNode }) {
 			</head>
 			<body>
 				{children}
+				<PostHogAnalytics />
 				<GoogleAnalyticsPageViews />
 				<Scripts />
 			</body>

@@ -7,7 +7,6 @@ import {
 	useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { AlertTriangle } from "lucide-react";
 import "./index.css";
 import { LixProvider } from "@/lib/lix-react";
 import type { Lix } from "@/lib/lix-types";
@@ -24,8 +23,11 @@ import { activatePostHogRecording } from "./lib/posthog-client";
 type Workspace = Awaited<
 	ReturnType<NonNullable<Window["flashtypeDesktop"]>["workspace"]["get"]>
 >;
-
-const WORKSPACE_TOO_LARGE_ERROR_CODE = "ERR_FLASHTYPE_WORKSPACE_TOO_LARGE";
+type WorkspaceRecovery = Awaited<
+	ReturnType<
+		NonNullable<Window["flashtypeDesktop"]>["workspace"]["getRecovery"]
+	>
+>;
 
 /**
  * The workspace gates the app: without a folder, only the first-run screen
@@ -34,14 +36,16 @@ const WORKSPACE_TOO_LARGE_ERROR_CODE = "ERR_FLASHTYPE_WORKSPACE_TOO_LARGE";
 export const AppRoot = () => {
 	// undefined = still asking the main process; null = first run.
 	const [workspace, setWorkspace] = useState<Workspace | undefined>(undefined);
+	const [workspaceRecovery, setWorkspaceRecovery] = useState<
+		WorkspaceRecovery | null | undefined
+	>(undefined);
 	const [lix, setLix] = useState<Lix | null>(null);
 	const [pendingOpenFilePaths, setPendingOpenFilePaths] = useState<string[]>(
 		[],
 	);
+	const [pendingOpenFilesConsumed, setPendingOpenFilesConsumed] =
+		useState(false);
 	const [error, setError] = useState<unknown>(null);
-	const [workspaceOpenWarning, setWorkspaceOpenWarning] = useState<
-		string | null
-	>(null);
 	const [openingWorkspaceName, setOpeningWorkspaceName] = useState<
 		string | null | undefined
 	>(undefined);
@@ -57,7 +61,13 @@ export const AppRoot = () => {
 			try {
 				const current =
 					(await window.flashtypeDesktop?.workspace.get()) ?? null;
-				if (!cancelled) setWorkspace(current);
+				const recovery = current
+					? ((await window.flashtypeDesktop?.workspace.getRecovery()) ?? null)
+					: null;
+				if (!cancelled) {
+					setWorkspaceRecovery(recovery);
+					setWorkspace(current);
+				}
 			} catch (e) {
 				if (!cancelled) setError(e);
 			}
@@ -114,6 +124,7 @@ export const AppRoot = () => {
 				if (!opened || opened.path === workspace?.path) return;
 				if (workspace) return;
 				setOpeningWorkspaceName(opened.name);
+				setWorkspaceRecovery((await desktop.workspace.getRecovery?.()) ?? null);
 				keepLoadingScreen = true;
 				// When switching, close the running lix before the workspace state
 				// flips: close() lags its IPC, so an unawaited close could race the
@@ -125,10 +136,6 @@ export const AppRoot = () => {
 				setWorkspace(opened);
 			} catch (error) {
 				setOpeningWorkspaceName(undefined);
-				if (isWorkspaceTooLargeError(error)) {
-					setWorkspaceOpenWarning(formatWorkspaceOpenWarning(error));
-					return;
-				}
 				setError(error);
 			} finally {
 				openFolderInFlightRef.current = false;
@@ -154,7 +161,9 @@ export const AppRoot = () => {
 	}, [handleOpenFolder]);
 
 	useEffect(() => {
-		if (!workspace) return;
+		if (!workspace || workspaceRecovery === undefined || workspaceRecovery) {
+			return;
+		}
 		let cancelled = false;
 		let current: Lix | undefined;
 		(async () => {
@@ -167,7 +176,15 @@ export const AppRoot = () => {
 				current = instance;
 				setLix(instance);
 			} catch (e) {
-				if (!cancelled) setError(e);
+				const recovery =
+					(await window.flashtypeDesktop?.workspace.getRecovery()) ?? null;
+				if (!cancelled) {
+					if (recovery) {
+						setWorkspaceRecovery(recovery);
+					} else {
+						setError(e);
+					}
+				}
 			}
 		})();
 		return () => {
@@ -177,7 +194,7 @@ export const AppRoot = () => {
 				if (current) await current.close();
 			})();
 		};
-	}, [workspace]);
+	}, [workspace, workspaceRecovery]);
 
 	useEffect(() => {
 		if (!workspace || !lix) return;
@@ -190,6 +207,8 @@ export const AppRoot = () => {
 	}, [lix, workspace]);
 
 	useEffect(() => {
+		setPendingOpenFilesConsumed(false);
+		setPendingOpenFilePaths([]);
 		if (!workspace || !lix) return;
 		let cancelled = false;
 		(async () => {
@@ -197,8 +216,9 @@ export const AppRoot = () => {
 				const filePaths =
 					(await window.flashtypeDesktop?.workspace.consumePendingOpenFiles()) ??
 					[];
-				if (!cancelled && filePaths.length > 0) {
+				if (!cancelled) {
 					setPendingOpenFilePaths(filePaths);
+					setPendingOpenFilesConsumed(true);
 				}
 			} catch (e) {
 				if (!cancelled) setError(e);
@@ -214,28 +234,21 @@ export const AppRoot = () => {
 			current.filter((pendingFilePath) => pendingFilePath !== filePath),
 		);
 	}, []);
-	const closeWorkspaceOpenWarning = useCallback(() => {
-		setWorkspaceOpenWarning(null);
-	}, []);
 
+	if (workspaceRecovery) return <ErrorFallback recovery={workspaceRecovery} />;
 	if (error) return <ErrorFallback error={error} />;
 	if (workspace === undefined) return <BootPlaceholder />;
+	if (workspaceRecovery === undefined) return <BootPlaceholder />;
 	if (workspace === null) {
 		if (openingWorkspaceName !== undefined) {
 			return <WorkspaceLoadingScreen workspaceName={openingWorkspaceName} />;
 		}
 		return (
-			<>
-				<WorkspaceOpenWarningDialog
-					message={workspaceOpenWarning}
-					onClose={closeWorkspaceOpenWarning}
-				/>
-				<FirstRunScreen
-					onOpenFolder={handleOpenFolder}
-					isUpdateReady={isUpdateReady}
-					onInstallUpdate={handleInstallUpdate}
-				/>
-			</>
+			<FirstRunScreen
+				onOpenFolder={handleOpenFolder}
+				isUpdateReady={isUpdateReady}
+				onInstallUpdate={handleInstallUpdate}
+			/>
 		);
 	}
 	if (!lix) {
@@ -247,27 +260,25 @@ export const AppRoot = () => {
 	}
 
 	return (
-		<>
-			<WorkspaceOpenWarningDialog
-				message={workspaceOpenWarning}
-				onClose={closeWorkspaceOpenWarning}
-			/>
-			<LixProvider lix={lix}>
-				<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
-					<Suspense fallback={<BootPlaceholder />}>
-						<V2LayoutShell
-							workspaceName={workspace.name}
-							onOpenWorkspace={handleOpenFolder}
-							pendingOpenFilePaths={pendingOpenFilePaths}
-							onPendingOpenFileHandled={handlePendingOpenFileHandled}
-							onError={setError}
-							isUpdateReady={isUpdateReady}
-							onInstallUpdate={handleInstallUpdate}
-						/>
-					</Suspense>
-				</KeyValueProvider>
-			</LixProvider>
-		</>
+		<LixProvider lix={lix}>
+			<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+				<Suspense fallback={<BootPlaceholder />}>
+					<V2LayoutShell
+						workspace={workspace}
+						workspaceName={workspace.name}
+						onOpenWorkspace={handleOpenFolder}
+						pendingOpenFilePaths={pendingOpenFilePaths}
+						canPersistOpenFileSession={
+							pendingOpenFilesConsumed && pendingOpenFilePaths.length === 0
+						}
+						onPendingOpenFileHandled={handlePendingOpenFileHandled}
+						onError={setError}
+						isUpdateReady={isUpdateReady}
+						onInstallUpdate={handleInstallUpdate}
+					/>
+				</Suspense>
+			</KeyValueProvider>
+		</LixProvider>
 	);
 };
 
@@ -282,110 +293,6 @@ function workspaceNameFromPath(path: string): string | null {
 		.pop()
 		?.trim();
 	return name || null;
-}
-
-function WorkspaceOpenWarningDialog({
-	message,
-	onClose,
-}: {
-	readonly message: string | null;
-	readonly onClose: () => void;
-}) {
-	const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-	useEffect(() => {
-		if (!message) return;
-		closeButtonRef.current?.focus();
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				onClose();
-			}
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [message, onClose]);
-
-	if (!message) return null;
-
-	return (
-		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6 backdrop-blur-[2px]"
-			role="presentation"
-			onMouseDown={(event) => {
-				if (event.target === event.currentTarget) {
-					onClose();
-				}
-			}}
-		>
-			<div
-				role="alertdialog"
-				aria-modal="true"
-				aria-labelledby="workspace-open-warning-title"
-				aria-describedby="workspace-open-warning-description"
-				className="w-full max-w-md rounded-lg border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)] p-5 text-[var(--color-text-primary)] shadow-2xl"
-			>
-				<div className="flex items-start gap-3">
-					<div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-[var(--color-bg-notice-warning)] text-[var(--color-text-notice-warning)]">
-						<AlertTriangle className="size-5" strokeWidth={2} />
-					</div>
-					<div className="min-w-0">
-						<h1
-							id="workspace-open-warning-title"
-							className="text-base font-semibold leading-6"
-						>
-							Folder too large
-						</h1>
-						<p
-							id="workspace-open-warning-description"
-							className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]"
-						>
-							{message}
-						</p>
-					</div>
-				</div>
-				<div className="mt-5 flex justify-end">
-					<button
-						ref={closeButtonRef}
-						type="button"
-						className="inline-flex h-8 items-center justify-center rounded-md bg-[var(--color-bg-action-primary)] px-3 text-sm font-medium text-[var(--color-text-on-action-primary)] transition-colors hover:bg-[var(--color-bg-action-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
-						onClick={onClose}
-					>
-						OK
-					</button>
-				</div>
-			</div>
-		</div>
-	);
-}
-
-function isWorkspaceTooLargeError(error: unknown): boolean {
-	if (!error || typeof error !== "object") return false;
-	const maybeError = error as { code?: unknown; message?: unknown };
-	return (
-		maybeError.code === WORKSPACE_TOO_LARGE_ERROR_CODE ||
-		(typeof maybeError.message === "string" &&
-			(maybeError.message.includes(WORKSPACE_TOO_LARGE_ERROR_CODE) ||
-				maybeError.message.includes("too large for Flashtype to open")))
-	);
-}
-
-function formatWorkspaceOpenWarning(error: unknown): string {
-	if (
-		error &&
-		typeof error === "object" &&
-		typeof (error as { message?: unknown }).message === "string"
-	) {
-		return stripIpcErrorPrefix((error as { message: string }).message);
-	}
-	return "This folder is too large for Flashtype to open. Please open a smaller folder.";
-}
-
-function stripIpcErrorPrefix(message: string): string {
-	return message
-		.replace(/^Error invoking remote method '[^']+':\s*/u, "")
-		.replace(/^Error:\s*/u, "")
-		.trim();
 }
 
 createRoot(document.getElementById("root")!).render(

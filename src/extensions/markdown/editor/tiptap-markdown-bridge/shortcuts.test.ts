@@ -176,7 +176,7 @@ describe("Markdown typing shortcuts (input rules)", () => {
 		expect(buildMarkdownFromEditor(editor)).toBe("- [ ] \n");
 	});
 
-	test("[ ] in a continuation paragraph does not convert the whole list item to a task", () => {
+	test("[ ] in a continuation paragraph stays literal text", () => {
 		const editor = createEditor({
 			type: "doc",
 			content: [
@@ -207,7 +207,7 @@ describe("Markdown typing shortcuts (input rules)", () => {
 
 		expect(item.attrs?.checked ?? null).toBeNull();
 		expect(buildMarkdownFromEditor(editor)).toBe(
-			"- first paragraph\n  continuation[ ] \n",
+			"- first paragraph\n\n  continuation\\[ ]\n",
 		);
 	});
 });

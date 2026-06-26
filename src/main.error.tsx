@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { RotateCcw, Bug, AlertTriangle, Trash2 } from "lucide-react";
 
+type WorkspaceRecovery = Awaited<
+	ReturnType<
+		NonNullable<Window["flashtypeDesktop"]>["workspace"]["getRecovery"]
+	>
+>;
+
 function formatError(err: unknown): string {
 	const asAny = err as any;
 	try {
@@ -59,27 +65,46 @@ function containsOpfsHandleConflict(err: unknown): boolean {
 /**
  * Minimal error UI shown when Lix fails to load.
  */
-export function ErrorFallback(props: { error: unknown }) {
-	const [busyAction, setBusyAction] = useState<"reset" | null>(null);
-	const [resetError, setResetError] = useState<unknown>(null);
+export function ErrorFallback(props: {
+	readonly error?: unknown;
+	readonly recovery?: WorkspaceRecovery | null;
+}) {
+	const [busyAction, setBusyAction] = useState<"disable" | "try-again" | null>(
+		null,
+	);
+	const [actionError, setActionError] = useState<unknown>(null);
 	const busy = busyAction !== null;
+	const recovery = props.recovery ?? null;
 
-	async function handleReset() {
+	async function handleDisableTrackChanges() {
 		if (busy) return;
-		setBusyAction("reset");
-		setResetError(null);
+		setBusyAction("disable");
+		setActionError(null);
 		try {
-			const resetRepository =
-				window.flashtypeDesktop?.workspace?.resetLixRepository;
-			if (typeof resetRepository !== "function") {
+			const disableTrackChanges =
+				window.flashtypeDesktop?.workspace?.disableTrackChanges;
+			if (typeof disableTrackChanges !== "function") {
 				throw new Error(
-					"Reset Lix repository is only available in the desktop app.",
+					"Disabling Track Changes is only available in the desktop app.",
 				);
 			}
-			await resetRepository();
+			await disableTrackChanges();
 			window.location.reload();
 		} catch (error) {
-			setResetError(error);
+			setActionError(error);
+			setBusyAction(null);
+		}
+	}
+
+	async function handleTryAgain() {
+		if (busy) return;
+		setBusyAction("try-again");
+		setActionError(null);
+		try {
+			await window.flashtypeDesktop?.workspace?.clearRecovery();
+			window.location.reload();
+		} catch (error) {
+			setActionError(error);
 			setBusyAction(null);
 		}
 	}
@@ -118,37 +143,49 @@ export function ErrorFallback(props: { error: unknown }) {
 		);
 	}
 
+	const details = recovery ?? props.error;
+
 	return (
 		<div className="min-h-dvh w-full overflow-auto p-6">
 			<div className="mx-auto flex min-h-[calc(100dvh-3rem)] w-full max-w-4xl items-center">
 				<div className="min-w-0 w-full border rounded-lg p-6 bg-card text-card-foreground">
 					<h1 className="text-xl font-semibold mb-2">
-						Flashtype failed to start
+						Track Changes could not be opened
 					</h1>
 					<p className="text-sm text-muted-foreground mb-4">
-						Lix could not be loaded. This can happen if the lix schema was
-						changed in development. If this is unexpected, please contact the
-						developer.
+						Flashtype had trouble opening change tracking for
+						{recovery?.workspaceName
+							? ` ${recovery.workspaceName}`
+							: " this workspace"}
+						. You can disable Track Changes to remove the workspace .lix data
+						and open the folder normally. Your project files will not be
+						deleted.
 					</p>
 					<div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 mb-4">
 						<p className="text-sm font-medium text-destructive">
-							Reset the Lix repository to rebuild it from this workspace.
+							Disabling Track Changes removes change history stored in .lix.
 						</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-3">
 						<button
-							onClick={handleReset}
+							onClick={handleDisableTrackChanges}
 							disabled={busy}
 							className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-[var(--color-text-on-action-primary)] text-sm disabled:opacity-60"
 						>
 							<Trash2 className="h-4 w-4" />
-							{busyAction === "reset" ? "Resetting..." : "Reset Lix repository"}
+							{busyAction === "disable"
+								? "Disabling..."
+								: "Disable Track Changes"}
 						</button>
 						<button
-							onClick={() => window.location.reload()}
+							onClick={
+								recovery ? handleTryAgain : () => window.location.reload()
+							}
+							disabled={busy}
 							className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
 						>
-							<RotateCcw className="h-4 w-4" /> Reload app
+							<RotateCcw className="h-4 w-4" />
+							{busyAction === "try-again" ? "Trying..." : "Try again"}
 						</button>
 						<a
 							href="https://github.com/opral/flashtype/issues"
@@ -159,18 +196,18 @@ export function ErrorFallback(props: { error: unknown }) {
 							<Bug className="h-4 w-4" /> Report bug
 						</a>
 					</div>
-					{resetError ? (
+					{actionError ? (
 						<div className="mt-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-							<div className="font-medium mb-2">Reset failed</div>
+							<div className="font-medium mb-2">Action failed</div>
 							<pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
-								{formatError(resetError)}
+								{formatError(actionError)}
 							</pre>
 						</div>
 					) : null}
 					<div className="mt-4 max-h-[50dvh] overflow-auto text-xs opacity-80 border rounded p-3 bg-muted/20">
 						<div className="font-medium mb-2">Error details</div>
 						<pre className="whitespace-pre-wrap break-words font-mono leading-relaxed">
-							{formatError(props.error)}
+							{formatError(details)}
 						</pre>
 					</div>
 				</div>

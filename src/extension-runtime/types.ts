@@ -32,6 +32,19 @@ export type ExtensionState = {
 	readonly [key: string]: unknown;
 };
 
+export type WorkspaceContext =
+	| {
+			readonly ephemeral: false;
+			readonly path: string;
+			readonly name: string;
+	  }
+	| {
+			readonly ephemeral: true;
+			readonly path: string;
+			readonly name: string;
+			readonly includePaths: readonly string[];
+	  };
+
 /**
  * One-shot launch-time arguments that must not be persisted.
  *
@@ -132,7 +145,7 @@ export interface ExtensionContext {
 		readonly trackTelemetry?: boolean;
 		readonly trackDocumentOpenAttempt?: boolean;
 		readonly trackDocumentViewed?: boolean;
-	}) => void;
+	}) => void | Promise<void>;
 	readonly acceptExternalWriteReview?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
@@ -173,7 +186,16 @@ export interface ExtensionContext {
 	) => void;
 	readonly resizePanel?: (side: PanelSide, size: number) => void;
 	readonly focusPanel?: (side: PanelSide) => void;
+	readonly panelSide?: PanelSide;
+	readonly viewInstance?: string;
 	readonly isActiveView?: boolean;
+	readonly registerNewFileDraftHandler?: (registration: {
+		readonly panelSide: PanelSide;
+		readonly viewInstance: string;
+		readonly isActiveView: boolean;
+		readonly handler: () => void;
+	}) => () => void;
+	readonly workspace?: WorkspaceContext;
 	readonly lix: Lix;
 }
 

@@ -5,6 +5,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
+	expectInstalledPluginArchives,
 	launchDevElectronAppWithArgs,
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
@@ -289,6 +290,126 @@ test("opening a folder from first run reuses the empty window", async ({
 	}
 });
 
+test("Track Changes menu toggles workspace .lix storage", async ({
+	browserName: _browserName,
+}, testInfo) => {
+	const workspaceDir = testInfo.outputPath("track-changes-workspace");
+	const filePath = path.join(workspaceDir, "marker.md");
+
+	let electronApp: ElectronApplication | undefined;
+	try {
+		await writeMarkerFile(workspaceDir, "marker.md");
+
+		electronApp = await launchDevElectronAppWithArgs([workspaceDir]);
+		const page = await pageWithTitle(electronApp, path.basename(workspaceDir));
+		registerRendererConsoleLogging(page);
+
+		await expect(page.getByText("marker.md")).toBeVisible();
+		await expectTrackChangesMenuChecked(electronApp, false);
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
+		await page.getByTestId("file-tree-item-marker-md").click();
+		await expect(
+			page.getByRole("heading", { name: "marker.md" }),
+		).toBeVisible();
+
+		await page.evaluate(async () => {
+			await window.flashtypeDesktop?.lix.execute({
+				sql: "UPDATE lix_file SET data = $1 WHERE path = $2",
+				params: [
+					new TextEncoder().encode("# Updated while off\n"),
+					"/marker.md",
+				],
+			});
+		});
+		await expect
+			.poll(async () => await readFile(filePath, "utf8"))
+			.toBe("# Updated while off\n");
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
+
+		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
+		await expect(page).toHaveTitle(path.basename(workspaceDir));
+		await expectTrackChangesSettled(electronApp, workspaceDir, true);
+		await expectLixFilePath(page, "/marker.md");
+		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
+		await expectInstalledPluginArchives(workspaceDir);
+
+		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
+		await expect(page).toHaveTitle(path.basename(workspaceDir));
+		await expectTrackChangesSettled(electronApp, workspaceDir, false);
+		await expectLixFilePath(page, "/marker.md");
+		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
+	} finally {
+		await closeElectronApp(electronApp);
+	}
+});
+
+test("Track Changes recovery screen can disable tracking", async ({
+	browserName: _browserName,
+}, testInfo) => {
+	const workspaceDir = testInfo.outputPath("track-changes-recovery-workspace");
+	const userDataDir = testInfo.outputPath("track-changes-recovery-user-data");
+	const filePath = path.join(workspaceDir, "marker.md");
+
+	let electronApp: ElectronApplication | undefined;
+	try {
+		await writeMarkerFile(workspaceDir, "marker.md");
+		await mkdir(path.join(workspaceDir, ".lix", ".internal"), {
+			recursive: true,
+		});
+		await writeFile(
+			path.join(workspaceDir, ".lix", ".internal", "db.sqlite"),
+			"",
+		);
+		await mkdir(userDataDir, { recursive: true });
+		await writeFile(
+			path.join(userDataDir, "workspace-recovery.json"),
+			JSON.stringify({
+				version: 1,
+				recoveries: [
+					{
+						kind: "track_changes",
+						workspacePath: workspaceDir,
+						workspaceName: path.basename(workspaceDir),
+						reason: "renderer_crash",
+						createdAt: "2026-06-25T12:00:00.000Z",
+					},
+				],
+			}),
+			"utf8",
+		);
+
+		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
+			userDataDir,
+		});
+		const page = await pageWithTitle(electronApp, path.basename(workspaceDir));
+		registerRendererConsoleLogging(page);
+
+		await expectTrackChangesMenuChecked(electronApp, true);
+		await expectPathExists(path.join(workspaceDir, ".lix"));
+
+		await expect(
+			page.getByRole("heading", {
+				name: "Track Changes could not be opened",
+			}),
+		).toBeVisible();
+		await expect(
+			page.getByText("Your project files will not be deleted."),
+		).toBeVisible();
+
+		await Promise.all([
+			page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+			page.getByRole("button", { name: "Disable Track Changes" }).click(),
+		]);
+
+		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
+		await expectTrackChangesMenuChecked(electronApp, false);
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
+		await expect(readFile(filePath, "utf8")).resolves.toBe("# marker.md\n");
+	} finally {
+		await closeElectronApp(electronApp);
+	}
+});
+
 test("macOS open-file events create workspace windows for folders and files", async ({
 	browserName: _browserName,
 }, testInfo) => {
@@ -317,7 +438,10 @@ test("macOS open-file events create workspace windows for folders and files", as
 		registerRendererConsoleLogging(folderPage);
 
 		await emitOpenFile(electronApp, filePath);
-		const filePage = await pageWithTitle(electronApp, "docs");
+		const filePage = await pageWithTitle(
+			electronApp,
+			path.basename(fileWorkspaceDir),
+		);
 		registerRendererConsoleLogging(filePage);
 
 		await expectWindowCount(electronApp, 3);
@@ -368,7 +492,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 				.first(),
 		).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
-		await expect(filePage.getByText("sibling.md")).toHaveCount(0);
+		await expect(filePage.getByText("sibling.md")).toBeVisible();
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
 
@@ -389,7 +513,23 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 				params: ["/generated.md", new TextEncoder().encode("# Generated\n")],
 			});
 		});
-		await expectPathMissing(path.join(directory, "generated.md"));
+		await expect
+			.poll(
+				async () =>
+					await readFile(path.join(directory, "generated.md"), "utf8"),
+			)
+			.toBe("# Generated\n");
+		await expectPathMissing(path.join(directory, ".lix"));
+		await expectPathMissing(path.join(directory, ".lix_system"));
+		await filePage.evaluate(async () => {
+			await window.flashtypeDesktop?.lix.execute({
+				sql: "INSERT INTO lix_file (path, data) VALUES ($1, $2)",
+				params: [
+					"/.lix/app_data/transient-test.bin",
+					new TextEncoder().encode("internal"),
+				],
+			});
+		});
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
 	} finally {
@@ -397,11 +537,12 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 	}
 });
 
-test("launching with multiple standalone markdown files creates one window per file", async ({
+test("launching with multiple standalone markdown files creates one grouped transient workspace", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const firstDirectory = testInfo.outputPath("standalone-markdown-alpha");
 	const secondDirectory = testInfo.outputPath("standalone-markdown-beta");
+	const groupedWorkspaceDir = path.dirname(firstDirectory);
 	const firstPath = path.join(firstDirectory, "alpha.md");
 	const secondPath = path.join(secondDirectory, "beta.markdown");
 	const siblingPath = path.join(firstDirectory, "sibling.md");
@@ -415,21 +556,37 @@ test("launching with multiple standalone markdown files creates one window per f
 		await writeFile(siblingPath, "# Sibling\n");
 
 		electronApp = await launchDevElectronAppWithArgs([firstPath, secondPath]);
-		const firstPage = await pageWithTitle(
+		const groupedPage = await pageWithTitle(
 			electronApp,
-			path.basename(firstDirectory),
+			path.basename(groupedWorkspaceDir),
 		);
-		const secondPage = await pageWithTitle(
-			electronApp,
-			path.basename(secondDirectory),
-		);
-		registerRendererConsoleLogging(firstPage);
-		registerRendererConsoleLogging(secondPage);
+		registerRendererConsoleLogging(groupedPage);
 
-		await expectWindowCount(electronApp, 2);
-		await expect(firstPage.getByRole("heading", { name: "Alpha" })).toBeVisible();
-		await expect(firstPage.getByText("sibling.md")).toHaveCount(0);
-		await expect(secondPage.getByRole("heading", { name: "Beta" })).toBeVisible();
+		await expectWindowCount(electronApp, 1);
+		await expect(
+			groupedPage.getByRole("heading", { name: "Alpha" }),
+		).toBeVisible();
+		await groupedPage
+			.getByTestId("file-tree-directory-standalone-markdown-alpha")
+			.click();
+		await expect(
+			groupedPage.getByTestId(
+				"file-tree-item-standalone-markdown-alpha-alpha-md",
+			),
+		).toBeVisible();
+		await expect(groupedPage.getByText("sibling.md")).toBeVisible();
+		await groupedPage
+			.getByTestId("file-tree-directory-standalone-markdown-beta")
+			.click();
+		const betaItem = groupedPage.getByTestId(
+			"file-tree-item-standalone-markdown-beta-beta-markdown",
+		);
+		await expect(betaItem).toBeVisible();
+		await betaItem.click();
+		await expect(
+			groupedPage.getByRole("heading", { name: "Beta" }),
+		).toBeVisible();
+		await expectPathMissing(path.join(groupedWorkspaceDir, ".lix"));
 		await expectPathMissing(path.join(firstDirectory, ".lix"));
 		await expectPathMissing(path.join(secondDirectory, ".lix"));
 	} finally {
@@ -481,12 +638,13 @@ test("macOS open-file events create one transient window per standalone file", a
 	}
 });
 
-test("mixed folder and standalone markdown args create folder and file windows", async ({
+test("mixed folder and standalone markdown args create folder and grouped file windows", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const folderWorkspaceDir = testInfo.outputPath("folder-workspace");
 	const firstMarkdownDir = testInfo.outputPath("standalone-mixed-one");
 	const secondMarkdownDir = testInfo.outputPath("standalone-mixed-two");
+	const groupedMarkdownDir = path.dirname(firstMarkdownDir);
 	const firstPath = path.join(firstMarkdownDir, "one.md");
 	const secondPath = path.join(secondMarkdownDir, "two.md");
 
@@ -507,37 +665,42 @@ test("mixed folder and standalone markdown args create folder and file windows",
 			electronApp,
 			path.basename(folderWorkspaceDir),
 		);
-		const firstFilePage = await pageWithTitle(
+		const groupedFilePage = await pageWithTitle(
 			electronApp,
-			path.basename(firstMarkdownDir),
-		);
-		const secondFilePage = await pageWithTitle(
-			electronApp,
-			path.basename(secondMarkdownDir),
+			path.basename(groupedMarkdownDir),
 		);
 		registerRendererConsoleLogging(folderPage);
-		registerRendererConsoleLogging(firstFilePage);
-		registerRendererConsoleLogging(secondFilePage);
+		registerRendererConsoleLogging(groupedFilePage);
 
-		await expectWindowCount(electronApp, 3);
+		await expectWindowCount(electronApp, 2);
 		await expect(folderPage.getByText("folder-marker.md")).toBeVisible();
 		await expect(
-			firstFilePage.getByRole("heading", { name: "One" }),
+			groupedFilePage.getByRole("heading", { name: "One" }),
 		).toBeVisible();
+		await expect(groupedFilePage.getByText("folder-marker.md")).toHaveCount(0);
+		await groupedFilePage
+			.getByTestId("file-tree-directory-standalone-mixed-two")
+			.click();
+		const secondItem = groupedFilePage.getByTestId(
+			"file-tree-item-standalone-mixed-two-two-md",
+		);
+		await expect(secondItem).toBeVisible();
+		await secondItem.click();
 		await expect(
-			secondFilePage.getByRole("heading", { name: "Two" }),
+			groupedFilePage.getByRole("heading", { name: "Two" }),
 		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
 });
 
-test("relaunch restores each transient file workspace", async ({
+test("relaunch restores grouped transient file workspace", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const userDataDir = testInfo.outputPath("user-data");
 	const firstDirectory = testInfo.outputPath("restore-markdown-first");
 	const secondDirectory = testInfo.outputPath("restore-markdown-second");
+	const groupedWorkspaceDir = path.dirname(firstDirectory);
 	const firstPath = path.join(firstDirectory, "first.md");
 	const secondPath = path.join(secondDirectory, "second.md");
 
@@ -551,31 +714,33 @@ test("relaunch restores each transient file workspace", async ({
 		electronApp = await launchDevElectronAppWithArgs([firstPath, secondPath], {
 			userDataDir,
 		});
-		await pageWithTitle(electronApp, path.basename(firstDirectory));
-		await pageWithTitle(electronApp, path.basename(secondDirectory));
-		await expectWindowCount(electronApp, 2);
+		await pageWithTitle(electronApp, path.basename(groupedWorkspaceDir));
+		await expectWindowCount(electronApp, 1);
 
 		await closeElectronApp(electronApp);
 		electronApp = undefined;
 
 		electronApp = await launchDevElectronAppWithArgs([], { userDataDir });
-		const firstRestoredPage = await pageWithTitle(
+		const restoredPage = await pageWithTitle(
 			electronApp,
-			path.basename(firstDirectory),
+			path.basename(groupedWorkspaceDir),
 		);
-		const secondRestoredPage = await pageWithTitle(
-			electronApp,
-			path.basename(secondDirectory),
-		);
-		registerRendererConsoleLogging(firstRestoredPage);
-		registerRendererConsoleLogging(secondRestoredPage);
+		registerRendererConsoleLogging(restoredPage);
 
-		await expectWindowCount(electronApp, 2);
+		await expectWindowCount(electronApp, 1);
 		await expect(
-			firstRestoredPage.getByRole("heading", { name: "First" }),
+			restoredPage.getByRole("heading", { name: "First" }),
 		).toBeVisible();
+		await restoredPage
+			.getByTestId("file-tree-directory-restore-markdown-second")
+			.click();
+		const restoredSecondItem = restoredPage.getByTestId(
+			"file-tree-item-restore-markdown-second-second-md",
+		);
+		await expect(restoredSecondItem).toBeVisible();
+		await restoredSecondItem.click();
 		await expect(
-			secondRestoredPage.getByRole("heading", { name: "Second" }),
+			restoredPage.getByRole("heading", { name: "Second" }),
 		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
@@ -671,13 +836,103 @@ async function expectTitleCount(
 		.toBe(count);
 }
 
-async function expectPathMissing(filePath: string): Promise<void> {
-	try {
-		await stat(filePath);
-		throw new Error(`${filePath} exists`);
-	} catch (error) {
-		expect(error).toMatchObject({ code: "ENOENT" });
+async function clickTrackChangesMenuItem(
+	electronApp: ElectronApplication,
+): Promise<void> {
+	await electronApp.evaluate(({ BrowserWindow, Menu }) => {
+		const item = Menu.getApplicationMenu()?.getMenuItemById("track-changes");
+		if (!item || !item.enabled || typeof item.click !== "function") {
+			throw new Error("Track Changes menu item is not available.");
+		}
+		item.click(
+			{ checked: !item.checked } as any,
+			BrowserWindow.getFocusedWindow(),
+			{} as any,
+		);
+	});
+}
+
+async function clickTrackChangesMenuItemAndWaitForReload(
+	electronApp: ElectronApplication,
+	page: Page,
+): Promise<void> {
+	await Promise.all([
+		page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+		clickTrackChangesMenuItem(electronApp),
+	]);
+}
+
+async function expectTrackChangesMenuChecked(
+	electronApp: ElectronApplication,
+	checked: boolean,
+): Promise<void> {
+	await expect
+		.poll(async () =>
+			electronApp.evaluate(({ Menu }) => {
+				return Menu.getApplicationMenu()?.getMenuItemById("track-changes")
+					?.checked;
+			}),
+		)
+		.toBe(checked);
+}
+
+async function expectTrackChangesSettled(
+	electronApp: ElectronApplication,
+	workspaceDir: string,
+	enabled: boolean,
+): Promise<void> {
+	await expectTrackChangesMenuChecked(electronApp, enabled);
+	if (enabled) {
+		await expectPathExists(path.join(workspaceDir, ".lix"));
+	} else {
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
 	}
+}
+
+async function expectLixFilePath(page: Page, filePath: string): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				const result = await page.evaluate(async (pathToFind) => {
+					const queryResult = await window.flashtypeDesktop?.lix.execute({
+						sql: "SELECT path FROM lix_file WHERE path = $1",
+						params: [pathToFind],
+					});
+					return (queryResult?.rows?.length ?? 0) > 0;
+				}, filePath);
+				return result === true;
+			} catch {
+				return false;
+			}
+		})
+		.toBe(true);
+}
+
+async function expectPathExists(filePath: string): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				await stat(filePath);
+				return true;
+			} catch {
+				return false;
+			}
+		})
+		.toBe(true);
+}
+
+async function expectPathMissing(filePath: string): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				await stat(filePath);
+				return false;
+			} catch (error) {
+				expect(error).toMatchObject({ code: "ENOENT" });
+				return true;
+			}
+		})
+		.toBe(true);
 }
 
 async function writeWorkspaceSession(
@@ -689,10 +944,10 @@ async function writeWorkspaceSession(
 		workspaceSessionPath(userDataDir),
 		`${JSON.stringify(
 			{
-				version: 3,
+				version: 4,
 				workspaces: workspacePaths.map((workspacePath) => ({
-					ephemeral: false,
 					path: workspacePath,
+					openFilePaths: [],
 				})),
 			},
 			null,
@@ -713,9 +968,7 @@ async function expectWorkspaceSessionPaths(
 					await readFile(workspaceSessionPath(userDataDir), "utf8"),
 				);
 				return Array.isArray(store.workspaces)
-					? store.workspaces
-							.filter((workspace: any) => workspace.ephemeral === false)
-							.map((workspace: any) => workspace.path)
+					? store.workspaces.map((workspace: any) => workspace.path)
 					: null;
 			} catch {
 				return null;

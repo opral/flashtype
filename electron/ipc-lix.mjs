@@ -14,6 +14,7 @@ const observeTraceMeta = createOwnedHandleStore("observe trace");
 const transactionHandles = createOwnedHandleStore("transaction");
 let registered = false;
 let getWindowForEvent = null;
+let registerOptions = {};
 const LIX_VALUE_ENVELOPE_KEY = "__lixValue";
 const LIX_TRACE_SLOW_MS = Number.parseInt(
 	process.env.FLASHTYPE_TRACE_LIX_SLOW_MS ?? "25",
@@ -21,12 +22,13 @@ const LIX_TRACE_SLOW_MS = Number.parseInt(
 );
 const LIX_TRACE_ENABLED = process.env.FLASHTYPE_TRACE_LIX_IPC === "1";
 
-export function registerLixIpc(resolveWindowForEvent) {
+export function registerLixIpc(resolveWindowForEvent, options = {}) {
 	if (registered) {
 		return;
 	}
 	registered = true;
 	getWindowForEvent = resolveWindowForEvent;
+	registerOptions = options;
 
 	ipcMain.handle("lix:open", async (event) => {
 		await ensureLixOpenForEvent(event);
@@ -280,6 +282,15 @@ export function registerLixIpc(resolveWindowForEvent) {
 		await resetLixRepository(window);
 	});
 
+	ipcMain.handle("workspace:disableTrackChanges", async (event) => {
+		if (typeof registerOptions.disableTrackChanges !== "function") {
+			throw new Error("workspace.disableTrackChanges is not available");
+		}
+		const window = getWindowForIpcEvent(event);
+		await closeLixSession(window, { ignoreOpenError: true });
+		return await registerOptions.disableTrackChanges(window);
+	});
+
 	ipcMain.handle("workspace:exportLixFile", async (event) => {
 		const window = getWindowForIpcEvent(event);
 		await closeAllHandles(window.id);
@@ -294,6 +305,7 @@ async function ensureLixOpenForEvent(event) {
 export async function disposeLixIpc() {
 	await closeAllHandles();
 	await closeAllLixSessions({ ignoreOpenError: true });
+	registerOptions = {};
 }
 
 export async function closeLixSession(window, options = {}) {

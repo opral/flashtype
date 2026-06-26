@@ -4,6 +4,7 @@ const app = {
 	checkForUpdates: () => ipcRenderer.invoke("app:checkForUpdates"),
 	getUpdateState: () => ipcRenderer.invoke("app:getUpdateState"),
 	installUpdate: () => ipcRenderer.invoke("app:installUpdate"),
+	openExternal: (payload) => ipcRenderer.invoke("app:openExternal", payload),
 	onUpdateState: (listener) => {
 		const wrapped = (_event, payload) => listener(payload);
 		ipcRenderer.on("app:updateState", wrapped);
@@ -22,16 +23,40 @@ const telemetry = {
 
 const workspace = {
 	get: () => ipcRenderer.invoke("workspace:get"),
+	getRecovery: () => ipcRenderer.invoke("workspace:getRecovery"),
+	clearRecovery: () => ipcRenderer.invoke("workspace:clearRecovery"),
 	consumePendingOpenFiles: () =>
 		ipcRenderer.invoke("workspace:consumePendingOpenFiles"),
+	setEphemeralWatchedDirectories: (payload) =>
+		ipcRenderer.invoke("workspace:setEphemeralWatchedDirectories", payload),
+	onEphemeralWatchedFileTreeChanged: (listener) => {
+		const wrapped = (_event, payload) => listener(payload);
+		ipcRenderer.on("workspace:ephemeralWatchedFileTreeChanged", wrapped);
+		return () => {
+			ipcRenderer.off("workspace:ephemeralWatchedFileTreeChanged", wrapped);
+		};
+	},
+	readEphemeralFile: (payload) =>
+		ipcRenderer.invoke("workspace:readEphemeralFile", payload),
 	profile: () => ipcRenderer.invoke("workspace:profile"),
+	onNewFile: (listener) => {
+		const wrapped = () => listener();
+		ipcRenderer.on("workspace:newFile", wrapped);
+		return () => {
+			ipcRenderer.off("workspace:newFile", wrapped);
+		};
+	},
 	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
 	openInNewWindow: (payload) =>
 		ipcRenderer.invoke("workspace:openInNewWindow", payload),
 	setActiveFilePath: (payload) =>
 		ipcRenderer.invoke("workspace:setActiveFilePath", payload),
+	setOpenFilePaths: (payload) =>
+		ipcRenderer.invoke("workspace:setOpenFilePaths", payload),
 	exportLixFile: () => ipcRenderer.invoke("workspace:exportLixFile"),
 	resetLixRepository: () => ipcRenderer.invoke("workspace:resetLixRepository"),
+	disableTrackChanges: () =>
+		ipcRenderer.invoke("workspace:disableTrackChanges"),
 	// Resolves the on-disk path of a File dropped onto the window.
 	getPathForFile: (file) => webUtils.getPathForFile(file),
 };

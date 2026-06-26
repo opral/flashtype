@@ -21,6 +21,9 @@
 > [!INFO]
 > `pnpm install` runs a postinstall step that installs Lix dependencies, so Nx can cache Lix builds.
 
+> [!INFO]
+> `@glideapps/glide-data-grid` is used for the CSV viewer. Its published peer range has not caught up to React 19, so `package.json` intentionally allows the React 19 peer for Glide and lists Glide's peer packages explicitly.
+
 1. `git submodule update --init --recursive`
 2. `pnpm install`
 3. `pnpm run build:lix`

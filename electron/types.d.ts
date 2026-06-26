@@ -122,14 +122,24 @@ export type DesktopWorkspace =
 			ephemeral: false;
 			path: string;
 			name: string;
-			sourceFilePaths?: never;
+			includePaths?: never;
 	  }
 	| {
 			ephemeral: true;
 			path: string;
 			name: string;
-			sourceFilePaths: string[];
+			includePaths: string[];
 	  };
+
+export type DesktopWorkspaceRecovery = {
+	kind: "track_changes";
+	workspacePath: string;
+	workspaceName: string;
+	reason: string;
+	createdAt: string;
+	exitCode?: number;
+	message?: string;
+};
 
 export type DesktopWorkspaceExtensionProfile = {
 	file_extension: string;
@@ -147,11 +157,32 @@ export type DesktopWorkspaceProfile = {
 	extensions: DesktopWorkspaceExtensionProfile[];
 };
 
+export type DesktopWatchedFilesystemEntry = {
+	id: string;
+	parent_id: string | null;
+	path: string;
+	display_name: string;
+	kind: "directory" | "file";
+	source: "watched";
+};
+
 export type DesktopWorkspaceApi = {
 	get(): Promise<DesktopWorkspace | null>;
+	getRecovery(): Promise<DesktopWorkspaceRecovery | null>;
+	clearRecovery(): Promise<void>;
 	/** Returns workspace-relative file paths queued for editor opening. */
 	consumePendingOpenFiles(): Promise<string[]>;
+	setEphemeralWatchedDirectories(payload: {
+		ownerId: string;
+		paths: string[];
+	}): Promise<DesktopWatchedFilesystemEntry[]>;
+	onEphemeralWatchedFileTreeChanged(
+		listener: (entries: DesktopWatchedFilesystemEntry[]) => void,
+	): () => void;
+	readEphemeralFile(payload: { path: string }): Promise<Uint8Array>;
 	profile(): Promise<DesktopWorkspaceProfile | null>;
+	/** Fired when the native menu asks the workspace UI to start a new file. */
+	onNewFile(listener: () => void): () => void;
 	/**
 	 * Opens a workspace. With a path (e.g. from a dropped folder) it adopts it
 	 * directly; without one it shows the native directory picker. Resolves to
@@ -164,8 +195,10 @@ export type DesktopWorkspaceApi = {
 	 */
 	openInNewWindow(payload?: { path: string }): Promise<DesktopWorkspace | null>;
 	setActiveFilePath(payload: { filePath: string | null }): Promise<void>;
+	setOpenFilePaths(payload: { filePaths: string[] }): Promise<void>;
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
+	disableTrackChanges(): Promise<DesktopWorkspace>;
 	getPathForFile(file: File): string;
 };
 
@@ -187,6 +220,7 @@ export type DesktopAppApi = {
 	checkForUpdates(): Promise<{ status: DesktopUpdateCheckStatus }>;
 	getUpdateState(): Promise<DesktopUpdateState>;
 	installUpdate(): Promise<{ status: DesktopUpdateCheckStatus }>;
+	openExternal(payload: { url: string }): Promise<{ status: "opened" }>;
 	onUpdateState(listener: (state: DesktopUpdateState) => void): () => void;
 };
 
@@ -220,6 +254,7 @@ export type DesktopTelemetryApi = {
 				token: string;
 				host: string;
 				distinctId: string;
+				environment: "dev" | "production";
 				sessionRecordingEnabled: boolean;
 		  }
 	>;

@@ -132,6 +132,82 @@ describe("buildFilesystemTree", () => {
 			"/visible.md",
 		]);
 	});
+
+	test("parents watched rows by path when parent ids do not match Lix ids", () => {
+		const tree = buildFilesystemTree([
+			{
+				id: "dir_docs",
+				parent_id: null,
+				path: "/docs/",
+				display_name: "docs",
+				kind: "directory",
+				source: "lix",
+			},
+			{
+				id: "watched:/docs/notes.txt",
+				parent_id: "watched:/docs/",
+				path: "/docs/notes.txt",
+				display_name: "notes.txt",
+				kind: "file",
+				source: "watched",
+			},
+		]);
+
+		expect(collectPaths(tree)).toEqual(["/docs/", "/docs/notes.txt"]);
+	});
+
+	test("dedupes by normalized path with Lix rows winning", () => {
+		const tree = buildFilesystemTree([
+			{
+				id: "watched:/docs/",
+				parent_id: null,
+				path: "/docs/",
+				display_name: "docs",
+				kind: "directory",
+				source: "watched",
+			},
+			{
+				id: "watched:/docs/notes.txt",
+				parent_id: "watched:/docs/",
+				path: "/docs/notes.txt",
+				display_name: "notes.txt",
+				kind: "file",
+				source: "watched",
+			},
+			{
+				id: "dir_docs",
+				parent_id: null,
+				path: "/docs",
+				display_name: "docs",
+				kind: "directory",
+				source: "lix",
+			},
+			{
+				id: "file_notes",
+				parent_id: "dir_docs",
+				path: "/docs/notes.txt",
+				display_name: "notes.txt",
+				kind: "file",
+				source: "lix",
+			},
+		]);
+
+		const [docs] = tree;
+		expect(docs).toMatchObject({
+			type: "directory",
+			id: "dir_docs",
+			path: "/docs/",
+			source: "lix",
+		});
+		if (docs?.type !== "directory") throw new Error("expected docs directory");
+		expect(docs.children).toHaveLength(1);
+		expect(docs.children[0]).toMatchObject({
+			type: "file",
+			id: "file_notes",
+			path: "/docs/notes.txt",
+			source: "lix",
+		});
+	});
 });
 
 function collectPaths(nodes: readonly FilesystemTreeNode[]): string[] {

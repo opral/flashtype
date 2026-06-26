@@ -45,7 +45,28 @@ function FilesViewContent({
 	readonly lix: Lix;
 	readonly entries: FilesystemEntryRow[];
 }) {
-	const nodes = useMemo(() => buildFilesystemTree(entries ?? []), [entries]);
+	const ownerIdRef = useRef(
+		`files-view:${context?.viewInstance ?? Math.random().toString(36).slice(2)}`,
+	);
+	const isEphemeralWorkspace = context?.workspace?.ephemeral === true;
+	const [watchedEntries, setWatchedEntries] = useState<FilesystemEntryRow[]>(
+		[],
+	);
+	const [openDirectoryPaths, setOpenDirectoryPaths] = useState(
+		() => new Set<string>(),
+	);
+	const combinedEntries = useMemo(
+		() =>
+			unionFilesystemEntries(
+				entries ?? [],
+				isEphemeralWorkspace ? watchedEntries : [],
+			),
+		[entries, isEphemeralWorkspace, watchedEntries],
+	);
+	const nodes = useMemo(
+		() => buildFilesystemTree(combinedEntries),
+		[combinedEntries],
+	);
 	const creatingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
 	const [pendingDirectoryPaths, setPendingDirectoryPaths] = useState<string[]>(
@@ -61,18 +82,18 @@ function FilesViewContent({
 	const dragCounterRef = useRef(0);
 	const entryPathSet = useMemo(() => {
 		return new Set(
-			(entries ?? [])
+			(combinedEntries ?? [])
 				.filter((entry) => entry.kind === "file")
 				.map((entry) => entry.path),
 		);
-	}, [entries]);
+	}, [combinedEntries]);
 	const entryDirectorySet = useMemo(() => {
 		return new Set(
-			(entries ?? [])
+			(combinedEntries ?? [])
 				.filter((entry) => entry.kind === "directory")
 				.map((entry) => entry.path),
 		);
-	}, [entries]);
+	}, [combinedEntries]);
 	const existingFilePaths = useMemo(() => {
 		const combined = new Set(entryPathSet);
 		for (const path of pendingPaths) {
@@ -99,6 +120,71 @@ function FilesViewContent({
 	}, [entryDirectorySet, pendingDirectoryPaths.length]);
 	const isMacPlatform = useMemo(() => detectMacPlatform(), []);
 	const isPanelFocused = context?.isPanelFocused ?? false;
+	const registerNewFileDraftHandler = context?.registerNewFileDraftHandler;
+	const panelSide = context?.panelSide;
+	const viewInstance = context?.viewInstance;
+	const isActiveView = context?.isActiveView === true;
+	const openedEphemeralDirectoryPaths = useMemo(() => {
+		const paths = new Set(openDirectoryPaths);
+		paths.add("/");
+		return [...paths].sort((left, right) => left.localeCompare(right));
+	}, [openDirectoryPaths]);
+
+	useEffect(() => {
+		if (!isEphemeralWorkspace) {
+			setWatchedEntries([]);
+			return;
+		}
+		const workspaceApi = window.flashtypeDesktop?.workspace;
+		if (!workspaceApi?.setEphemeralWatchedDirectories) {
+			return;
+		}
+		const ownerId = ownerIdRef.current;
+		let cancelled = false;
+		void workspaceApi
+			.setEphemeralWatchedDirectories({
+				ownerId,
+				paths: openedEphemeralDirectoryPaths,
+			})
+			.then((entries) => {
+				if (!cancelled) {
+					setWatchedEntries(entries);
+				}
+			})
+			.catch((error: unknown) => {
+				if (!cancelled) {
+					console.warn("Failed to list transient workspace files", error);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [isEphemeralWorkspace, openedEphemeralDirectoryPaths]);
+
+	useEffect(() => {
+		if (!isEphemeralWorkspace) {
+			return;
+		}
+		return window.flashtypeDesktop?.workspace.onEphemeralWatchedFileTreeChanged?.(
+			(entries) => {
+				setWatchedEntries(entries);
+			},
+		);
+	}, [isEphemeralWorkspace]);
+
+	useEffect(() => {
+		if (!isEphemeralWorkspace) {
+			return;
+		}
+		const workspaceApi = window.flashtypeDesktop?.workspace;
+		const ownerId = ownerIdRef.current;
+		return () => {
+			void workspaceApi?.setEphemeralWatchedDirectories?.({
+				ownerId,
+				paths: [],
+			});
+		};
+	}, [isEphemeralWorkspace]);
 
 	const resolveDraftDirectory = useCallback(() => {
 		if (!selectedPath) return "/";
@@ -131,6 +217,24 @@ function FilesViewContent({
 			};
 		});
 	}, [resolveDraftDirectory]);
+
+	useEffect(() => {
+		if (!registerNewFileDraftHandler || !panelSide || !viewInstance) {
+			return;
+		}
+		return registerNewFileDraftHandler({
+			panelSide,
+			viewInstance,
+			isActiveView,
+			handler: handleNewFile,
+		});
+	}, [
+		handleNewFile,
+		isActiveView,
+		panelSide,
+		registerNewFileDraftHandler,
+		viewInstance,
+	]);
 
 	const handleDraftCommit = useCallback(async () => {
 		if (creatingRef.current) return;
@@ -172,7 +276,7 @@ function FilesViewContent({
 					panel: "central",
 					fileId: id,
 					filePath: path,
-					state: { focusOnLoad: true },
+					state: { focusOnLoad: true, defaultBlock: "heading1" },
 					focus: true,
 					documentOrigin: "new",
 				});
@@ -218,11 +322,11 @@ function FilesViewContent({
 	}, [context, draft, existingDirectoryPaths, existingFilePaths, lix]);
 
 	const handleOpenFile = useCallback(
-		async (fileId: string, path: string) => {
+		(fileId: string, path: string) => {
 			setSelectedPath(path);
 			setSelectedFileId(fileId);
 			setSelectedKind("file");
-			context?.openFile?.({
+			void context?.openFile?.({
 				panel: "central",
 				fileId,
 				filePath: path,
@@ -230,6 +334,25 @@ function FilesViewContent({
 			});
 		},
 		[context],
+	);
+
+	const handleOpenDirectoriesChange = useCallback(
+		(next: ReadonlySet<string>) => {
+			setOpenDirectoryPaths((prev) => {
+				const nextPaths = new Set([...next].map(ensureDirectoryPath));
+				const closedPaths = [...prev].filter((path) => !nextPaths.has(path));
+				for (const closedPath of closedPaths) {
+					const closedPrefix = ensureDirectoryPath(closedPath);
+					for (const path of [...nextPaths]) {
+						if (path !== closedPrefix && path.startsWith(closedPrefix)) {
+							nextPaths.delete(path);
+						}
+					}
+				}
+				return nextPaths;
+			});
+		},
+		[],
 	);
 
 	const handleSelectItem = useCallback(
@@ -529,6 +652,8 @@ function FilesViewContent({
 					onSelectItem={handleSelectItem}
 					selectedPath={selectedPath ?? undefined}
 					isPanelFocused={isPanelFocused}
+					openDirectories={openDirectoryPaths}
+					onOpenDirectoriesChange={handleOpenDirectoriesChange}
 					draft={
 						draft
 							? {
@@ -659,4 +784,35 @@ function normalizeNameStem(stem: string): string {
 function ensureDirectoryPath(path: string): string {
 	if (path === "/") return "/";
 	return path.endsWith("/") ? path : `${path}/`;
+}
+
+function unionFilesystemEntries(
+	lixEntries: readonly FilesystemEntryRow[],
+	watchedEntries: readonly FilesystemEntryRow[],
+): FilesystemEntryRow[] {
+	const entriesByPath = new Map<string, FilesystemEntryRow>();
+	for (const entry of watchedEntries) {
+		entriesByPath.set(filesystemEntryPathKey(entry), {
+			...entry,
+			path: filesystemEntryPathKey(entry),
+			source: "watched",
+		});
+	}
+	for (const entry of lixEntries) {
+		entriesByPath.set(filesystemEntryPathKey(entry), {
+			...entry,
+			path: filesystemEntryPathKey(entry),
+			source: "lix",
+		});
+	}
+	return [...entriesByPath.values()].sort((left, right) =>
+		left.path.localeCompare(right.path),
+	);
+}
+
+function filesystemEntryPathKey(entry: FilesystemEntryRow): string {
+	if (entry.kind === "directory") {
+		return ensureDirectoryPath(entry.path);
+	}
+	return entry.path.endsWith("/") ? entry.path.slice(0, -1) : entry.path;
 }

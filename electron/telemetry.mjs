@@ -112,6 +112,7 @@ export function registerTelemetryIpc() {
 			token: env.PUBLIC_POSTHOG_TOKEN,
 			host: env.PUBLIC_POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST,
 			distinctId,
+			environment: telemetryEnvironment(),
 			sessionRecordingEnabled: true,
 		};
 	});
@@ -297,19 +298,26 @@ async function writeDistinctId(storePath, distinctId, options = {}) {
 }
 
 function commonEventProperties() {
+	const environment = telemetryEnvironment();
 	return {
 		app_name: "flashtype",
 		app_version:
 			typeof app?.getVersion === "function" ? app.getVersion() : "0.0.0",
+		surface: "electron_app",
+		environment,
 		is_packaged: app?.isPackaged === true,
 		platform: process.platform,
 		platform_arch: process.arch,
 		...systemLocaleProperties(),
 		schema_version: 2,
-		telemetry_environment: app?.isPackaged === true ? "production" : "dev",
+		telemetry_environment: environment,
 		telemetry_client: "electron-main",
 		uptime_seconds: Math.floor(process.uptime()),
 	};
+}
+
+function telemetryEnvironment() {
+	return app?.isPackaged === true ? "production" : "dev";
 }
 
 export function getTelemetrySessionIdForWebContents(webContents) {

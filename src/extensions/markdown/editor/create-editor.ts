@@ -7,7 +7,8 @@ import {
 	astToTiptapDoc,
 	tiptapDocToAst,
 } from "./tiptap-markdown-bridge";
-import { parseMarkdown, serializeAst } from "./markdown-rust";
+import type { EmptyMarkdownDefaultBlock } from "./tiptap-markdown-bridge";
+import { parseMarkdown, serializeAst } from "./markdown";
 import { handlePaste as defaultHandlePaste } from "./handle-paste";
 import { SlashCommandsExtension } from "./extensions/slash-commands";
 import { TableNavigationExtension } from "./extensions/table-navigation";
@@ -22,6 +23,7 @@ type CreateEditorArgs = {
 	editorProps?: any;
 	editable?: boolean;
 	fileId?: string;
+	defaultBlock?: EmptyMarkdownDefaultBlock;
 	persistDebounceMs?: number;
 	persistState?: boolean;
 };
@@ -75,6 +77,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		editorProps,
 		editable = true,
 		fileId,
+		defaultBlock,
 		persistDebounceMs,
 		persistState = true,
 	} = args;
@@ -125,15 +128,19 @@ export function createEditor(args: CreateEditorArgs): Editor {
 	};
 
 	const placeholderConfig: any = {
-		placeholder: ({ node }: { node: any }) =>
-			node.type.name === "paragraph" && node.childCount === 0
-				? "Start typing..."
-				: "",
+		placeholder: ({ node }: { node: any }) => {
+			if (node.childCount !== 0) return "";
+			if (node.type.name === "heading" && node.attrs?.level === 1) {
+				return "Heading 1";
+			}
+			return node.type.name === "paragraph" ? "Start typing..." : "";
+		},
 		showOnlyWhenEditable: true,
 		includeChildren: true,
 		shouldShow: ({ editor, node }: { editor: Editor; node: any }) =>
 			editor.isFocused &&
-			node.type.name === "paragraph" &&
+			(node.type.name === "paragraph" ||
+				(node.type.name === "heading" && node.attrs?.level === 1)) &&
 			node.childCount === 0,
 	};
 
@@ -153,7 +160,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 			TableNavigationExtension,
 		],
 		editable,
-		content: astToTiptapDoc(ast) as any,
+		content: astToTiptapDoc(ast, { defaultBlock }) as any,
 		onCreate: ({ editor }) => {
 			currentEditor = editor as Editor;
 			lastPersistedMarkdown = normalizePersistedMarkdown(

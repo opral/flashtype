@@ -25,7 +25,7 @@ describe("workspace session store", () => {
 		);
 	});
 
-	test("corrupt or invalid stores return no workspace entries", async () => {
+	test("corrupt, invalid, or unsupported old-version stores return no workspace entries", async () => {
 		const userDataPath = createUserDataPath();
 		await mkdir(userDataPath, { recursive: true });
 
@@ -45,7 +45,10 @@ describe("workspace session store", () => {
 
 		await writeFile(
 			getWorkspaceSessionPath(userDataPath),
-			JSON.stringify({ version: 999, workspaces: [] }),
+			JSON.stringify({
+				version: 2,
+				workspaces: [{ ephemeral: false, path: "/old" }],
+			}),
 			"utf8",
 		);
 		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual(
@@ -53,29 +56,69 @@ describe("workspace session store", () => {
 		);
 	});
 
-	test("write persists normalized workspace entries", async () => {
+	test("migrates version 3 workspace session entries", async () => {
 		const userDataPath = createUserDataPath();
 		const workspacePath = path.join(userDataPath, "workspace");
-		const firstFilePath = path.join(userDataPath, "files", "one.md");
-		const secondFilePath = path.join(userDataPath, "files", "two.md");
+		const sourceRoot = path.join(userDataPath, "source-files");
+		const sourceFilePath = path.join(sourceRoot, "draft.md");
+		const nestedSourceFilePath = path.join(sourceRoot, "nested", "note.md");
+		await mkdir(userDataPath, { recursive: true });
+
+		await writeFile(
+			getWorkspaceSessionPath(userDataPath),
+			JSON.stringify({
+				version: 3,
+				workspaces: [
+					{ ephemeral: false, path: workspacePath },
+					{
+						ephemeral: true,
+						sourceFilePaths: [sourceFilePath, nestedSourceFilePath],
+					},
+				],
+			}),
+			"utf8",
+		);
+
+		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual([
+			{ path: workspacePath, openFilePaths: [] },
+			{ path: sourceRoot, openFilePaths: ["draft.md", "nested/note.md"] },
+		]);
+	});
+
+	test("write persists relative workspace entries", async () => {
+		const userDataPath = createUserDataPath();
+		const workspacePath = path.join(userDataPath, "workspace");
+		const secondWorkspacePath = path.join(userDataPath, "second");
 
 		await writeWorkspaceSessionEntries(userDataPath, [
-			{ ephemeral: false, path: workspacePath },
-			{ ephemeral: false, path: workspacePath },
 			{
-				ephemeral: true,
-				sourceFilePaths: [firstFilePath, secondFilePath, firstFilePath],
+				path: workspacePath,
+				openFilePaths: [
+					"docs/readme.md",
+					"docs\\readme.md",
+					"notes/today.md",
+					"notes/today.md",
+					"../outside.md",
+					".lix/app_data/private.md",
+					"",
+				],
 			},
+			{ path: workspacePath, openFilePaths: ["duplicate.md"] },
+			{ path: secondWorkspacePath },
 		]);
 
 		await expect(readStore(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
 			workspaces: [
-				{ ephemeral: false, path: workspacePath },
 				{
-					ephemeral: true,
-					sourceFilePaths: [firstFilePath, secondFilePath],
+					path: workspacePath,
+					openFilePaths: [
+						"docs/readme.md",
+						"docs\\readme.md",
+						"notes/today.md",
+					],
 				},
+				{ path: secondWorkspacePath, openFilePaths: [] },
 			],
 		});
 	});
@@ -85,12 +128,12 @@ describe("workspace session store", () => {
 		const workspacePath = path.join(userDataPath, "workspace");
 
 		writeWorkspaceSessionEntriesSync(userDataPath, [
-			{ ephemeral: false, path: workspacePath },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 
 		await expect(readStore(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
-			workspaces: [{ ephemeral: false, path: workspacePath }],
+			workspaces: [{ path: workspacePath, openFilePaths: ["draft.md"] }],
 		});
 	});
 
@@ -98,7 +141,7 @@ describe("workspace session store", () => {
 		const userDataPath = createUserDataPath();
 		const workspacePath = path.join(userDataPath, "workspace");
 		writeWorkspaceSessionEntriesSync(userDataPath, [
-			{ ephemeral: false, path: workspacePath },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 
 		expect(recoverWorkspaceSessionAfterFailedBootSync(userDataPath)).toBe(
@@ -106,7 +149,7 @@ describe("workspace session store", () => {
 		);
 
 		await expect(readWorkspaceSessionEntries(userDataPath)).resolves.toEqual([
-			{ ephemeral: false, path: workspacePath },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 	});
 
@@ -114,7 +157,7 @@ describe("workspace session store", () => {
 		const userDataPath = createUserDataPath();
 		const workspacePath = path.join(userDataPath, "workspace");
 		writeWorkspaceSessionEntriesSync(userDataPath, [
-			{ ephemeral: false, path: workspacePath },
+			{ path: workspacePath, openFilePaths: ["draft.md"] },
 		]);
 		markWorkspaceSessionBootInProgressSync(userDataPath);
 
@@ -125,7 +168,7 @@ describe("workspace session store", () => {
 		);
 		await expect(readRecoveryBackup(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
-			workspaces: [{ ephemeral: false, path: workspacePath }],
+			workspaces: [{ path: workspacePath, openFilePaths: ["draft.md"] }],
 		});
 
 		expect(recoverWorkspaceSessionAfterFailedBootSync(userDataPath)).toBe(true);
@@ -135,56 +178,48 @@ describe("workspace session store", () => {
 		);
 		await expect(readRecoveryBackup(userDataPath)).resolves.toEqual({
 			version: WORKSPACE_SESSION_VERSION,
-			workspaces: [{ ephemeral: false, path: workspacePath }],
+			workspaces: [{ path: workspacePath, openFilePaths: ["draft.md"] }],
 		});
 	});
 
-	test("filters stale workspace entries", async () => {
+	test("filters stale workspace entries and stale open file paths", async () => {
 		const userDataPath = createUserDataPath();
 		const directoryWorkspacePath = path.join(userDataPath, "directory");
-		const firstFilePath = path.join(userDataPath, "one.md");
-		const secondFilePath = path.join(userDataPath, "two.md");
+		const existingFile = path.join(directoryWorkspacePath, "one.md");
 		const staleWorkspacePath = path.join(userDataPath, "missing");
 		await mkdir(directoryWorkspacePath, { recursive: true });
-		await mkdir(userDataPath, { recursive: true });
-		await writeFile(firstFilePath, "# One\n", "utf8");
+		await writeFile(existingFile, "# One\n", "utf8");
 
 		await expect(
 			filterExistingWorkspaceEntries([
-				{ ephemeral: false, path: directoryWorkspacePath },
-				{ ephemeral: false, path: staleWorkspacePath },
 				{
-					ephemeral: true,
-					sourceFilePaths: [firstFilePath, secondFilePath],
+					path: directoryWorkspacePath,
+					openFilePaths: ["one.md", "missing.md"],
 				},
+				{ path: staleWorkspacePath, openFilePaths: ["missing.md"] },
 			]),
 		).resolves.toEqual([
-			{ ephemeral: false, path: directoryWorkspacePath },
-			{ ephemeral: true, sourceFilePaths: [firstFilePath] },
+			{ path: directoryWorkspacePath, openFilePaths: ["one.md"] },
 		]);
 	});
 
 	test("restores saved workspaces when launch has no explicit paths", () => {
 		const userDataPath = createUserDataPath();
 		const workspacePath = path.join(userDataPath, "workspace");
-		const firstFilePath = path.join(userDataPath, "files", "one.md");
-		const secondFilePath = path.join(userDataPath, "files", "two.md");
+		const secondWorkspacePath = path.join(userDataPath, "second");
 
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
 				[
-					{ ephemeral: false, path: workspacePath },
-					{ ephemeral: false, path: workspacePath },
-					{
-						ephemeral: true,
-						sourceFilePaths: [firstFilePath, secondFilePath, firstFilePath],
-					},
+					{ path: workspacePath, openFilePaths: ["a.md"] },
+					{ path: workspacePath, openFilePaths: ["duplicate.md"] },
+					{ path: secondWorkspacePath, openFilePaths: [] },
 				],
 				[],
 			),
 		).toEqual([
-			{ ephemeral: false, path: workspacePath },
-			{ ephemeral: true, sourceFilePaths: [firstFilePath, secondFilePath] },
+			{ path: workspacePath, openFilePaths: ["a.md"] },
+			{ path: secondWorkspacePath, openFilePaths: [] },
 		]);
 	});
 
@@ -192,8 +227,6 @@ describe("workspace session store", () => {
 		const userDataPath = createUserDataPath();
 		const restoredWorkspacePath = path.join(userDataPath, "Downloads");
 		const unrelatedWorkspacePath = path.join(userDataPath, "Projects");
-		const restoredFilePath = path.join(userDataPath, "notes", "draft.md");
-		const unrelatedFilePath = path.join(userDataPath, "notes", "other.md");
 		const explicitFilePath = path.join(
 			userDataPath,
 			"Downloads",
@@ -204,19 +237,14 @@ describe("workspace session store", () => {
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
 				[
-					{ ephemeral: false, path: restoredWorkspacePath },
-					{ ephemeral: false, path: unrelatedWorkspacePath },
-					{
-						ephemeral: true,
-						sourceFilePaths: [restoredFilePath, unrelatedFilePath],
-					},
+					{ path: restoredWorkspacePath, openFilePaths: ["docs/README.md"] },
+					{ path: unrelatedWorkspacePath, openFilePaths: ["notes.md"] },
 				],
-				[explicitFilePath, restoredFilePath],
+				[explicitFilePath],
 			),
 		).toEqual([
-			{ ephemeral: false, path: unrelatedWorkspacePath },
+			{ path: unrelatedWorkspacePath, openFilePaths: ["notes.md"] },
 			explicitFilePath,
-			restoredFilePath,
 		]);
 	});
 
@@ -226,47 +254,20 @@ describe("workspace session store", () => {
 
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
-				[{ ephemeral: false, path: workspacePath }],
+				[{ path: workspacePath, openFilePaths: ["draft.md"] }],
 				[workspacePath],
 			),
 		).toEqual([workspacePath]);
-	});
-
-	test("drops restored workspace directories containing explicit launch files", () => {
-		const userDataPath = createUserDataPath();
-		const restoredWorkspacePath = path.join(userDataPath, "Downloads");
-		const explicitFilePath = path.join(
-			userDataPath,
-			"Downloads",
-			"docs",
-			"README.md",
-		);
-
-		expect(
-			mergeRestoredAndExplicitWorkspaceRequests(
-				[{ ephemeral: false, path: restoredWorkspacePath }],
-				[explicitFilePath],
-			),
-		).toEqual([explicitFilePath]);
 	});
 
 	test("drops restored nested entries contained by explicit launch folders", () => {
 		const userDataPath = createUserDataPath();
 		const explicitWorkspacePath = path.join(userDataPath, "Downloads");
 		const restoredWorkspacePath = path.join(userDataPath, "Downloads", "docs");
-		const restoredFilePath = path.join(
-			userDataPath,
-			"Downloads",
-			"notes",
-			"draft.md",
-		);
 
 		expect(
 			mergeRestoredAndExplicitWorkspaceRequests(
-				[
-					{ ephemeral: false, path: restoredWorkspacePath },
-					{ ephemeral: true, sourceFilePaths: [restoredFilePath] },
-				],
+				[{ path: restoredWorkspacePath, openFilePaths: ["draft.md"] }],
 				[explicitWorkspacePath],
 			),
 		).toEqual([explicitWorkspacePath]);

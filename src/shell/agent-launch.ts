@@ -66,7 +66,10 @@ function normalizePromptFilePath(
 	if (trimmed.startsWith("./")) {
 		return trimmed;
 	}
-	return `./${trimmed.replace(/^\/+/, "")}`;
+	if (trimmed.startsWith("/")) {
+		return `.${trimmed}`;
+	}
+	return `./${trimmed}`;
 }
 
 function shellQuote(value: string): string {

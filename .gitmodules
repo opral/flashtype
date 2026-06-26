@@ -2,7 +2,3 @@
 	path = submodule/lix
 	url = https://github.com/opral/lix.git
 	branch = main
-[submodule "submodule/markdown-wc"]
-	path = submodule/markdown-wc
-	url = https://github.com/opral/markdown-wc.git
-	branch = v2

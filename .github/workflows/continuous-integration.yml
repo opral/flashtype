@@ -47,24 +47,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang libclang-dev llvm-dev
 
-      - name: Validate submodule branches
-        run: |
-          git submodule foreach '
-            branch=$(git config -f "$toplevel/.gitmodules" "submodule.$name.branch" || :)
-            test -z "$branch" && exit 0
-
-            if test "$(git rev-parse --is-shallow-repository)" = "true"; then
-              git fetch --no-tags --unshallow origin "refs/heads/$branch"
-            else
-              git fetch --no-tags origin "refs/heads/$branch"
-            fi
-
-            git merge-base --is-ancestor "$sha1" FETCH_HEAD || {
-              echo "$sm_path: $sha1 is not reachable from origin/$branch"
-              exit 1
-            }
-          '
-
       - name: Install Rust wasm target
         run: |
           rustup target add wasm32-unknown-unknown
@@ -75,7 +57,6 @@ jobs:
           shared-key: ${{ github.job }}-${{ matrix.os }}
           workspaces: |
             submodule/lix -> ../../target
-            submodule/markdown-wc/js -> target
           cache-on-failure: true
 
       - name: Resolve Lix SDK cache key
@@ -114,6 +95,24 @@ jobs:
           path: |
             test-results
             playwright-report
+
+      - name: Validate submodule branches
+        run: |
+          git submodule foreach '
+            branch=$(git config -f "$toplevel/.gitmodules" "submodule.$name.branch" || :)
+            test -z "$branch" && exit 0
+
+            if test "$(git rev-parse --is-shallow-repository)" = "true"; then
+              git fetch --no-tags --unshallow origin "refs/heads/$branch"
+            else
+              git fetch --no-tags origin "refs/heads/$branch"
+            fi
+
+            git merge-base --is-ancestor "$sha1" FETCH_HEAD || {
+              echo "$sm_path: $sha1 is not reachable from origin/$branch"
+              exit 1
+            }
+          '
 
   macos-release-build-check:
     runs-on: blacksmith-12vcpu-macos-15
@@ -158,7 +157,6 @@ jobs:
           shared-key: ${{ github.job }}
           workspaces: |
             submodule/lix -> ../../target
-            submodule/markdown-wc/js -> target
           cache-on-failure: true
 
       - name: Resolve Lix SDK cache key

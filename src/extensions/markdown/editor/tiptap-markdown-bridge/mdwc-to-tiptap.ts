@@ -1,6 +1,7 @@
 // Avoid tight compile-time coupling to mdast types; operate on structural shape
 
 const SPREAD_META_KEY = "__mdwc_spread";
+export const EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY = "__flashtype_empty_scaffold";
 
 export type PMMark = {
 	type: "bold" | "italic" | "strike" | "code" | "link";
@@ -14,7 +15,12 @@ export type PMNode = {
 	marks?: PMMark[];
 };
 
-export function astToTiptapDoc(ast: any): PMNode {
+export type EmptyMarkdownDefaultBlock = "paragraph" | "heading1";
+
+export function astToTiptapDoc(
+	ast: any,
+	options: { defaultBlock?: EmptyMarkdownDefaultBlock } = {},
+): PMNode {
 	const children = Array.isArray(ast?.children)
 		? ast.children.map(astBlockToPM)
 		: [];
@@ -23,8 +29,23 @@ export function astToTiptapDoc(ast: any): PMNode {
 		content:
 			children.length > 0
 				? children
-				: [{ type: "paragraph", attrs: { data: {} } }],
+				: [emptyDefaultBlockToPM(options.defaultBlock ?? "paragraph")],
 	};
+}
+
+function emptyDefaultBlockToPM(
+	defaultBlock: EmptyMarkdownDefaultBlock,
+): PMNode {
+	if (defaultBlock === "heading1") {
+		return {
+			type: "heading",
+			attrs: {
+				level: 1,
+				data: { [EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY]: true },
+			},
+		};
+	}
+	return { type: "paragraph", attrs: { data: {} } };
 }
 
 function astBlockToPM(node: any): PMNode {

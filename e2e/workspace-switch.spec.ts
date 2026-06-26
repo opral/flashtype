@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
-	expectInstalledPluginArchives,
+	expectPathMissing,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
@@ -29,7 +29,7 @@ test("switching to an empty workspace closes the previous lix session", async ({
 		registerRendererConsoleLogging(page);
 
 		await expect(page.getByText("old-workspace-marker.md")).toBeVisible();
-		await expectInstalledPluginArchives(firstWorkspaceDir);
+		await expectPathMissing(path.join(firstWorkspaceDir, ".lix"));
 
 		await page.evaluate(async (workspacePath) => {
 			await window.flashtypeDesktop?.workspace.open({ path: workspacePath });
@@ -40,7 +40,7 @@ test("switching to an empty workspace closes the previous lix session", async ({
 		await expect(page).toHaveTitle(path.basename(secondWorkspaceDir));
 		await expect(page.getByText("old-workspace-marker.md")).toHaveCount(0);
 		await expect(page.getByText("Start writing")).toBeVisible();
-		await expectInstalledPluginArchives(secondWorkspaceDir);
+		await expectPathMissing(path.join(secondWorkspaceDir, ".lix"));
 	} finally {
 		await closeElectronApp(electronApp);
 	}

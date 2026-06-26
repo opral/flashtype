@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
-	expectInstalledPluginArchives,
+	expectPathMissing,
 	launchPackagedElectronApp,
 	registerRendererConsoleLogging,
 	repoRoot,
@@ -124,7 +124,7 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 		registerRendererConsoleLogging(page);
 
 		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
-		await expectInstalledPluginArchives(workspaceDir);
+		await expectPathMissing(path.join(workspaceDir, ".lix"));
 		await ensureFilesViewOpenInLeftPanel(page);
 
 		const firstFile = page.locator('[data-testid^="file-tree-item-"]').first();

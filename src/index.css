@@ -509,7 +509,7 @@ body,
 @layer components {
 	.tiptap-container[data-editor-focused="true"]
 		.ProseMirror
-		p.is-editor-empty:first-child::before {
+		:is(p, h1).is-editor-empty:first-child::before {
 		color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
 		opacity: 0.82;
 		font-style: italic;

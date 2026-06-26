@@ -33,7 +33,7 @@ function localFilePathForSdkAsset(url: URL): string | undefined {
 	// Vitest + happy-dom can resolve import.meta.url in linked workspaces to
 	// localhost roots like /submodule/lix/... which should map to cwd-relative files.
 	if (pathname.startsWith("/submodule/")) {
-		const relativePath = pathname.replace(/^\/+/, "");
+		const relativePath = path.posix.relative("/", pathname);
 		return path.join(process.cwd(), relativePath);
 	}
 
