@@ -81,6 +81,7 @@ export type DesktopLixApi = {
 	switchBranch(payload: {
 		branchId: string;
 	}): Promise<DesktopSwitchBranchResult>;
+	importFilesystemPaths(payload: { paths: readonly string[] }): Promise<void>;
 	close(): Promise<void>;
 };
 
@@ -122,13 +123,13 @@ export type DesktopWorkspace =
 			ephemeral: false;
 			path: string;
 			name: string;
-			includePaths?: never;
+			openFilePaths?: never;
 	  }
 	| {
 			ephemeral: true;
 			path: string;
 			name: string;
-			includePaths: string[];
+			openFilePaths: string[];
 	  };
 
 export type DesktopWorkspaceRecovery = {
@@ -179,7 +180,6 @@ export type DesktopWorkspaceApi = {
 	onEphemeralWatchedFileTreeChanged(
 		listener: (entries: DesktopWatchedFilesystemEntry[]) => void,
 	): () => void;
-	readEphemeralFile(payload: { path: string }): Promise<Uint8Array>;
 	profile(): Promise<DesktopWorkspaceProfile | null>;
 	/** Fired when the native menu asks the workspace UI to start a new file. */
 	onNewFile(listener: () => void): () => void;

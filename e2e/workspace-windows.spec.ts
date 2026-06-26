@@ -757,7 +757,9 @@ async function writeMarkerFile(
 }
 
 async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
-	const lix = await openLix({ backend: new FsBackend({ path: workspaceDir }) });
+	const lix = await openLix({
+		backend: new FsBackend({ path: workspaceDir, syncAllFiles: true }),
+	});
 	await lix.close();
 }
 

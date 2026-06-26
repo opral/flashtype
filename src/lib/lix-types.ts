@@ -62,6 +62,7 @@ export interface FlashtypeLix extends SdkLixBase {
 		statements: ReadonlyArray<TransactionStatement>,
 	): Promise<ExecuteResult>;
 	observe(sql: string, params?: ReadonlyArray<unknown>): ObserveEvents;
+	importFilesystemPaths(paths: readonly string[]): Promise<void>;
 	mergeBranchPreview?: SdkLix["mergeBranchPreview"];
 	mergeBranch?: SdkLix["mergeBranch"];
 }

@@ -386,6 +386,11 @@ function createDesktopLixHandle(nativeLix, workspaceDir) {
 				return receipt;
 			});
 		},
+		async importFilesystemPaths(paths = []) {
+			return await runQueued(() =>
+				nativeLix.importFilesystemPaths([...(paths ?? [])]),
+			);
+		},
 		async close() {
 			await runQueued(() => nativeLix.close());
 		},

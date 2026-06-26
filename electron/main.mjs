@@ -13,6 +13,7 @@ import {
 	getWorkspace,
 	registerWorkspaceIpc,
 	resolveWorkspaceTargets,
+	setWorkspaceOpenFilePaths,
 	setWorkspaceFromTarget,
 	setWorkspaceTrackChanges,
 	showWorkspaceDialog,
@@ -1134,6 +1135,7 @@ function registerAppIpc() {
 		if (!workspaceEntry) {
 			return;
 		}
+		setWorkspaceOpenFilePaths(window, workspaceEntry.openFilePaths);
 		openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
 		openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 		persistOpenWorkspacePathsSoon();

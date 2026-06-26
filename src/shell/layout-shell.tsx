@@ -423,10 +423,6 @@ type LixFileForOpen = {
 	readonly path: string;
 };
 
-type ReadEphemeralFile = (payload: {
-	readonly path: string;
-}) => Promise<Uint8Array | undefined>;
-
 function normalizeLixFileOpenPath(filePath: string): string | null {
 	if (!filePath) return null;
 	const rootedPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
@@ -461,12 +457,10 @@ export async function resolveLixFileForOpen({
 	lix,
 	workspace,
 	filePath,
-	readEphemeralFile,
 }: {
 	readonly lix: Lix;
 	readonly workspace?: WorkspaceContext;
 	readonly filePath: string;
-	readonly readEphemeralFile?: ReadEphemeralFile;
 }): Promise<LixFileForOpen | null> {
 	const normalizedPath = normalizeLixFileOpenPath(filePath);
 	if (!normalizedPath) return null;
@@ -474,21 +468,11 @@ export async function resolveLixFileForOpen({
 	const existingFile = await selectLixFileForOpen(lix, normalizedPath);
 	if (existingFile) return existingFile;
 
-	if (workspace?.ephemeral !== true || !readEphemeralFile) {
+	if (workspace?.ephemeral !== true) {
 		return null;
 	}
 
-	const data = await readEphemeralFile({ path: normalizedPath });
-	if (!data) return null;
-
-	await qb(lix)
-		.insertInto("lix_file")
-		.values({
-			path: normalizedPath,
-			data,
-		})
-		.onConflict((oc) => oc.column("path").doNothing())
-		.execute();
+	await lix.importFilesystemPaths([normalizedPath]);
 
 	return selectLixFileForOpen(lix, normalizedPath);
 }
@@ -1295,8 +1279,6 @@ function LayoutShellLoadedContent({
 					lix,
 					workspace,
 					filePath,
-					readEphemeralFile:
-						window.flashtypeDesktop?.workspace.readEphemeralFile,
 				});
 			} catch (error) {
 				onError?.(error);
@@ -1337,8 +1319,6 @@ function LayoutShellLoadedContent({
 					lix,
 					workspace,
 					filePath: `/${pendingOpenFilePath}`,
-					readEphemeralFile:
-						window.flashtypeDesktop?.workspace.readEphemeralFile,
 				});
 				if (cancelled) return;
 				if (!file) {

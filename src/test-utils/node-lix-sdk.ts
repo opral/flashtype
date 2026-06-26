@@ -153,6 +153,9 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 		async switchBranch(options) {
 			return await sdkLix.switchBranch(options);
 		},
+		async importFilesystemPaths(paths) {
+			await sdkLix.importFilesystemPaths(paths);
+		},
 		async mergeBranchPreview(options) {
 			return await sdkLix.mergeBranchPreview(options);
 		},

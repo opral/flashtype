@@ -37,7 +37,7 @@ export type WorkspaceContext =
 			readonly ephemeral: true;
 			readonly path: string;
 			readonly name: string;
-			readonly includePaths: readonly string[];
+			readonly openFilePaths: readonly string[];
 	  };
 
 /**

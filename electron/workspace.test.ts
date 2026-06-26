@@ -1,11 +1,4 @@
-import {
-	mkdir,
-	readFile,
-	rm,
-	stat,
-	symlink,
-	writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,12 +7,13 @@ import {
 	profileWorkspaceFilesystem,
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
+	getWorkspace,
 	getWorkspaceFsBackendOptions,
-	readEphemeralWorkspaceFile,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
 	resolveWorkspaceTargets,
 	setEphemeralWatchedDirectories,
+	setWorkspaceOpenFilePaths,
 	setWorkspaceFromPath,
 } from "./workspace.mjs";
 
@@ -51,7 +45,7 @@ describe("workspace resolution", () => {
 		await expect(resolveWorkspace(directory)).resolves.toEqual({
 			ephemeral: true,
 			path: directory,
-			includePaths: [],
+			openFilePaths: [],
 			name: "workspace",
 		});
 	});
@@ -70,7 +64,7 @@ describe("workspace resolution", () => {
 			workspace: {
 				ephemeral: true,
 				path: directory,
-				includePaths: [],
+				openFilePaths: [],
 				name: "workspace",
 			},
 			pendingOpenFilePaths: [],
@@ -106,7 +100,7 @@ describe("workspace resolution", () => {
 			workspace: {
 				ephemeral: true,
 				path: directory,
-				includePaths: [],
+				openFilePaths: [],
 				name: "workspace",
 			},
 			pendingOpenFilePaths: [],
@@ -359,7 +353,7 @@ describe("workspace resolution", () => {
 			workspace: {
 				ephemeral: true,
 				path: directory,
-				includePaths: ["readme.md"],
+				openFilePaths: ["readme.md"],
 				name: "workspace",
 			},
 			pendingOpenFilePaths: ["readme.md"],
@@ -386,7 +380,7 @@ describe("workspace resolution", () => {
 				workspace: {
 					ephemeral: true,
 					path: directory,
-					includePaths: ["alpha.md", "nested/beta.markdown"],
+					openFilePaths: ["alpha.md", "nested/beta.markdown"],
 					name: "workspace",
 				},
 				pendingOpenFilePaths: ["alpha.md", "nested/beta.markdown"],
@@ -468,7 +462,7 @@ describe("workspace resolution", () => {
 				workspace: {
 					ephemeral: true,
 					path: directory,
-					includePaths: ["alpha.txt", "beta.csv"],
+					openFilePaths: ["alpha.txt", "beta.csv"],
 					name: "workspace",
 				},
 				pendingOpenFilePaths: ["alpha.txt", "beta.csv"],
@@ -510,10 +504,6 @@ describe("workspace resolution", () => {
 				"/notes.txt",
 			]);
 
-			await expect(
-				readEphemeralWorkspaceFile(window, { path: "/docs/nested.txt" }),
-			).rejects.toThrow("opened Files view");
-
 			const nestedEntries = await setEphemeralWatchedDirectories(window, {
 				ownerId: "files",
 				paths: ["/", "/docs/"],
@@ -525,9 +515,6 @@ describe("workspace resolution", () => {
 				"/docs/nested.txt",
 				"/notes.txt",
 			]);
-			await expect(
-				readEphemeralWorkspaceFile(window, { path: "/docs/nested.txt" }),
-			).resolves.toEqual(Buffer.from("Nested\n"));
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}
@@ -558,51 +545,6 @@ describe("workspace resolution", () => {
 					paths: [],
 				}),
 			).resolves.toEqual([]);
-			await expect(
-				readEphemeralWorkspaceFile(window, { path: "/notes.txt" }),
-			).rejects.toThrow("opened Files view");
-		} finally {
-			await disposeWorkspaceWindowState(window);
-		}
-	});
-
-	test("does not read listed transient files through symlinked ancestors", async () => {
-		const directory = path.join(
-			tmpdir(),
-			"flashtype-workspace-test",
-			randomUUID(),
-			"workspace",
-		);
-		const outsideDirectory = path.join(
-			tmpdir(),
-			"flashtype-workspace-test",
-			randomUUID(),
-			"outside",
-		);
-		const docsDirectory = path.join(directory, "docs");
-		await mkdir(docsDirectory, { recursive: true });
-		await mkdir(outsideDirectory, { recursive: true });
-		await writeFile(path.join(docsDirectory, "secret.txt"), "inside\n");
-		await writeFile(path.join(outsideDirectory, "secret.txt"), "outside\n");
-
-		const window = createTestWindow();
-		try {
-			await setWorkspaceFromPath(directory, window);
-			await setEphemeralWatchedDirectories(window, {
-				ownerId: "files",
-				paths: ["/"],
-			});
-			await setEphemeralWatchedDirectories(window, {
-				ownerId: "files",
-				paths: ["/", "/docs/"],
-			});
-
-			await rm(docsDirectory, { force: true, recursive: true });
-			await symlink(outsideDirectory, docsDirectory, "dir");
-
-			await expect(
-				readEphemeralWorkspaceFile(window, { path: "/docs/secret.txt" }),
-			).rejects.toThrow("escapes the workspace");
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}
@@ -715,7 +657,7 @@ describe("workspace resolution", () => {
 				ephemeral: true,
 				path: directory,
 				name: "workspace",
-				includePaths: ["notes/today.md"],
+				openFilePaths: ["notes/today.md"],
 			}),
 		).resolves.toMatchObject({
 			file_count: 1,
@@ -744,9 +686,38 @@ describe("workspace resolution", () => {
 
 			expect(options).toMatchObject({
 				path: directory,
-				filter: { includePaths: [] },
+				syncAllFiles: false,
 			});
 			expect(options.lixDir).toEqual(expect.any(String));
+		} finally {
+			await disposeWorkspaceWindowState(window);
+		}
+	});
+
+	test("tracks transient open file paths on the workspace state", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, "docs"), { recursive: true });
+
+		const window = createTestWindow();
+		try {
+			await setWorkspaceFromPath(directory, window);
+
+			expect(
+				setWorkspaceOpenFilePaths(window, [
+					"docs/readme.md",
+					"../outside.md",
+					"docs/readme.md",
+				]),
+			).toEqual(["docs/readme.md"]);
+			expect(getWorkspace(window)).toMatchObject({
+				ephemeral: true,
+				openFilePaths: ["docs/readme.md"],
+			});
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}
@@ -802,7 +773,7 @@ describe("workspace resolution", () => {
 				workspace: {
 					ephemeral: true,
 					path: directory,
-					includePaths: ["docs/readme.md"],
+					openFilePaths: ["docs/readme.md"],
 					name: "workspace",
 				},
 				pendingOpenFilePaths: ["docs/readme.md"],
@@ -831,7 +802,7 @@ describe("workspace resolution", () => {
 			await expect(disableWorkspaceTrackChanges(window)).resolves.toEqual({
 				ephemeral: true,
 				path: directory,
-				includePaths: [],
+				openFilePaths: [],
 				name: "workspace",
 			});
 			await expect(readFile(workspaceFile, "utf8")).resolves.toBe(
@@ -868,7 +839,7 @@ describe("workspace resolution", () => {
 				workspace: {
 					ephemeral: true,
 					path: directory,
-					includePaths: [],
+					openFilePaths: [],
 					name: "workspace",
 				},
 				pendingOpenFilePaths: [],
