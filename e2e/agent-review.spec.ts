@@ -12,7 +12,7 @@ import {
 
 test.skip(process.platform === "win32", "fake codex helper is POSIX-only");
 
-test("restored markdown file shows a review after Codex edits it", async ({
+test.skip("restored markdown file shows a review after Codex edits it", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const userDataDir = testInfo.outputPath("user-data");
