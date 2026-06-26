@@ -52,13 +52,9 @@ export async function bundledPluginArchives(): Promise<BundledPluginArchive[]> {
  */
 export async function createFsBackend(options: {
 	path: string;
-	storage?: "persistent" | "memory";
 }): Promise<NonNullable<SdkOpenLixOptions["backend"]>> {
 	const sdk = await loadSdk();
-	return new sdk.FsBackend({
-		path: options.path,
-		storage: options.storage ?? "persistent",
-	});
+	return new sdk.FsBackend({ path: options.path });
 }
 
 async function loadSdk(): Promise<SdkModule> {

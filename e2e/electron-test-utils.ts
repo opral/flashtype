@@ -1,11 +1,27 @@
 import { expect, type Page } from "@playwright/test";
 import { _electron as electron, type ElectronApplication } from "playwright";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..");
+
+/**
+ * Seed a Track Changes (persistent `.lix`) workspace in `workspaceDir` before
+ * launch, so the app opens a tracked folder that watches external edits — the
+ * setup under which the external-write review actually runs. Delegates to a
+ * child process because the seed loads the built Lix SDK via `require`, which
+ * does not mix with the ESM test context.
+ */
+export function seedTrackChangesWorkspace(workspaceDir: string): void {
+	execFileSync(
+		process.execPath,
+		[path.join(repoRoot, "e2e", "seed-lix-workspace.mjs"), workspaceDir],
+		{ stdio: "inherit" },
+	);
+}
 
 const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4173";
 const rendererUrl = `http://127.0.0.1:${rendererPort}`;
@@ -136,21 +152,6 @@ export async function expectInstalledPluginArchives(
 			{ timeout: 60_000 },
 		)
 		.toBeGreaterThan(0);
-}
-
-/**
- * Wait for a freshly launched workspace window to be ready for interaction.
- *
- * Boot can be slow — especially under load (e.g. `--repeat-each`) or a cold dev
- * server — so this waits on a stable "app mounted, no file open" signal with a
- * generous timeout rather than assuming it appears within the default expect
- * window.
- */
-export async function waitForWorkspaceReady(page: Page): Promise<void> {
-	await page.waitForLoadState("domcontentloaded").catch(() => {});
-	await expect(page.getByTestId("central-panel-empty-state")).toBeVisible({
-		timeout: 60_000,
-	});
 }
 
 export async function expectPathMissing(filePath: string): Promise<void> {

@@ -44,7 +44,7 @@ async function bootWorkspace(): Promise<{
 	await writeFile(mdPath, ORIGINAL);
 
 	const lix = await openLix({
-		backend: await createFsBackend({ path: dir, storage: "persistent" }),
+		backend: await createFsBackend({ path: dir }),
 	});
 	for (const plugin of await bundledPluginArchives()) {
 		await lix.execute(
