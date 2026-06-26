@@ -349,13 +349,10 @@ export async function getWorkspaceFsBackendOptions(window) {
 	}
 	if (workspace.ephemeral === true) {
 		const lixDir = await ensureExternalLixDir(window);
-		const includePaths = Array.isArray(workspace.includePaths)
-			? workspace.includePaths
-			: [];
 		return {
 			path: workspace.path,
 			lixDir,
-			filter: { includePaths: [...includePaths] },
+			filter: { includePaths: [] },
 		};
 	}
 	return { path: workspace.path };

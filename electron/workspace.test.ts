@@ -14,6 +14,7 @@ import {
 	profileWorkspaceFilesystem,
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
+	getWorkspaceFsBackendOptions,
 	readEphemeralWorkspaceFile,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
@@ -722,6 +723,33 @@ describe("workspace resolution", () => {
 			extension_counts: { md: 1 },
 			total_size_mb: 0,
 		});
+	});
+
+	test("opens transient FsBackend with an empty dynamic filter", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		const filePath = path.join(directory, "today.md");
+		await mkdir(directory, { recursive: true });
+		await writeFile(filePath, "# Today\n");
+
+		const window = createTestWindow();
+		try {
+			await setWorkspaceFromPath(filePath, window);
+
+			const options = await getWorkspaceFsBackendOptions(window);
+
+			expect(options).toMatchObject({
+				path: directory,
+				filter: { includePaths: [] },
+			});
+			expect(options.lixDir).toEqual(expect.any(String));
+		} finally {
+			await disposeWorkspaceWindowState(window);
+		}
 	});
 
 	test("ignores saved open files for tracked workspace session entries", async () => {
