@@ -513,6 +513,46 @@ describe("renderMarkdownReviewDiffHtml", () => {
 	);
 });
 
+describe("renderMarkdownReviewDiffHtml block pairing", () => {
+	const block = (
+		id: string,
+		orderKey: string,
+		text: string,
+	): MarkdownBlockSnapshot => ({ id, orderKey, block: text });
+
+	test("an edited block that kept its id renders a word-level inline diff", () => {
+		const html = renderMarkdownReviewDiffHtml({
+			beforeMarkdown: "",
+			afterMarkdown: "",
+			beforeBlocks: [block("p", "20", "Alpha paragraph.")],
+			afterBlocks: [block("p", "20", "Alpha v2.")],
+		});
+		expect(html).toContain('data-diff-status="removed">paragraph<');
+		expect(html).toContain('data-diff-status="added">v2<');
+	});
+
+	test("a 1:1 replace is whole-block without pairing and word-level with it", () => {
+		const blocks = {
+			beforeMarkdown: "",
+			afterMarkdown: "",
+			beforeBlocks: [block("x", "20", "Alpha paragraph.")],
+			afterBlocks: [block("y", "20", "Alpha v2.")],
+		};
+
+		const unpaired = renderMarkdownReviewDiffHtml(blocks);
+		expect(unpaired).not.toContain('data-diff-status="removed">paragraph<');
+		expect(
+			unpaired.match(/<p[^>]*data-diff-status="(?:added|removed)"/g),
+		).toHaveLength(2);
+
+		const paired = renderMarkdownReviewDiffHtml(blocks, {
+			blockPairings: [{ beforeId: "x", afterId: "y" }],
+		});
+		expect(paired).toContain('data-diff-status="removed">paragraph<');
+		expect(paired).toContain('data-diff-status="added">v2<');
+	});
+});
+
 async function renderFixtureDiffFromRealLix(
 	fixture: MarkdownDiffFixture,
 ): Promise<{

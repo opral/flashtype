@@ -7,17 +7,35 @@ import {
 import { parseMarkdown } from "@/extensions/markdown/editor/markdown-rust";
 import type { MarkdownReviewDiff } from "./review-diff";
 
+/** A before/after block that a change replaces 1:1, paired for a word diff. */
+export type ReviewDiffBlockPairing = {
+	readonly beforeId: string;
+	readonly afterId: string;
+};
+
 export function renderMarkdownReviewDiffHtml(
 	reviewDiff: MarkdownReviewDiff,
+	options: { blockPairings?: readonly ReviewDiffBlockPairing[] } = {},
 ): string {
 	if (
 		reviewDiff.beforeBlocks !== undefined &&
 		reviewDiff.afterBlocks !== undefined
 	) {
+		// Give each 1:1 replaced block the same diff key as the block it replaces,
+		// so html-diff aligns them and renders a word-level diff instead of a
+		// whole-block remove + add. Blocks Lix kept the id for already share a key.
+		const sharedKeyByAfterId = new Map<string, string>();
+		for (const { beforeId, afterId } of options.blockPairings ?? []) {
+			if (beforeId !== afterId) sharedKeyByAfterId.set(afterId, beforeId);
+		}
+		const afterBlocks = reviewDiff.afterBlocks.map((block) => {
+			const sharedKey = sharedKeyByAfterId.get(block.id);
+			return sharedKey ? { ...block, id: sharedKey } : block;
+		});
 		return normalizeHtmlDiffFragment(
 			renderHtmlDiff({
 				beforeHtml: renderMarkdownBlocksHtml(reviewDiff.beforeBlocks),
-				afterHtml: renderMarkdownBlocksHtml(reviewDiff.afterBlocks),
+				afterHtml: renderMarkdownBlocksHtml(afterBlocks),
 				diffAttribute: "data-diff-key",
 			}),
 		);

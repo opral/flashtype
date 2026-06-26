@@ -326,10 +326,6 @@ function MarkdownReviewOverlay({
 			afterBlocks: afterBlocks ?? [],
 		};
 	}, [afterBlocks, beforeBlocks, reviewDiff]);
-	const diffHtml = useMemo(() => {
-		return renderMarkdownReviewDiffHtml(enrichedReviewDiff);
-	}, [enrichedReviewDiff]);
-
 	// Granular review is only attempted when both historical snapshots can be
 	// loaded; otherwise we keep the classic all-or-nothing controls.
 	const canAttemptGranular = Boolean(
@@ -355,6 +351,27 @@ function MarkdownReviewOverlay({
 		canAttemptGranular,
 		snapshotsLoading,
 	]);
+
+	// Pair each change that swaps one block for one block so the diff renders a
+	// word-level inline diff for it, even when Lix gave the edited block a new id
+	// (an in-place edit that kept its id already word-diffs).
+	const blockPairings = useMemo(() => {
+		if (eligibility?.status !== "safe") return undefined;
+		return eligibility.plan.changes
+			.filter(
+				(change) =>
+					change.beforeBlockIds.length === 1 &&
+					change.afterBlockIds.length === 1,
+			)
+			.map((change) => ({
+				beforeId: change.beforeBlockIds[0]!,
+				afterId: change.afterBlockIds[0]!,
+			}));
+	}, [eligibility]);
+
+	const diffHtml = useMemo(() => {
+		return renderMarkdownReviewDiffHtml(enrichedReviewDiff, { blockPairings });
+	}, [enrichedReviewDiff, blockPairings]);
 
 	const rejectReview = () => void onReject?.({ fileId, reviewId });
 
