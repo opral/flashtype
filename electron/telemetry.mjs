@@ -9,6 +9,8 @@ const ENV_VARIABLES_FILE = "build/env-variables.mjs";
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
 const DEV_TELEMETRY_DISTINCT_ID = "dev:mode";
 const SHUTDOWN_TIMEOUT_MS = 2_000;
+const APP_OPENED_SESSION_WAIT_MS = 5_000;
+const WORKSPACE_GROUP_TYPE = "workspace";
 
 let envVariablesPromise;
 let distinctIdPromise;
@@ -19,14 +21,23 @@ let telemetryShutdownPromise;
 let latestRendererPostHogSessionId;
 let cachedDistinctId;
 const rendererPostHogSessionIdsByWebContentsId = new Map();
+const identifiedWorkspaceGroupKeys = new Set();
+const rendererSessionWaiters = new Set();
 
 export async function captureAppOpened({ entryPoint = "app_direct" } = {}) {
+	if (isTelemetryEnabled() && !latestRendererPostHogSessionId) {
+		await waitForRendererPostHogSessionId(APP_OPENED_SESSION_WAIT_MS);
+	}
 	return await captureTelemetryEvent("app_opened", {
 		entry_point: entryPoint,
 	});
 }
 
-export async function captureTelemetryEvent(event, properties = {}) {
+export async function captureTelemetryEvent(
+	event,
+	properties = {},
+	options = {},
+) {
 	if (!isTelemetryEnabled()) {
 		return { status: "disabled" };
 	}
@@ -38,13 +49,16 @@ export async function captureTelemetryEvent(event, properties = {}) {
 		}
 
 		const distinctId = await getDistinctId();
+		const workspaceGroupKey = workspaceGroupKeyFromProperties(properties);
+		identifyWorkspaceGroup(client, workspaceGroupKey, distinctId);
+		const groups = telemetryEventGroups(properties);
 		client.capture({
 			distinctId,
 			event,
-			properties: {
-				...commonEventProperties(),
-				...properties,
-			},
+			properties: telemetryEventProperties(properties, {
+				sessionId: telemetrySessionIdFromOptions(options),
+			}),
+			...(groups ? { groups } : {}),
 		});
 		return { status: "queued" };
 	} catch (error) {
@@ -69,9 +83,7 @@ export async function captureTelemetryException(error, properties = {}) {
 			error,
 			distinctId,
 			exceptionEventProperties(properties, {
-				sessionId:
-					normalizePostHogSessionId(properties?.sessionId) ??
-					latestRendererPostHogSessionId,
+				sessionId: telemetrySessionIdFromProperties(properties),
 			}),
 		);
 		return { status: "queued" };
@@ -92,10 +104,16 @@ export function registerTelemetryIpc() {
 		if (!eventName) {
 			return { status: "ignored" };
 		}
-		return await captureTelemetryEvent(eventName, {
-			...(payload?.properties ?? {}),
-			source: "renderer",
-		});
+		return await captureTelemetryEvent(
+			eventName,
+			{
+				...(payload?.properties ?? {}),
+				source: "renderer",
+			},
+			{
+				sessionId: getTelemetrySessionIdForWebContents(_event.sender),
+			},
+		);
 	});
 
 	ipcMain.handle("telemetry:getClientConfig", async () => {
@@ -316,6 +334,68 @@ function commonEventProperties() {
 	};
 }
 
+export function telemetryEventProperties(properties = {}, { sessionId } = {}) {
+	const normalizedSessionId =
+		normalizePostHogSessionId(properties?.$session_id) ??
+		normalizePostHogSessionId(sessionId);
+	const workspaceGroupKey = workspaceGroupKeyFromProperties(properties);
+	const eventProperties = { ...properties };
+	if ("workspace_id" in eventProperties) {
+		delete eventProperties.workspace_id;
+	}
+	return {
+		...commonEventProperties(),
+		...eventProperties,
+		...(workspaceGroupKey ? { workspace_id: workspaceGroupKey } : {}),
+		...(normalizedSessionId ? { $session_id: normalizedSessionId } : {}),
+	};
+}
+
+export function telemetryEventGroups(properties = {}) {
+	const workspaceGroupKey = workspaceGroupKeyFromProperties(properties);
+	return workspaceGroupKey
+		? { [WORKSPACE_GROUP_TYPE]: workspaceGroupKey }
+		: undefined;
+}
+
+export function telemetrySessionIdFromOptions(options = {}) {
+	return hasOwnSessionId(options)
+		? options.sessionId
+		: latestRendererPostHogSessionId;
+}
+
+function telemetrySessionIdFromProperties(properties = {}) {
+	return hasOwnSessionId(properties)
+		? properties.sessionId
+		: latestRendererPostHogSessionId;
+}
+
+function hasOwnSessionId(value) {
+	return Object.prototype.hasOwnProperty.call(value, "sessionId");
+}
+
+function workspaceGroupKeyFromProperties(properties = {}) {
+	return normalizeWorkspaceGroupKey(properties?.workspace_id);
+}
+
+function identifyWorkspaceGroup(client, workspaceGroupKey, distinctId) {
+	if (
+		!workspaceGroupKey ||
+		identifiedWorkspaceGroupKeys.has(workspaceGroupKey)
+	) {
+		return;
+	}
+	identifiedWorkspaceGroupKeys.add(workspaceGroupKey);
+	client.groupIdentify({
+		groupType: WORKSPACE_GROUP_TYPE,
+		groupKey: workspaceGroupKey,
+		distinctId,
+		properties: {
+			workspace_id: workspaceGroupKey,
+		},
+	});
+}
+
 function telemetryEnvironment() {
 	return app?.isPackaged === true ? "production" : "dev";
 }
@@ -328,7 +408,15 @@ export function forgetTelemetrySessionContextForWebContents(webContents) {
 	if (!webContents) {
 		return;
 	}
+	const forgottenSessionId = rendererPostHogSessionIdsByWebContentsId.get(
+		webContents.id,
+	);
 	rendererPostHogSessionIdsByWebContentsId.delete(webContents.id);
+	if (latestRendererPostHogSessionId === forgottenSessionId) {
+		latestRendererPostHogSessionId = Array.from(
+			rendererPostHogSessionIdsByWebContentsId.values(),
+		).at(-1);
+	}
 }
 
 export function setTelemetrySessionContextForWebContents(
@@ -341,7 +429,28 @@ export function setTelemetrySessionContextForWebContents(
 	}
 	latestRendererPostHogSessionId = sessionId;
 	rendererPostHogSessionIdsByWebContentsId.set(webContents.id, sessionId);
+	for (const resolve of rendererSessionWaiters) {
+		resolve(sessionId);
+	}
+	rendererSessionWaiters.clear();
 	return { status: "set" };
+}
+
+function waitForRendererPostHogSessionId(timeoutMs) {
+	if (latestRendererPostHogSessionId) {
+		return Promise.resolve(latestRendererPostHogSessionId);
+	}
+	return new Promise((resolve) => {
+		const waiter = (sessionId) => {
+			clearTimeout(timeout);
+			resolve(sessionId);
+		};
+		const timeout = setTimeout(() => {
+			rendererSessionWaiters.delete(waiter);
+			resolve(undefined);
+		}, timeoutMs);
+		rendererSessionWaiters.add(waiter);
+	});
 }
 
 function exceptionEventProperties(properties = {}, { sessionId } = {}) {
@@ -430,6 +539,17 @@ function normalizePostHogSessionId(value) {
 	)
 		? trimmed
 		: undefined;
+}
+
+function normalizeWorkspaceGroupKey(value) {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+	const trimmed = value.trim();
+	if (!trimmed || trimmed.length > 200 || /[\\/]/.test(trimmed)) {
+		return undefined;
+	}
+	return trimmed;
 }
 
 export function scrubTelemetrySensitiveValues(value, depth = 0) {

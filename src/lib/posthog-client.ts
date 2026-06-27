@@ -1,8 +1,20 @@
 import posthog, { type CaptureResult } from "posthog-js";
+import type { Lix } from "@/lib/lix-types";
+import { readWorkspaceId } from "@/lib/workspace-profile-telemetry";
 
 let activated = false;
 let activationPromise: Promise<boolean> | null = null;
 let sessionContextSynced = false;
+let syncedWorkspaceGroupKey: string | null = null;
+
+const AUTOCAPTURE_ATTRIBUTE_IGNORELIST = [
+	"aria-label",
+	"title",
+	"href",
+	"data-testid",
+	"data-view-instance",
+	"data-view-key",
+];
 
 export async function activatePostHogRecording() {
 	if (activated) {
@@ -23,9 +35,12 @@ async function activatePostHogRecordingUncached() {
 	posthog.init(config.token, {
 		api_host: config.host,
 		defaults: "2026-05-30",
-		autocapture: false,
+		autocapture: {
+			element_attribute_ignorelist: AUTOCAPTURE_ATTRIBUTE_IGNORELIST,
+		},
 		capture_pageview: false,
 		disable_session_recording: !config.sessionRecordingEnabled,
+		mask_all_text: true,
 		before_send: (event) => scrubPostHogEvent(event),
 		session_recording: {
 			maskAllInputs: true,
@@ -45,6 +60,25 @@ async function activatePostHogRecordingUncached() {
 		posthog.startSessionRecording();
 	}
 	activated = true;
+	return true;
+}
+
+export async function syncPostHogWorkspaceContext(lix: Lix) {
+	const isActive = await activatePostHogRecording();
+	if (!isActive) {
+		return false;
+	}
+	const workspaceId = await readWorkspaceId(lix);
+	if (!workspaceId || workspaceId === syncedWorkspaceGroupKey) {
+		return Boolean(workspaceId);
+	}
+	syncedWorkspaceGroupKey = workspaceId;
+	posthog.group("workspace", workspaceId, {
+		workspace_id: workspaceId,
+	});
+	posthog.register({
+		workspace_id: workspaceId,
+	});
 	return true;
 }
 
@@ -77,11 +111,35 @@ function scrubPostHogEvent(event: CaptureResult | null) {
 	}
 	const scrubbableEvent = event as ScrubbableCaptureResult;
 	if (scrubbableEvent.properties) {
+		const safeProperties =
+			(event as { event?: string }).event === "$autocapture"
+				? scrubAutocaptureProperties(scrubbableEvent.properties)
+				: scrubbableEvent.properties;
 		scrubbableEvent.properties = scrubPostHogValue(
-			scrubbableEvent.properties,
+			safeProperties,
 		) as ScrubbableCaptureResult["properties"];
 	}
 	return event;
+}
+
+function scrubAutocaptureProperties(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map((item) => scrubAutocaptureProperties(item));
+	}
+	if (!value || typeof value !== "object") {
+		return value;
+	}
+	const scrubbed: Record<string, unknown> = {};
+	for (const [key, nestedValue] of Object.entries(value)) {
+		if (key === "$el_text" || key === "$external_click_url") {
+			continue;
+		}
+		if (key.startsWith("attr__") && key !== "attr__data-attr") {
+			continue;
+		}
+		scrubbed[key] = scrubAutocaptureProperties(nestedValue);
+	}
+	return scrubbed;
 }
 
 function scrubPostHogValue(value: unknown, depth = 0): unknown {

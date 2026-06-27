@@ -196,6 +196,18 @@ describe("PanelV2", () => {
 		expect(
 			screen.getByRole("button", { name: "Custom Search" }),
 		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Custom Search" }),
+		).not.toHaveAttribute("data-attr", "panel-tab-select");
+		expect(screen.getByText("Custom Search")).toHaveAttribute(
+			"data-attr",
+			"panel-tab-select",
+		);
+		expect(
+			screen
+				.getByRole("button", { name: "Custom Search" })
+				.querySelector("[data-attr='panel-tab-close']"),
+		).toBeInTheDocument();
 	});
 
 	test("registers sortable handlers for tabs", () => {
@@ -241,7 +253,39 @@ describe("PanelV2", () => {
 			/>,
 		);
 
-		expect(screen.getByLabelText("Add view")).toBeInTheDocument();
+		expect(screen.getByLabelText("Add view")).toHaveAttribute(
+			"data-attr",
+			"panel-add-view",
+		);
+	});
+
+	test("renders stable analytics selectors for agent add-view commands", async () => {
+		renderWithinProvider(
+			<PanelV2
+				side="left"
+				panel={singleSearchPanel}
+				isFocused={false}
+				onFocusPanel={vi.fn()}
+				onSelectView={vi.fn()}
+				onRemoveView={vi.fn()}
+				onAddView={vi.fn()}
+				viewContext={createViewContext()}
+				viewOverrides={[searchViewOverride]}
+			/>,
+		);
+
+		await act(async () => {
+			fireEvent.pointerDown(screen.getByLabelText("Add view"), { button: 0 });
+			fireEvent.pointerUp(screen.getByLabelText("Add view"), { button: 0 });
+		});
+
+		expect(
+			await screen.findByRole("menuitem", { name: "Claude Code" }),
+		).toHaveAttribute("data-attr", "panel-add-agent-claude");
+		expect(screen.getByRole("menuitem", { name: "Codex" })).toHaveAttribute(
+			"data-attr",
+			"panel-add-agent-codex",
+		);
 	});
 
 	test("invokes the pending finalizer when the active view is interacted with", async () => {

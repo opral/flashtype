@@ -228,6 +228,7 @@ function BranchSwitcherContent({
 							<DropdownMenuItem
 								key={branch.id}
 								aria-labelledby={branchLabelId}
+								data-attr="branch-switch"
 								onSelect={(event) => {
 									type DropdownSelectEvent = Event & {
 										detail?: { originalEvent?: Event };
@@ -282,6 +283,7 @@ function BranchSwitcherContent({
 									>
 										<DropdownMenuItem
 											className="flex items-center gap-2 text-xs"
+											data-attr="branch-rename"
 											onSelect={(event) => {
 												event.preventDefault();
 												void handleRenameBranch(branch.id, branch.name);
@@ -292,6 +294,7 @@ function BranchSwitcherContent({
 										</DropdownMenuItem>
 										<DropdownMenuItem
 											className="flex items-center gap-2 text-xs text-destructive focus:bg-destructive/10 focus:text-destructive [&_svg]:!text-destructive"
+											data-attr="branch-delete"
 											onSelect={() => {
 												if (isDeleteDisabled) return;
 												void handleDeleteBranch(branch.id, branch.name);

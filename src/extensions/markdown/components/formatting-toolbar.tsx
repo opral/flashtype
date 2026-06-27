@@ -229,6 +229,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 				className,
 			)}
 			aria-label="Formatting toolbar"
+			data-attr="markdown-format-toolbar"
 		>
 			<Toolbar.Group className="flex flex-1 items-center gap-0.5">
 				<Select.Root
@@ -240,6 +241,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					<Toolbar.Button
 						render={<Select.Trigger />}
 						nativeButton={false}
+						data-attr="markdown-block-selector"
 						className={clsx(
 							"inline-flex h-7 shrink-0 select-none items-center gap-1 rounded-[7px] pr-1.5 pl-2.25 text-[12.5px] font-medium text-[var(--color-text-secondary)] transition-[background-color,color,box-shadow] duration-100 ease-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]",
 							blockMenuOpen &&
@@ -304,6 +306,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					onMouseDown={suppressMouseDown}
 					aria-pressed={formatState.isBold}
 					aria-label="Bold"
+					data-attr="markdown-format-bold"
 				>
 					<Bold className="size-3.5" aria-hidden />
 				</Toolbar.Button>
@@ -317,6 +320,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					onMouseDown={suppressMouseDown}
 					aria-pressed={formatState.isItalic}
 					aria-label="Italic"
+					data-attr="markdown-format-italic"
 				>
 					<Italic className="size-3.5" aria-hidden />
 				</Toolbar.Button>
@@ -330,6 +334,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					onMouseDown={suppressMouseDown}
 					aria-pressed={formatState.isCode}
 					aria-label="Inline code"
+					data-attr="markdown-format-code"
 				>
 					<Code2 className="size-3.5" aria-hidden />
 				</Toolbar.Button>
@@ -345,6 +350,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					onMouseDown={suppressMouseDown}
 					aria-pressed={formatState.isOrderedList}
 					aria-label="Numbered list"
+					data-attr="markdown-format-ordered-list"
 				>
 					<ListOrdered className="size-3.5" aria-hidden />
 				</Toolbar.Button>
@@ -358,6 +364,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					onMouseDown={suppressMouseDown}
 					aria-pressed={formatState.isBulletList}
 					aria-label="Bullet list"
+					data-attr="markdown-format-bullet-list"
 				>
 					<List className="size-3.5" aria-hidden />
 				</Toolbar.Button>
@@ -371,6 +378,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 					onMouseDown={suppressMouseDown}
 					aria-pressed={formatState.isTaskList}
 					aria-label="Checklist"
+					data-attr="markdown-format-task-list"
 				>
 					<ListChecks className="size-3.5" aria-hidden />
 				</Toolbar.Button>
@@ -388,6 +396,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 							)}
 							onClick={handleCopyMarkdown}
 							onMouseDown={suppressMouseDown}
+							data-attr="markdown-copy-markdown"
 							aria-label={
 								copyStatus === "success" ? "Copied markdown" : "Copy markdown"
 							}

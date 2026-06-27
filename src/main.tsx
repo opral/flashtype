@@ -18,7 +18,10 @@ import { FirstRunScreen } from "./shell/first-run-screen";
 import { WorkspaceLoadingScreen } from "./shell/workspace-loading-screen";
 import { openDesktopLix } from "./lib/lix-client";
 import { captureWorkspaceProfile } from "./lib/workspace-profile-telemetry";
-import { activatePostHogRecording } from "./lib/posthog-client";
+import {
+	activatePostHogRecording,
+	syncPostHogWorkspaceContext,
+} from "./lib/posthog-client";
 
 type Workspace = Awaited<
 	ReturnType<NonNullable<Window["flashtypeDesktop"]>["workspace"]["get"]>
@@ -199,6 +202,9 @@ export const AppRoot = () => {
 	useEffect(() => {
 		if (!workspace || !lix) return;
 		setOpeningWorkspaceName(undefined);
+		void syncPostHogWorkspaceContext(lix).catch((error: unknown) => {
+			console.warn("Failed to sync PostHog workspace context", error);
+		});
 		void captureWorkspaceProfile({
 			lix,
 		}).catch((error: unknown) => {

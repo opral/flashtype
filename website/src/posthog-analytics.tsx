@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
+const PRODUCTION_POSTHOG_TOKEN =
+	"phc_ydLjaAJyed68q8a6ymxvUNCmiNNZtdkZny8YErSQTZEU";
 
 let initialized = false;
 let initializationPromise: Promise<void> | null = null;
@@ -18,7 +20,9 @@ async function initializePostHog() {
 		return;
 	}
 
-	const token = import.meta.env.VITE_PUBLIC_POSTHOG_TOKEN?.trim();
+	const token = import.meta.env.PROD
+		? PRODUCTION_POSTHOG_TOKEN
+		: import.meta.env.VITE_PUBLIC_POSTHOG_TOKEN?.trim();
 	if (!token) {
 		return;
 	}

@@ -74,6 +74,7 @@ describe("BranchSwitcher", () => {
 		});
 
 		const draftItem = await screen.findByRole("menuitem", { name: draftName });
+		expect(draftItem).toHaveAttribute("data-attr", "branch-switch");
 
 		await act(async () => {
 			fireEvent.click(draftItem);
@@ -121,6 +122,7 @@ describe("BranchSwitcher", () => {
 		});
 
 		const renameItem = await screen.findByRole("menuitem", { name: "Rename" });
+		expect(renameItem).toHaveAttribute("data-attr", "branch-rename");
 		await act(async () => {
 			fireEvent.click(renameItem);
 		});
@@ -162,6 +164,7 @@ describe("BranchSwitcher", () => {
 		});
 
 		const deleteItem = await screen.findByRole("menuitem", { name: "Delete" });
+		expect(deleteItem).toHaveAttribute("data-attr", "branch-delete");
 		await act(async () => {
 			fireEvent.click(deleteItem);
 		});

@@ -325,6 +325,7 @@ function AddViewMenu({
 					type="button"
 					title="Add view"
 					aria-label="Add view"
+					data-attr="panel-add-view"
 					className="flex size-6 flex-none items-center justify-center rounded-md text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-icon-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-bg-panel)]"
 				>
 					<Plus className="size-3.25" strokeWidth={2} />
@@ -339,6 +340,11 @@ function AddViewMenu({
 						{AGENT_LAUNCH_PRESETS.map((preset) => (
 							<DropdownMenuItem
 								key={preset.key}
+								data-attr={
+									preset.key === "claude"
+										? "panel-add-agent-claude"
+										: "panel-add-agent-codex"
+								}
 								onSelect={() =>
 									onAddView(TERMINAL_EXTENSION_KIND, preset.state)
 								}
@@ -689,6 +695,7 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 			>
 				<span
 					data-tab-icon
+					data-attr="panel-tab-select"
 					className="relative flex size-3.25 items-center justify-center"
 				>
 					<Icon className="size-3.25" />
@@ -706,6 +713,7 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 					) : null}
 				</span>
 				<span
+					data-attr="panel-tab-select"
 					className={clsx("max-w-[10rem] truncate", isPending && "italic")}
 					title={label}
 				>
@@ -714,6 +722,7 @@ const TabButtonBase = forwardRef<HTMLButtonElement, TabBaseProps>(
 				<span className="relative flex size-3.25 items-center justify-center">
 					{onClose ? (
 						<X
+							data-attr="panel-tab-close"
 							className={clsx(
 								"h-3 w-3",
 								isActive && isFocused

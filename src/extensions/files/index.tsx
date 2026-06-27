@@ -604,6 +604,7 @@ function FilesViewContent({
 					className="mb-px flex h-7 w-full select-none items-center justify-between gap-2 rounded-[7px] px-2.25 text-left text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
 					aria-label="New file"
 					title="New file (⌘.)"
+					data-attr="file-new"
 				>
 					<span className="flex items-center gap-2">
 						<FilePlus
@@ -644,6 +645,7 @@ function FilesViewContent({
 			)}
 			<div
 				data-testid="files-view-tree-scroll"
+				data-attr="file-tree"
 				className="ph-mask min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1"
 			>
 				<FileTree

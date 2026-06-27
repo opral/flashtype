@@ -2,9 +2,13 @@ import { describe, expect, test } from "vitest";
 import os from "node:os";
 import {
 	beforeSendTelemetryEvent,
+	forgetTelemetrySessionContextForWebContents,
 	getDevelopmentTelemetryDistinctId,
 	scrubTelemetrySensitiveValues,
 	setTelemetrySessionContextForWebContents,
+	telemetryEventGroups,
+	telemetryEventProperties,
+	telemetrySessionIdFromOptions,
 } from "./telemetry.mjs";
 
 describe("scrubTelemetrySensitiveValues", () => {
@@ -57,6 +61,115 @@ describe("beforeSendTelemetryEvent", () => {
 				},
 			})?.properties?.$session_id,
 		).toBe(explicitSessionId);
+	});
+
+	test("does not keep a closed window session as the latest renderer fallback", () => {
+		forgetTelemetrySessionContextForWebContents({ id: 42 });
+		const remainingWebContents = { id: 101 };
+		const closedWebContents = { id: 202 };
+		const remainingSessionId = "77777777-7777-4777-8777-777777777777";
+		const closedSessionId = "88888888-8888-4888-8888-888888888888";
+		setTelemetrySessionContextForWebContents(
+			remainingWebContents,
+			remainingSessionId,
+		);
+		setTelemetrySessionContextForWebContents(
+			closedWebContents,
+			closedSessionId,
+		);
+
+		forgetTelemetrySessionContextForWebContents(closedWebContents);
+
+		expect(
+			beforeSendTelemetryEvent({
+				event: "$exception",
+				distinctId: "install-id",
+				properties: {},
+			})?.properties?.$session_id,
+		).toBe(remainingSessionId);
+
+		forgetTelemetrySessionContextForWebContents(remainingWebContents);
+		expect(
+			beforeSendTelemetryEvent({
+				event: "$exception",
+				distinctId: "install-id",
+				properties: {},
+			})?.properties?.$session_id,
+		).toBeUndefined();
+	});
+});
+
+describe("telemetryEventProperties", () => {
+	test("does not borrow another renderer session when caller explicitly has none", () => {
+		const latestSessionId = "99999999-9999-4999-8999-999999999999";
+		setTelemetrySessionContextForWebContents({ id: 303 }, latestSessionId);
+
+		expect(telemetrySessionIdFromOptions({ sessionId: undefined })).toBe(
+			undefined,
+		);
+		expect(telemetrySessionIdFromOptions({})).toBe(latestSessionId);
+
+		forgetTelemetrySessionContextForWebContents({ id: 303 });
+	});
+
+	test("attaches the current renderer session id to product events", () => {
+		const sessionId = "33333333-3333-4333-8333-333333333333";
+
+		expect(
+			telemetryEventProperties({ source: "renderer" }, { sessionId })
+				.$session_id,
+		).toBe(sessionId);
+	});
+
+	test("does not overwrite an explicit product event session id", () => {
+		const explicitSessionId = "44444444-4444-4444-8444-444444444444";
+		const fallbackSessionId = "55555555-5555-4555-8555-555555555555";
+
+		expect(
+			telemetryEventProperties(
+				{ $session_id: explicitSessionId },
+				{ sessionId: fallbackSessionId },
+			).$session_id,
+		).toBe(explicitSessionId);
+	});
+
+	test("replaces an invalid explicit session id with a valid renderer session id", () => {
+		const fallbackSessionId = "66666666-6666-4666-8666-666666666666";
+
+		expect(
+			telemetryEventProperties(
+				{ $session_id: "not-a-session-id" },
+				{ sessionId: fallbackSessionId },
+			).$session_id,
+		).toBe(fallbackSessionId);
+	});
+
+	test("normalizes workspace id properties for grouped events", () => {
+		expect(
+			telemetryEventProperties({ workspace_id: " workspace-123 " })
+				.workspace_id,
+		).toBe("workspace-123");
+	});
+
+	test("drops path-like workspace ids from grouped events", () => {
+		expect(
+			telemetryEventProperties({ workspace_id: "/Users/sam/project" })
+				.workspace_id,
+		).toBeUndefined();
+	});
+});
+
+describe("telemetryEventGroups", () => {
+	test("derives the PostHog workspace group from workspace_id", () => {
+		expect(telemetryEventGroups({ workspace_id: "workspace-123" })).toEqual({
+			workspace: "workspace-123",
+		});
+	});
+
+	test("does not derive a group for invalid workspace ids", () => {
+		expect(
+			telemetryEventGroups({ workspace_id: "/Users/sam/project" }),
+		).toBeUndefined();
 	});
 });
 

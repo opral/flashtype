@@ -91,6 +91,34 @@ const createViewContext = (
 });
 
 describe("CentralPanel", () => {
+	test("renders stable analytics selectors for empty state actions", async () => {
+		const panelState: PanelState = {
+			views: [],
+			activeInstance: null,
+		};
+
+		await renderWithProviders(
+			<DndContext>
+				<CentralPanel
+					panel={panelState}
+					onSelectView={() => {}}
+					onRemoveView={() => {}}
+					viewContext={createViewContext({ isPanelFocused: true })}
+					isFocused={true}
+					onFocusPanel={vi.fn()}
+					onCreateNewFile={vi.fn()}
+				/>
+			</DndContext>,
+		);
+
+		expect(
+			screen.getByRole("button", { name: /new document/i }),
+		).toHaveAttribute("data-attr", "central-empty-new-document");
+		expect(
+			screen.getByRole("button", { name: /ask your agent/i }),
+		).toHaveAttribute("data-attr", "central-empty-ask-agent");
+	});
+
 	test("renders the active view without a tab strip", async () => {
 		// The central editor hides tabs; files are switched from the left list.
 		const panelState: PanelState = {

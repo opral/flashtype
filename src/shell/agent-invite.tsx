@@ -17,7 +17,10 @@ export function AgentInvite({
 	readonly onStartCodex?: () => void;
 }): JSX.Element {
 	return (
-		<div className="flex flex-1 flex-col items-center justify-center gap-3.5 px-6 py-7 text-center">
+		<div
+			className="flex flex-1 flex-col items-center justify-center gap-3.5 px-6 py-7 text-center"
+			data-attr="agent-panel"
+		>
 			<div className="flex items-center gap-2.75">
 				<img
 					src={claudeIcon}
@@ -38,6 +41,7 @@ export function AgentInvite({
 					<button
 						type="button"
 						onClick={onStartClaude}
+						data-attr="agent-start-claude"
 						className="flex items-center gap-1.75 rounded-lg bg-[var(--color-bg-action-secondary)] px-4.5 py-2.25 text-[12.5px] font-bold text-[var(--color-text-on-action-secondary)] hover:bg-[var(--color-bg-action-secondary-hover)]"
 					>
 						<img src={claudeIcon} alt="" className="size-3.25 object-contain" />
@@ -47,6 +51,7 @@ export function AgentInvite({
 						<button
 							type="button"
 							onClick={onStartCodex}
+							data-attr="agent-start-codex"
 							className="rounded-md px-1.5 py-0.5 text-[11.5px] text-[var(--color-icon-tertiary)] hover:text-[var(--color-text-secondary)]"
 						>
 							Use Codex instead

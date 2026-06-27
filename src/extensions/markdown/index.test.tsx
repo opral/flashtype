@@ -52,6 +52,11 @@ describe("MarkdownView", () => {
 		});
 
 		expect(await screen.findByTestId("tiptap-editor")).toBeInTheDocument();
+		expect(
+			screen
+				.getByTestId("tiptap-editor")
+				.closest("[data-attr='markdown-editor']"),
+		).toBeInTheDocument();
 
 		await waitFor(async () => {
 			const rows = await qb(lix)
@@ -406,8 +411,11 @@ describe("MarkdownView", () => {
 
 		expect(
 			await screen.findByRole("button", { name: /keep/i }),
-		).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: /undo/i })).toBeInTheDocument();
+		).toHaveAttribute("data-attr", "diff-accept");
+		expect(screen.getByRole("button", { name: /undo/i })).toHaveAttribute(
+			"data-attr",
+			"diff-reject",
+		);
 
 		await act(async () => {
 			utils?.unmount();

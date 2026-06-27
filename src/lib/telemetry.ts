@@ -68,7 +68,6 @@ export function workspaceTelemetryProperties(workspaceId: string | undefined) {
 	return workspaceId
 		? {
 				workspace_id: workspaceId,
-				$groups: { workspace: workspaceId },
 			}
 		: {};
 }

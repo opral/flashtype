@@ -165,7 +165,7 @@ function MarkdownViewLoaded({
 					<div className={reviewDiff ? "pointer-events-none" : undefined}>
 						<FormattingToolbar />
 					</div>
-					<div className="relative min-h-0 flex-1">
+					<div className="relative min-h-0 flex-1" data-attr="markdown-editor">
 						<TipTapEditor
 							className="h-full"
 							fileId={fileRow.id}

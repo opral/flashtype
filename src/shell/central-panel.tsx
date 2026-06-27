@@ -113,6 +113,7 @@ function EmptyStateContent({
 				<button
 					type="button"
 					onClick={() => void onCreateNewFile()}
+					data-attr="central-empty-new-document"
 					className="mt-6 flex items-center gap-2 rounded-[10px] bg-[var(--color-bg-action-primary)] px-6 py-2.75 text-sm font-bold text-[var(--color-text-on-action-primary)] shadow-[0_6px_18px_rgba(154,52,18,0.24),inset_0_1px_0_rgba(255,255,255,0.18)] hover:bg-[var(--color-bg-action-primary-hover)]"
 				>
 					New document
@@ -122,6 +123,7 @@ function EmptyStateContent({
 			<button
 				type="button"
 				onClick={onAskAgent}
+				data-attr="central-empty-ask-agent"
 				className="mt-4.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-[var(--color-icon-tertiary)] hover:text-[var(--color-text-secondary)]"
 			>
 				or ask your agent to draft one

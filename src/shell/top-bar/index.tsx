@@ -90,6 +90,7 @@ export function TopBar({
 							aria-label="Toggle left panel"
 							aria-pressed={isLeftSidebarVisible}
 							data-state={isLeftSidebarVisible ? "on" : "off"}
+							data-attr="topbar-toggle-left-panel"
 						>
 							<PanelToggleIcon side="left" isActive={isLeftSidebarVisible} />
 						</Button>
@@ -108,6 +109,7 @@ export function TopBar({
 							onClick={onWorkspaceTitleClick}
 							disabled={!onWorkspaceTitleClick}
 							title="Switch workspace"
+							data-attr="workspace-switch"
 							className={`flex h-7 min-w-0 items-center gap-1.5 rounded-[7px] px-2 enabled:hover:bg-[var(--color-bg-hover)] ${
 								activeFileName
 									? "font-medium text-[var(--color-text-secondary)]"
@@ -143,6 +145,7 @@ export function TopBar({
 							void handleInstallUpdate();
 						}}
 						aria-label="Install update"
+						data-attr="update-install"
 					>
 						Update
 					</Button>
@@ -152,6 +155,7 @@ export function TopBar({
 					target="_blank"
 					rel="noreferrer"
 					title="GitHub"
+					data-attr="github-open"
 					className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[7px] text-sm font-medium whitespace-nowrap text-[var(--color-icon-tertiary)] transition-all outline-none hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring [-webkit-app-region:no-drag] [&_svg]:pointer-events-none [&_svg]:shrink-0"
 				>
 					<svg
@@ -178,6 +182,7 @@ export function TopBar({
 							aria-label="Toggle right panel"
 							aria-pressed={isRightSidebarVisible}
 							data-state={isRightSidebarVisible ? "on" : "off"}
+							data-attr="topbar-toggle-right-panel"
 						>
 							<PanelToggleIcon side="right" isActive={isRightSidebarVisible} />
 						</Button>

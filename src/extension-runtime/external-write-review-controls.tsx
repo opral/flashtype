@@ -53,6 +53,7 @@ export function ExternalWriteReviewControls({
 				type="button"
 				className="external-write-review-button external-write-review-button-reject"
 				onClick={onReject}
+				data-attr="diff-reject"
 			>
 				<span>Undo</span>
 				<kbd className="external-write-review-shortcut external-write-review-shortcut-dark">
@@ -63,6 +64,7 @@ export function ExternalWriteReviewControls({
 				type="button"
 				className="external-write-review-button external-write-review-button-accept"
 				onClick={onAccept}
+				data-attr="diff-accept"
 			>
 				<span>Keep</span>
 				<kbd className="external-write-review-shortcut">

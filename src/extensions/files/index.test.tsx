@@ -76,6 +76,14 @@ describe("FilesView", () => {
 		expect(utils!.getByRole("button", { name: "New file" })).toHaveClass(
 			"select-none",
 		);
+		expect(utils!.getByRole("button", { name: "New file" })).toHaveAttribute(
+			"data-attr",
+			"file-new",
+		);
+		expect(utils!.getByTestId("files-view-tree-scroll")).toHaveAttribute(
+			"data-attr",
+			"file-tree",
+		);
 
 		utils!.unmount();
 		await lix.close();

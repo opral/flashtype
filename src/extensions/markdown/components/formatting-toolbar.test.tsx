@@ -130,6 +130,53 @@ describe("FormattingToolbar", () => {
 		});
 	});
 
+	test("renders stable analytics selectors for toolbar controls", async () => {
+		const setup = createEditor(paragraphDoc);
+		const utils = renderToolbar(setup.editor);
+
+		const toolbar = await screen.findByRole("toolbar", {
+			name: "Formatting toolbar",
+		});
+
+		expect(toolbar).toHaveAttribute("data-attr", "markdown-format-toolbar");
+		expect(toolbar.querySelector("[data-attr='markdown-block-selector']")).toBe(
+			screen.getByRole("combobox"),
+		);
+		expect(screen.getByLabelText("Bold")).toHaveAttribute(
+			"data-attr",
+			"markdown-format-bold",
+		);
+		expect(screen.getByLabelText("Italic")).toHaveAttribute(
+			"data-attr",
+			"markdown-format-italic",
+		);
+		expect(screen.getByLabelText("Inline code")).toHaveAttribute(
+			"data-attr",
+			"markdown-format-code",
+		);
+		expect(screen.getByLabelText("Numbered list")).toHaveAttribute(
+			"data-attr",
+			"markdown-format-ordered-list",
+		);
+		expect(screen.getByLabelText("Bullet list")).toHaveAttribute(
+			"data-attr",
+			"markdown-format-bullet-list",
+		);
+		expect(screen.getByLabelText("Checklist")).toHaveAttribute(
+			"data-attr",
+			"markdown-format-task-list",
+		);
+		expect(screen.getByLabelText("Copy markdown")).toHaveAttribute(
+			"data-attr",
+			"markdown-copy-markdown",
+		);
+
+		await act(async () => {
+			utils.unmount();
+		});
+		destroyEditor(setup);
+	});
+
 	test("applies bold formatting to the current selection", async () => {
 		const setup = createEditor(paragraphDoc);
 		const utils = renderToolbar(setup.editor);

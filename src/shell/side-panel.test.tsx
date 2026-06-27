@@ -122,6 +122,38 @@ const createViewContext = (
 });
 
 describe("SidePanel", () => {
+	test("renders stable analytics selectors for agent invite CTAs", () => {
+		const emptyPanel: PanelState = { views: [], activeInstance: null };
+
+		render(
+			<ExtensionHostRegistryProvider>
+				<DndContext>
+					<SidePanel
+						side="right"
+						title="Agent"
+						panel={emptyPanel}
+						onSelectView={() => {}}
+						onAddView={() => {}}
+						onRemoveView={() => {}}
+						viewContext={createViewContext()}
+						isFocused={false}
+						onFocusPanel={vi.fn()}
+					/>
+				</DndContext>
+			</ExtensionHostRegistryProvider>,
+		);
+
+		expect(
+			screen.getByText("Your agent writes here").closest("[data-attr]"),
+		).toHaveAttribute("data-attr", "agent-panel");
+		expect(
+			screen.getByRole("button", { name: /start claude code/i }),
+		).toHaveAttribute("data-attr", "agent-start-claude");
+		expect(
+			screen.getByRole("button", { name: /use codex instead/i }),
+		).toHaveAttribute("data-attr", "agent-start-codex");
+	});
+
 	test("renders the empty state helper when nothing is open", () => {
 		const emptyPanel: PanelState = { views: [], activeInstance: null };
 
