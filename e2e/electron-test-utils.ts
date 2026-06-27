@@ -1,27 +1,11 @@
 import { expect, type Page } from "@playwright/test";
 import { _electron as electron, type ElectronApplication } from "playwright";
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..");
-
-/**
- * Seed a Track Changes (persistent `.lix`) workspace in `workspaceDir` before
- * launch, so the app opens a tracked folder that watches external edits — the
- * setup under which the external-write review actually runs. Delegates to a
- * child process because the seed loads the built Lix SDK via `require`, which
- * does not mix with the ESM test context.
- */
-export function seedTrackChangesWorkspace(workspaceDir: string): void {
-	execFileSync(
-		process.execPath,
-		[path.join(repoRoot, "e2e", "seed-lix-workspace.mjs"), workspaceDir],
-		{ stdio: "inherit" },
-	);
-}
 
 const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4173";
 const rendererUrl = `http://127.0.0.1:${rendererPort}`;
