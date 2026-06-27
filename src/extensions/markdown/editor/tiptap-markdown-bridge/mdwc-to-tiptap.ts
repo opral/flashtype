@@ -57,6 +57,11 @@ function astBlockToPM(node: any): PMNode {
 			const paragraphChildren = (node as any).children || [];
 			const isEmptyPlaceholder =
 				isEmptyParagraphPlaceholder(paragraphChildren);
+			const inlineChildren = isHardBreakOnlyParagraphPlaceholder(
+				paragraphChildren,
+			)
+				? paragraphChildren.slice(2)
+				: paragraphChildren;
 			return {
 				type: "paragraph",
 				attrs: {
@@ -68,7 +73,7 @@ function astBlockToPM(node: any): PMNode {
 				},
 				content: isEmptyPlaceholder
 					? []
-					: flattenInline(paragraphChildren, []),
+					: flattenInline(inlineChildren, []),
 			};
 		case "heading":
 			const headingData = buildNodeData((node as any).data);
@@ -213,6 +218,25 @@ function isEmptyParagraphPlaceholder(children: any[]): boolean {
 	);
 }
 
+function isHardBreakOnlyParagraphPlaceholder(children: any[]): boolean {
+	return (
+		children.length > 2 &&
+		children[0]?.type === "html" &&
+		children[0]?.value === "<span>" &&
+		children[1]?.type === "html" &&
+		children[1]?.value === "</span>" &&
+		children.slice(2).every(isHtmlHardBreak)
+	);
+}
+
+function isHtmlHardBreak(node: any): boolean {
+	return (
+		node?.type === "html" &&
+		typeof node.value === "string" &&
+		/^<br\s*\/?>$/i.test(node.value)
+	);
+}
+
 function buildNodeData(
 	data: Record<string, any> | null | undefined,
 	extras?: Record<string, unknown>,
@@ -310,6 +334,13 @@ function flattenInline(nodes: any[], active: PMMark[]): PMNode[] {
 				break;
 			case "html": {
 				const html = n as any;
+				if (isHtmlHardBreak(html)) {
+					out.push({
+						type: "hardBreak",
+						attrs: { data: html.data ?? null } as any,
+					});
+					break;
+				}
 				out.push({
 					type: "markdownInlineHtml",
 					attrs: { value: html.value ?? "", data: html.data ?? null },

@@ -182,7 +182,11 @@ export const MarkdownWcShortcuts = Extension.create({
 			if (!hardBreak) return false;
 
 			const { selection } = state;
-			const { $from, $to } = selection as any;
+			let tr = state.tr;
+			if (!selection.empty) {
+				tr = tr.deleteSelection();
+			}
+			const { $from, $to } = tr.selection as any;
 			if (!$from.sameParent($to) || !$from.parent?.isTextblock) {
 				return false;
 			}
@@ -191,8 +195,10 @@ export const MarkdownWcShortcuts = Extension.create({
 			}
 
 			const marks =
-				state.storedMarks ?? ($from.parentOffset ? $from.marks() : null);
-			const tr = state.tr.replaceSelectionWith(hardBreak.create());
+				tr.storedMarks ??
+				state.storedMarks ??
+				($from.parentOffset ? $from.marks() : null);
+			tr.replaceSelectionWith(hardBreak.create());
 			if (marks) tr.ensureMarks(marks);
 			view.dispatch(tr.scrollIntoView());
 			return true;

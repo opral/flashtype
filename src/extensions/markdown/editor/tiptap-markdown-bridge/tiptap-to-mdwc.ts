@@ -84,6 +84,12 @@ function emptyParagraphPlaceholderChildren(): any[] {
 	];
 }
 
+function anchorHardBreakOnlyParagraph(children: any[]): any[] {
+	return children.length > 0 && children.every(isHtmlHardBreak)
+		? [...emptyParagraphPlaceholderChildren(), ...children]
+		: children;
+}
+
 function pmBlockToAst(
 	node: PMNode,
 	options: { preserveEmptyParagraph?: boolean } = {},
@@ -91,7 +97,9 @@ function pmBlockToAst(
 	switch (node.type) {
 		case "paragraph":
 			const paraData = extractNodeData(node.attrs);
-			const inline = pmInlineToMd(node.content || []);
+			const inline = anchorHardBreakOnlyParagraph(
+				pmInlineToMd(node.content || []),
+			);
 			return {
 				type: "paragraph",
 				data: paraData.data,
@@ -224,11 +232,14 @@ function pmBlockToAst(
 
 function pmInlineToMd(nodes: PMNode[]): any[] {
 	const out: any[] = [];
-	for (const n of nodes) {
+	for (let index = 0; index < nodes.length; index += 1) {
+		const n = nodes[index];
 		if (n.type === "text") {
 			out.push(applyMarksToText(n.text || "", n.marks || []));
 		} else if (n.type === "hardBreak") {
-			const br: any = { type: "break" };
+			const br: any = isTrailingHardBreak(nodes, index)
+				? { type: "html", value: "<br>" }
+				: { type: "break" };
 			if (n.attrs?.data != null) br.data = n.attrs.data;
 			out.push(br as any);
 		} else if (n.type === "markdownInlineHtml") {
@@ -247,6 +258,21 @@ function pmInlineToMd(nodes: PMNode[]): any[] {
 		}
 	}
 	return out;
+}
+
+function isTrailingHardBreak(nodes: PMNode[], index: number): boolean {
+	for (let nextIndex = index + 1; nextIndex < nodes.length; nextIndex += 1) {
+		if (nodes[nextIndex]?.type !== "hardBreak") return false;
+	}
+	return true;
+}
+
+function isHtmlHardBreak(node: any): boolean {
+	return (
+		node?.type === "html" &&
+		typeof node.value === "string" &&
+		/^<br\s*\/?>$/i.test(node.value)
+	);
 }
 
 function applyMarksToText(value: string, marks: PMMark[]): any {

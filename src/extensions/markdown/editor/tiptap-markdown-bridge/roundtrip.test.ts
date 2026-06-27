@@ -75,10 +75,19 @@ function renderInlinePlainText(node: any): string {
 		return typeof node.value === "string" ? node.value : "";
 	}
 	if (node.type === "break") return "\n";
+	if (isHtmlHardBreak(node)) return "\n";
 	if (Array.isArray(node.children)) {
 		return node.children.map(renderInlinePlainText).join("");
 	}
 	return "";
+}
+
+function isHtmlHardBreak(node: any): boolean {
+	return (
+		node?.type === "html" &&
+		typeof node.value === "string" &&
+		/^<br\s*\/?>$/i.test(node.value)
+	);
 }
 
 function isEmptyParagraphPlaceholder(children: any[]): boolean {
@@ -155,6 +164,48 @@ describe("root & paragraph", () => {
 		expect(pmDoc.content?.[0]?.type).toBe("paragraph");
 		expect(pmDoc.content?.[0]?.content ?? []).toEqual([]);
 		expect(serializeAst(tiptapDocToAst(pmDoc))).toBe("<span></span>\n");
+	});
+
+	test("trailing hard break serializes as inline br and parses back", () => {
+		const markdown = serializeAst(
+			tiptapDocToAst({
+				type: "doc",
+				content: [
+					{
+						type: "paragraph",
+						content: [
+							{ type: "text", text: "x" },
+							{ type: "hardBreak" },
+						],
+					},
+				],
+			}),
+		);
+		const pmDoc = astToTiptapDoc(parseMarkdown(markdown));
+
+		expect(markdown).toBe("x<br>\n");
+		expect(renderPlainText(parseMarkdown(markdown))).toBe("x\n");
+		expect(pmDoc.content?.[0]?.content?.[1]?.type).toBe("hardBreak");
+	});
+
+	test("hard-break-only paragraph keeps a paragraph anchor", () => {
+		const markdown = serializeAst(
+			tiptapDocToAst({
+				type: "doc",
+				content: [
+					{
+						type: "paragraph",
+						content: [{ type: "hardBreak" }],
+					},
+				],
+			}),
+		);
+		const pmDoc = astToTiptapDoc(parseMarkdown(markdown));
+
+		expect(markdown).toBe("<span></span><br>\n");
+		expect(renderPlainText(parseMarkdown(markdown))).toBe("\n");
+		expect(pmDoc.content?.[0]?.type).toBe("paragraph");
+		expect(pmDoc.content?.[0]?.content?.[0]?.type).toBe("hardBreak");
 	});
 
 	test("untouched empty document scaffold serializes as empty markdown", () => {

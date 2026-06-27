@@ -43,8 +43,23 @@ test(
 		try {
 			for (let index = 0; index < OPERATION_COUNT; index += 1) {
 				const operation = nextOperation(rng, state);
-				applyOperationToEditor(editor, state, operation);
-				applyOperationToSimplifiedState(state, operation);
+				try {
+					applyOperationToEditor(editor, state, operation);
+					applyOperationToSimplifiedState(state, operation);
+				} catch (error) {
+					throw new Error(
+						[
+							"Markdown editor fuzz operation failed.",
+							`seed=${seed}`,
+							`operationIndex=${index}`,
+							`operation=${JSON.stringify(operation)}`,
+							`selection=${state.anchor}:${state.head}`,
+							`simplified=${JSON.stringify(state.chars.join(""))}`,
+							`doc=${JSON.stringify(editor.getJSON())}`,
+							`cause=${error instanceof Error ? error.message : String(error)}`,
+						].join("\n"),
+					);
+				}
 				assertMarkdownPlainTextMatches(editor, state, seed, index, operation);
 			}
 		} finally {
@@ -234,7 +249,9 @@ function typeEditorText(editor: Editor, value: string): void {
 	const { from, to } = editor.state.selection;
 	let handled = false;
 	editor.view.someProp("handleTextInput", (handler: any) => {
-		handled = handler(editor.view, from, to, value) || handled;
+		const result = handler(editor.view, from, to, value);
+		handled = result || handled;
+		return result;
 	});
 	if (!handled) {
 		editor.commands.insertContent(value);
@@ -254,7 +271,9 @@ function sendEditorKey(
 	});
 	let handled = false;
 	editor.view.someProp("handleKeyDown", (handler: any) => {
-		handled = handler(editor.view, event) || handled;
+		const result = handler(editor.view, event);
+		handled = result || handled;
+		return result;
 	});
 	if (!handled) {
 		throw new Error(`Editor did not handle key: ${key}`);
@@ -314,10 +333,19 @@ function renderInlinePlainText(node: any): string {
 		return typeof node.value === "string" ? node.value : "";
 	}
 	if (node.type === "break") return HARD_BREAK;
+	if (isHtmlHardBreak(node)) return HARD_BREAK;
 	if (Array.isArray(node.children)) {
 		return node.children.map(renderInlinePlainText).join("");
 	}
 	return "";
+}
+
+function isHtmlHardBreak(node: any): boolean {
+	return (
+		node?.type === "html" &&
+		typeof node.value === "string" &&
+		/^<br\s*\/?>$/i.test(node.value)
+	);
 }
 
 function isEmptyParagraphPlaceholder(children: any[]): boolean {
