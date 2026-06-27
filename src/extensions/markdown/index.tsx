@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, ExternalLink, FileText, Github, Loader2 } from "lucide-react";
 import {
@@ -59,6 +59,7 @@ type MarkdownViewProps = {
 	}) => Promise<void>;
 	readonly onResolveReviewDiff?: (
 		resolution: GranularReviewResolution,
+		review?: ExternalWriteReview,
 	) => Promise<GranularReviewResolutionOutcome>;
 	readonly onRegisterReviewGuard?: (guard: ReviewGuard) => () => void;
 	readonly onReviewPendingChange?: (
@@ -327,6 +328,7 @@ function MarkdownReviewOverlay({
 	}) => Promise<void>;
 	readonly onResolve?: (
 		resolution: GranularReviewResolution,
+		review?: ExternalWriteReview,
 	) => Promise<GranularReviewResolutionOutcome>;
 	readonly onRegisterReviewGuard?: (guard: ReviewGuard) => () => void;
 	readonly onReviewPendingChange?: (
@@ -428,6 +430,13 @@ function MarkdownReviewOverlay({
 		};
 	}, [isGranular, onRegisterReviewGuard, onReviewPendingChange, reviewId, fileId]);
 
+	// Bind this overlay's live review into the resolve call so the shell can clear
+	// it even if a sibling panel showing the same file cleared the shared ref.
+	const resolveWithReview = useCallback(
+		(resolution: GranularReviewResolution) => onResolve!(resolution, review),
+		[onResolve, review],
+	);
+
 	const controls =
 		isGranular && eligibility?.status === "safe" ? (
 			<MarkdownReviewStepper
@@ -438,7 +447,7 @@ function MarkdownReviewOverlay({
 				afterData={afterData}
 				isActive={isActive}
 				diffContainerRef={diffContainerRef}
-				onResolve={onResolve!}
+				onResolve={resolveWithReview}
 				onPendingDecisionsChange={(hasPending) => {
 					pendingDecisionsRef.current = hasPending;
 					onReviewPendingChange?.(reviewId, hasPending);

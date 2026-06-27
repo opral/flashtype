@@ -16,6 +16,8 @@ export type ReviewGuardRegistry = {
 	register: (guard: ReviewGuard) => () => void;
 	/** The first registered guard that currently has pending decisions, if any. */
 	pendingGuard: () => ReviewGuard | null;
+	/** Every registered guard that currently has pending decisions. */
+	pendingGuards: () => ReviewGuard[];
 	hasPendingDecisions: () => boolean;
 };
 
@@ -33,6 +35,13 @@ export function createReviewGuardRegistry(): ReviewGuardRegistry {
 				if (guard.hasPendingDecisions()) return guard;
 			}
 			return null;
+		},
+		pendingGuards() {
+			const pending: ReviewGuard[] = [];
+			for (const guard of guards) {
+				if (guard.hasPendingDecisions()) pending.push(guard);
+			}
+			return pending;
 		},
 		hasPendingDecisions() {
 			for (const guard of guards) {

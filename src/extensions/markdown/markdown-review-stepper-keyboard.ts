@@ -23,6 +23,11 @@ export function useReviewStepperShortcuts({
 		if (!active) return;
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (event.defaultPrevented) return;
+			// Yield every shortcut while a modal dialog (e.g. the abandon-review
+			// prompt) is open: it owns the keyboard, and this window-level capture
+			// handler would otherwise intercept Escape/⌘Enter before the dialog and
+			// mutate the review underneath it.
+			if (document.querySelector('[aria-modal="true"]')) return;
 			const usesPrimaryModifier =
 				event.metaKey || (event.ctrlKey && !event.metaKey);
 			if (event.altKey && !event.metaKey && !event.ctrlKey) {

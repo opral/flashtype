@@ -42,4 +42,18 @@ describe("createReviewGuardRegistry", () => {
 		registry.register(guard("dirty", () => true));
 		expect(registry.pendingGuard()?.reviewId).toBe("dirty");
 	});
+
+	test("pendingGuards returns every guard with pending decisions", () => {
+		const registry = createReviewGuardRegistry();
+		registry.register(guard("a", () => true));
+		registry.register(guard("clean", () => false));
+		registry.register(guard("b", () => true));
+		expect(registry.pendingGuards().map((g) => g.reviewId)).toEqual(["a", "b"]);
+	});
+
+	test("pendingGuards is empty when nothing is pending", () => {
+		const registry = createReviewGuardRegistry();
+		registry.register(guard("clean", () => false));
+		expect(registry.pendingGuards()).toEqual([]);
+	});
 });

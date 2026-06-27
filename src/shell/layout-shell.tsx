@@ -1681,10 +1681,17 @@ function LayoutShellLoadedContent({
 	const handleResolveExternalWriteReviewGranular = useCallback(
 		async (
 			resolution: GranularReviewResolution,
+			activeReview?: ExternalWriteReview,
 		): Promise<GranularReviewResolutionOutcome> => {
+			// Prefer the review the resolving overlay passes in (it is the live
+			// source of truth) over the open-review ref, which a sibling panel
+			// showing the same file can clear on unmount. Without this, the apply
+			// would succeed but the agent-turn range would never be cleared, leaving
+			// the review stuck. Mirrors how accept/reject pass their review through.
 			const review = getExternalWriteReviewForFile({
 				fileId: resolution.fileId,
 				reviewId: resolution.reviewId,
+				review: activeReview,
 			});
 			if (review && diffResolvedReviewIdsRef.current.has(review.reviewId)) {
 				return "accepted_existing";
@@ -1752,24 +1759,35 @@ function LayoutShellLoadedContent({
 		window.flashtypeDesktop?.reviewGuard?.setPending?.(anyReviewPending);
 	}, [anyReviewPending]);
 
-	// Answer the main process's window-close query: prompt only when a review
-	// holds partial decisions, otherwise allow the close immediately.
+	// Answer the main process's window-close query: prompt for each review that
+	// holds partial decisions, one after another, and only allow the close once
+	// none remain. A single window can hold several such reviews (e.g. one per
+	// panel), so prompting only the first would silently discard the rest.
 	useEffect(() => {
 		const desktop = window.flashtypeDesktop;
 		if (!desktop?.reviewGuard) return;
 		return desktop.reviewGuard.onCloseQuery(({ queryId }) => {
 			const respond = (decision: "allow" | "cancel") =>
 				desktop.reviewGuard.respondClose({ queryId, decision });
-			const pending = reviewGuardRegistryRef.current.pendingGuard();
-			if (!pending) {
-				respond("allow");
-				return;
-			}
-			setAbandonDialog({
-				guard: pending,
-				continuation: () => respond("allow"),
-				onCancel: () => respond("cancel"),
-			});
+			// Track guards already resolved in this sequence so the brief async gap
+			// before an overlay unmounts can't make us re-prompt the same review.
+			const handled = new Set<string>();
+			const promptNext = () => {
+				const next = reviewGuardRegistryRef.current
+					.pendingGuards()
+					.find((guard) => !handled.has(guard.reviewId));
+				if (!next) {
+					respond("allow");
+					return;
+				}
+				handled.add(next.reviewId);
+				setAbandonDialog({
+					guard: next,
+					continuation: promptNext,
+					onCancel: () => respond("cancel"),
+				});
+			};
+			promptNext();
 		});
 	}, []);
 

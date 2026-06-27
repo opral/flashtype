@@ -162,6 +162,7 @@ export interface ExtensionContext {
 	) => () => void;
 	readonly resolveExternalWriteReviewGranular?: (
 		resolution: GranularReviewResolution,
+		review?: ExternalWriteReview,
 	) => Promise<GranularReviewResolutionOutcome>;
 	readonly registerExternalWriteReviewGuard?: (
 		guard: ReviewGuard,
