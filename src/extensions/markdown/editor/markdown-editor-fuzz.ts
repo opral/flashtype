@@ -33,7 +33,8 @@ export type MarkdownFuzzSnapshot = {
 	markdown: string;
 	plainText: string;
 	editorJson: unknown;
-	positionCount: number;
+	docSize: number;
+	positions: number[];
 	domSelection: SimplifiedSelection | null;
 	selection: SimplifiedSelection | null;
 };
@@ -318,33 +319,94 @@ export function validateEditorPositionMap(
 	state: SimplifiedState,
 ): void {
 	const positions = simplifiedOffsetPositions(editor);
-	if (positions.length === state.chars.length + 1) return;
+	const docSize = editor.state.doc.content.size;
+	const reason = validateSimplifiedPositionMap({ state, positions, docSize });
+	if (!reason) return;
 
 	throw new Error(
 		[
 			"Editor position map does not match simplified state.",
-			`expectedOffsets=${state.chars.length + 1}`,
-			`actualOffsets=${positions.length}`,
+			reason,
 			`simplified=${JSON.stringify(expectedPlainText(state))}`,
 			`doc=${JSON.stringify(editor.getJSON())}`,
 		].join("\n"),
 	);
 }
 
+export function validateSimplifiedPositionMap(args: {
+	state: SimplifiedState;
+	positions: number[];
+	docSize: number;
+}): string | null {
+	const expectedOffsets = args.state.chars.length + 1;
+	if (args.positions.length !== expectedOffsets) {
+		return [
+			"Position map length does not match simplified state.",
+			`expectedOffsets=${expectedOffsets}`,
+			`actualOffsets=${args.positions.length}`,
+			`docSize=${args.docSize}`,
+		].join("\n");
+	}
+
+	let previous: number | null = null;
+	for (let index = 0; index < expectedOffsets; index += 1) {
+		if (!Object.prototype.hasOwnProperty.call(args.positions, index)) {
+			return [
+				"Position map has a hole.",
+				`offset=${index}`,
+				`expectedOffsets=${expectedOffsets}`,
+				`docSize=${args.docSize}`,
+			].join("\n");
+		}
+
+		const position = args.positions[index];
+		if (!Number.isInteger(position)) {
+			return [
+				"Position map contains a non-integer position.",
+				`offset=${index}`,
+				`position=${String(position)}`,
+				`docSize=${args.docSize}`,
+			].join("\n");
+		}
+
+		if (position < 0 || position > args.docSize) {
+			return [
+				"Position map contains a position outside the document.",
+				`offset=${index}`,
+				`position=${position}`,
+				`docSize=${args.docSize}`,
+			].join("\n");
+		}
+
+		if (previous != null && position <= previous) {
+			return [
+				"Position map is not strictly increasing.",
+				`offset=${index}`,
+				`previousPosition=${previous}`,
+				`position=${position}`,
+				`docSize=${args.docSize}`,
+			].join("\n");
+		}
+
+		previous = position;
+	}
+
+	return null;
+}
+
 export function validateSimplifiedSelectionInvariant(args: {
 	state: SimplifiedState;
-	positionCount: number;
+	positions: number[];
+	docSize: number;
 	domSelection?: MarkdownFuzzSnapshot["domSelection"];
 	selection: MarkdownFuzzSnapshot["selection"];
 }): string | null {
-	const expectedPositionCount = args.state.chars.length + 1;
-	if (args.positionCount !== expectedPositionCount) {
-		return [
-			"Editor position map does not match simplified state.",
-			`expectedOffsets=${expectedPositionCount}`,
-			`actualOffsets=${args.positionCount}`,
-		].join("\n");
-	}
+	const positionMapReason = validateSimplifiedPositionMap({
+		state: args.state,
+		positions: args.positions,
+		docSize: args.docSize,
+	});
+	if (positionMapReason) return positionMapReason;
 
 	if (args.domSelection !== undefined) {
 		const domReason = validateSelectionMatchesState(
@@ -411,7 +473,8 @@ export function buildSelectionInvariantFailureMessage(args: {
 	operation: FuzzOperation;
 	state: SimplifiedState;
 	reason: string;
-	positionCount: number;
+	positions: number[];
+	docSize: number;
 	domSelection?: MarkdownFuzzSnapshot["domSelection"];
 	selection: MarkdownFuzzSnapshot["selection"];
 	editorJson?: unknown;
@@ -426,7 +489,8 @@ export function buildSelectionInvariantFailureMessage(args: {
 			? null
 			: `domSelection=${formatSelection(args.domSelection)}`,
 		`editorSelection=${formatSelection(args.selection)}`,
-		`positionCount=${args.positionCount}`,
+		`positionCount=${args.positions.length}`,
+		`docSize=${args.docSize}`,
 		`simplified=${JSON.stringify(expectedPlainText(args.state))}`,
 		`reason=${args.reason}`,
 		args.editorJson === undefined

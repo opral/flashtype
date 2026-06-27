@@ -87,7 +87,8 @@ function assertSnapshotSelectionMatches(
 ): void {
 	const reason = validateSimplifiedSelectionInvariant({
 		state,
-		positionCount: snapshot.positionCount,
+		positions: snapshot.positions,
+		docSize: snapshot.docSize,
 		domSelection: snapshot.domSelection,
 		selection: snapshot.selection,
 	});
@@ -101,7 +102,8 @@ function assertSnapshotSelectionMatches(
 			operation,
 			state,
 			reason,
-			positionCount: snapshot.positionCount,
+			positions: snapshot.positions,
+			docSize: snapshot.docSize,
 			domSelection: snapshot.domSelection,
 			selection: snapshot.selection,
 			editorJson: snapshot.editorJson,

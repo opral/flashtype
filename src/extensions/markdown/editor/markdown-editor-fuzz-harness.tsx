@@ -72,12 +72,14 @@ function createMarkdownFuzzApi(editor: Editor): MarkdownEditorFuzzHarnessApi {
 		snapshot() {
 			const domSelection = simplifiedSelectionFromDom(editor);
 			syncEditorSelectionFromDom(editor);
+			const positions = simplifiedOffsetPositions(editor);
 			const markdown = buildMarkdownFromEditor(editor);
 			return {
 				markdown,
 				plainText: renderPlainTextFromMarkdown(markdown),
 				editorJson: editor.getJSON(),
-				positionCount: simplifiedOffsetPositions(editor).length,
+				docSize: editor.state.doc.content.size,
+				positions,
 				domSelection,
 				selection: simplifiedSelectionFromEditor(editor),
 			};

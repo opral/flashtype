@@ -169,11 +169,12 @@ function assertEditorSelectionMatches(
 	index: number,
 	operation: FuzzOperation,
 ): void {
-	const positionCount = simplifiedOffsetPositions(editor).length;
+	const positions = simplifiedOffsetPositions(editor);
 	const selection = simplifiedSelectionFromEditor(editor);
 	const reason = validateSimplifiedSelectionInvariant({
 		state,
-		positionCount,
+		positions,
+		docSize: editor.state.doc.content.size,
 		selection,
 	});
 
@@ -186,7 +187,8 @@ function assertEditorSelectionMatches(
 			operation,
 			state,
 			reason,
-			positionCount,
+			positions,
+			docSize: editor.state.doc.content.size,
 			selection,
 			editorJson: editor.getJSON(),
 		}),
