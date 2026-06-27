@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { ExternalWriteReviewData } from "@/extension-runtime/external-write-review";
 import { parseCsv, renderCsvReviewDiffHtml } from "./index";
 
 describe("parseCsv", () => {
@@ -36,10 +37,10 @@ describe("parseCsv", () => {
 });
 
 describe("renderCsvReviewDiffHtml", () => {
-	const review = (beforeCsv: string, afterCsv: string) => ({
-		fileId: "file_csv",
-		path: "/data.csv",
-		reviewId: "review_csv",
+	const review = (
+		beforeCsv: string,
+		afterCsv: string,
+	): ExternalWriteReviewData => ({
 		beforeData: new TextEncoder().encode(beforeCsv),
 		afterData: new TextEncoder().encode(afterCsv),
 	});

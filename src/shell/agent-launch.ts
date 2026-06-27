@@ -2,32 +2,19 @@ import type {
 	ExtensionLaunchArgs,
 	ExtensionState,
 } from "../extension-runtime/types";
+import {
+	buildAgentTerminalLaunchArgs,
+	TERMINAL_INITIAL_COMMAND_LAUNCH_ARG,
+} from "@/extension-runtime/agent-terminal-command";
 
-export const TERMINAL_INITIAL_COMMAND_LAUNCH_ARG = "initialCommand";
-
-const FLASHTYPE_AGENT_ICONS = new Set(["claude", "codex"]);
+export { TERMINAL_INITIAL_COMMAND_LAUNCH_ARG };
 
 export function buildAgentLaunchArgsWithActiveFile(args: {
 	readonly state?: ExtensionState;
 	readonly activeFilePath?: string | null;
 }): ExtensionLaunchArgs | undefined {
-	const command =
-		typeof args.state?.command === "string" ? args.state.command : null;
-	const agentIcon = args.state?.flashtype?.icon;
-	if (!command || !agentIcon || !FLASHTYPE_AGENT_ICONS.has(agentIcon)) {
-		return undefined;
-	}
 	const prompt = buildFlashtypeActiveFilePrompt(args.activeFilePath);
-	if (!prompt) {
-		return undefined;
-	}
-	return {
-		[TERMINAL_INITIAL_COMMAND_LAUNCH_ARG]: buildAgentCommandWithPrompt({
-			command,
-			agentIcon,
-			prompt,
-		}),
-	};
+	return buildAgentTerminalLaunchArgs({ state: args.state, prompt });
 }
 
 export function buildFlashtypeActiveFilePrompt(
@@ -38,22 +25,6 @@ export function buildFlashtypeActiveFilePrompt(
 		return null;
 	}
 	return `The user is using Flashtype.com. The active file right now, which may change later, is: ${promptPath}`;
-}
-
-function buildAgentCommandWithPrompt(args: {
-	readonly command: string;
-	readonly agentIcon: string;
-	readonly prompt: string;
-}): string {
-	if (args.agentIcon === "claude") {
-		return `${args.command} --append-system-prompt ${shellQuote(args.prompt)}`;
-	}
-	if (args.agentIcon === "codex") {
-		return `${args.command} -c ${shellQuote(
-			`developer_instructions=${JSON.stringify(args.prompt)}`,
-		)}`;
-	}
-	return args.command;
 }
 
 function normalizePromptFilePath(
@@ -70,8 +41,4 @@ function normalizePromptFilePath(
 		return `.${trimmed}`;
 	}
 	return `./${trimmed}`;
-}
-
-function shellQuote(value: string): string {
-	return `'${value.replace(/'/g, `'\\''`)}'`;
 }

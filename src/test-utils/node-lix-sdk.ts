@@ -54,7 +54,7 @@ export async function createFsBackend(options: {
 	path: string;
 }): Promise<NonNullable<SdkOpenLixOptions["backend"]>> {
 	const sdk = await loadSdk();
-	return new sdk.FsBackend({ path: options.path });
+	return new sdk.FsBackend({ path: options.path, syncAllFiles: true });
 }
 
 async function loadSdk(): Promise<SdkModule> {
@@ -213,6 +213,12 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 		},
 		async switchBranch(options) {
 			return await runQueued(() => sdkLix.switchBranch(options));
+		},
+		async importFilesystemPaths(paths) {
+			await sdkLix.importFilesystemPaths(paths);
+		},
+		async syncDiskToLix() {
+			await sdkLix.syncDiskToLix();
 		},
 		async mergeBranchPreview(options) {
 			return await runQueued(() => sdkLix.mergeBranchPreview(options));

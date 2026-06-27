@@ -1,15 +1,22 @@
+import { useEffect, useMemo, useState } from "react";
 import type { Lix } from "@/lib/lix-types";
+import { useLix, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
-import { hashFileData } from "@/extension-runtime/external-write-tracking";
-import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
-import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
-import { loadMarkdownBlocksAtCommit } from "@/extensions/markdown/markdown-block-history";
+import type {
+	ExternalWriteReview,
+	ExternalWriteReviewData,
+} from "@/extension-runtime/external-write-review";
+import {
+	AGENT_TURN_COMMIT_RANGE_KEY,
+	agentTurnReviewId,
+	isAgentTurnCommitRangeStore,
+	readAgentTurnCommitRanges,
+	type AgentTurnCommitRange,
+} from "./agent-turn-review-range";
 
 type FileHistoryRow = {
 	readonly data: unknown;
-	readonly lixcol_depth: number | null;
-	readonly lixcol_observed_commit_id: string | null;
 };
 
 export async function getExternalWriteReview(
@@ -17,78 +24,181 @@ export async function getExternalWriteReview(
 	fileId: string,
 	path: string,
 ): Promise<ExternalWriteReview | null> {
-	const rows = await getHistoryRows(lix, fileId);
-	if (!rows || rows.history.length < 2) return null;
-	const afterData = decodeFileDataToBytes(rows.history[0]?.data);
-	const beforeData = decodeFileDataToBytes(rows.history[1]?.data);
-	const afterCommitId =
-		rows.history[0]?.lixcol_observed_commit_id ?? rows.startCommitId;
-	const beforeCommitId =
-		rows.history[1]?.lixcol_observed_commit_id ?? undefined;
+	const ranges = await readAgentTurnCommitRanges(lix);
+	return getAgentTurnExternalWriteReview(lix, fileId, path, ranges);
+}
 
-	// Capture the before/after block snapshots now, while these commits are still
-	// convenient to query. A coalescing fold keeps the original before-side, so
-	// granular review survives even after that commit sinks deeper in history.
-	const markdown = isMarkdownFilePath(path)
-		? {
-				markdownBeforeBlocks: await loadMarkdownBlocksAtCommit(
-					lix,
-					fileId,
-					beforeCommitId,
-				),
-				markdownAfterBlocks: await loadMarkdownBlocksAtCommit(
-					lix,
-					fileId,
-					afterCommitId,
-				),
-			}
-		: undefined;
+export function useExternalWriteReview(args: {
+	readonly fileId?: string | null;
+	readonly path?: string | null;
+}): ExternalWriteReview | null {
+	const lix = useLix();
+	const rangeRow = useQueryTakeFirst<{ value: unknown }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select("value")
+			.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
+			.where("lixcol_branch_id", "=", "global")
+			.limit(1),
+	);
+	const ranges = useMemo(
+		() =>
+			isAgentTurnCommitRangeStore(rangeRow?.value) ? rangeRow.value.ranges : [],
+		[rangeRow?.value],
+	);
+	const [review, setReview] = useState<ExternalWriteReview | null>(null);
 
+	useEffect(() => {
+		let cancelled = false;
+		setReview(null);
+		if (!args.fileId || !args.path || ranges.length === 0) {
+			return;
+		}
+		void getAgentTurnExternalWriteReview(lix, args.fileId, args.path, ranges)
+			.then((nextReview) => {
+				if (!cancelled) {
+					setReview(nextReview);
+				}
+			})
+			.catch((error: unknown) => {
+				if (!cancelled) {
+					console.warn("[agent-turn-review] failed to load review", error);
+					setReview(null);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [lix, args.fileId, args.path, ranges]);
+
+	if (!review) {
+		return null;
+	}
+	return review;
+}
+
+export function useExternalWriteReviewData(
+	review: ExternalWriteReview | null | undefined,
+): ExternalWriteReviewData | null {
+	const lix = useLix();
+	const [data, setData] = useState<ExternalWriteReviewData | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		setData(null);
+		if (!review) {
+			return;
+		}
+		void getExternalWriteReviewData(lix, review)
+			.then((nextData) => {
+				if (!cancelled) {
+					setData(nextData);
+				}
+			})
+			.catch((error: unknown) => {
+				if (!cancelled) {
+					console.warn("[agent-turn-review] failed to load review data", error);
+					setData(null);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [lix, review]);
+
+	return data;
+}
+
+export async function getExternalWriteReviewData(
+	lix: Lix,
+	review: ExternalWriteReview,
+): Promise<ExternalWriteReviewData | null> {
+	const [beforeData, afterData] = await Promise.all([
+		getFileDataAtCommit(lix, review.fileId, review.beforeCommitId),
+		getFileDataAtCommit(lix, review.fileId, review.afterCommitId),
+	]);
+	if (!beforeData || !afterData) return null;
+	return { beforeData, afterData };
+}
+
+export async function getFileDataAtCommit(
+	lix: Lix,
+	fileId: string,
+	commitId: string,
+): Promise<Uint8Array | null> {
+	const snapshot = await getFileHistorySnapshotAtCommit(lix, fileId, commitId);
+	return snapshot ? decodeFileDataToBytes(snapshot.data) : null;
+}
+
+async function getAgentTurnExternalWriteReview(
+	lix: Lix,
+	fileId: string,
+	path: string,
+	ranges: readonly AgentTurnCommitRange[],
+): Promise<ExternalWriteReview | null> {
+	const relevantRanges: AgentTurnCommitRange[] = [];
+	for (const range of ranges) {
+		if (range.beforeCommitId === range.afterCommitId) continue;
+		if (range.clearedFileIds?.includes(fileId)) continue;
+		const data = await getRangeFileData(lix, fileId, range);
+		if (!data) continue;
+		if (fileBytesEqual(data.beforeData, data.afterData)) continue;
+		relevantRanges.push(range);
+	}
+	if (relevantRanges.length === 0) return null;
+	const firstRange = relevantRanges[0];
+	const lastRange = relevantRanges[relevantRanges.length - 1];
+	if (!firstRange || !lastRange) return null;
+	const [beforeData, afterData] = await Promise.all([
+		getFileDataAtCommit(lix, fileId, firstRange.beforeCommitId),
+		getFileDataAtCommit(lix, fileId, lastRange.afterCommitId),
+	]);
+	if (!beforeData || !afterData) return null;
+	if (fileBytesEqual(beforeData, afterData)) return null;
+	const rangeIds = relevantRanges.map((range) => range.id);
 	return {
 		fileId,
 		path,
-		reviewId: `${fileId}:${hashFileData(beforeData)}:${hashFileData(afterData)}`,
-		afterData,
-		beforeData,
-		afterCommitId,
-		beforeCommitId,
-		afterDepth:
-			typeof rows.history[0]?.lixcol_depth === "number"
-				? rows.history[0].lixcol_depth
-				: undefined,
-		beforeDepth:
-			typeof rows.history[1]?.lixcol_depth === "number"
-				? rows.history[1].lixcol_depth
-				: undefined,
-		markdownBeforeBlocks: markdown?.markdownBeforeBlocks,
-		markdownAfterBlocks: markdown?.markdownAfterBlocks,
+		reviewId: agentTurnReviewId(fileId, rangeIds),
+		beforeCommitId: firstRange.beforeCommitId,
+		afterCommitId: lastRange.afterCommitId,
+		agentTurnRangeIds: rangeIds,
 	};
 }
 
-async function getHistoryRows(
+async function getRangeFileData(
 	lix: Lix,
 	fileId: string,
-): Promise<{ startCommitId: string; history: FileHistoryRow[] } | null> {
-	const activeBranchId = await lix.activeBranchId();
-	const branch = await qb(lix)
-		.selectFrom("lix_branch")
-		.select("commit_id")
-		.where("id", "=", activeBranchId)
-		.limit(1)
-		.executeTakeFirst();
+	range: AgentTurnCommitRange,
+): Promise<ExternalWriteReviewData | null> {
+	const [beforeData, afterData] = await Promise.all([
+		getFileDataAtCommit(lix, fileId, range.beforeCommitId),
+		getFileDataAtCommit(lix, fileId, range.afterCommitId),
+	]);
+	if (!beforeData || !afterData) return null;
+	return { beforeData, afterData };
+}
 
-	const startCommitId = branch?.commit_id;
-	if (typeof startCommitId !== "string" || startCommitId.length === 0) {
-		return null;
-	}
-
-	const history = (await qb(lix)
+async function getFileHistorySnapshotAtCommit(
+	lix: Lix,
+	fileId: string,
+	commitId: string,
+): Promise<FileHistoryRow | null> {
+	const row = (await qb(lix)
 		.selectFrom("lix_file_history")
-		.select(["data", "lixcol_depth", "lixcol_observed_commit_id"])
-		.where("lixcol_start_commit_id", "=", startCommitId)
+		.select("data")
+		.where("lixcol_start_commit_id", "=", commitId)
 		.where("id", "=", fileId)
 		.orderBy("lixcol_depth", "asc")
-		.limit(2)
-		.execute()) as FileHistoryRow[];
-	return { startCommitId, history };
+		.limit(1)
+		.executeTakeFirst()) as FileHistoryRow | undefined;
+	return row ?? null;
+}
+
+function fileBytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+	if (left.byteLength !== right.byteLength) return false;
+	for (let index = 0; index < left.byteLength; index += 1) {
+		if (left[index] !== right[index]) return false;
+	}
+	return true;
 }

@@ -4,11 +4,6 @@ import {
 	bundledPluginArchives,
 	type Lix,
 } from "@/test-utils/node-lix-sdk";
-import { getExternalWriteReview } from "@/shell/external-write-review-history";
-import {
-	consumeRecentFlashtypeFileWrite,
-	hashFileData,
-} from "@/extension-runtime/external-write-tracking";
 import type { GranularReviewResolution } from "@/extension-runtime/external-write-review";
 import {
 	applyGranularReviewResolution,
@@ -29,17 +24,14 @@ async function openReviewFixture(): Promise<Fixture> {
 	const lix = await openLix();
 	await installBundledPlugins(lix);
 	const path = "/fixtures/resolution.md";
-	await writeFile(lix, path, "# Title\n\nAlpha.\n\nBeta.\n");
+	const beforeData = enc("# Title\n\nAlpha.\n\nBeta.\n");
+	const afterData = enc("# Title\n\nAlpha edited.\n\nBeta edited.\n");
+	await writeFile(lix, path, dec(beforeData));
 	const fileId = await fileIdByPath(lix, path);
-	await writeFile(lix, path, "# Title\n\nAlpha edited.\n\nBeta edited.\n");
-	const review = await getExternalWriteReview(lix, fileId, path);
-	if (!review) throw new Error("expected review");
-	return {
-		lix,
-		fileId,
-		beforeData: review.beforeData,
-		afterData: review.afterData,
-	};
+	// Bring the file to the review's after-state, as an agent write would, so the
+	// resolution's stale compare-and-write runs against the after-state.
+	await writeFile(lix, path, dec(afterData));
+	return { lix, fileId, beforeData, afterData };
 }
 
 function resolution(
@@ -206,29 +198,6 @@ describe("applyGranularReviewResolution", () => {
 		}
 	});
 
-	test("an applied write registers an exact self-write marker consumed once", async () => {
-		const fixture = await openReviewFixture();
-		try {
-			const resolvedData = enc("# Title\n\nAlpha edited.\n\nBeta.\n");
-			await applyGranularReviewResolution(
-				fixture.lix,
-				resolution(fixture, {
-					resolvedData,
-					acceptedCount: 1,
-					rejectedCount: 1,
-				}),
-			);
-			const hash = hashFileData(resolvedData);
-			expect(consumeRecentFlashtypeFileWrite(fixture.fileId, "00000000")).toBe(
-				false,
-			);
-			expect(consumeRecentFlashtypeFileWrite(fixture.fileId, hash)).toBe(true);
-			expect(consumeRecentFlashtypeFileWrite(fixture.fileId, hash)).toBe(false);
-		} finally {
-			await fixture.lix.close();
-		}
-	});
-
 	test("telemetry properties are aggregate and content-free", () => {
 		const props = granularResolutionTelemetry({
 			acceptedCount: 2,
@@ -254,11 +223,11 @@ describe("applyGranularReviewResolution", () => {
 		expect(Object.values(props).every((v) => typeof v !== "object")).toBe(true);
 	});
 
-	test("a failed transaction cancels the self-write marker", async () => {
+	test("a failed transaction reports failed and writes nothing", async () => {
 		const fileId = "failing-file";
 		const resolvedData = enc("# Title\n\nMixed.\n");
 		const afterData = enc("# Title\n\nAfter.\n");
-		// Fake lix whose UPDATE throws after the marker is registered.
+		// Fake lix whose UPDATE throws so the resolution cannot be persisted.
 		const fakeLix = {
 			async transaction<T>(
 				callback: (tx: {
@@ -290,10 +259,6 @@ describe("applyGranularReviewResolution", () => {
 			usedRemainingAction: false,
 		});
 		expect(result.outcome).toBe("failed");
-		// The marker must have been canceled, so nothing is consumable.
-		expect(
-			consumeRecentFlashtypeFileWrite(fileId, hashFileData(resolvedData)),
-		).toBe(false);
 	});
 });
 

@@ -22,18 +22,16 @@ import { SlashCommandMenu } from "./components/slash-command-menu";
 import type { MarkdownBlockSnapshot, MarkdownReviewDiff } from "./review-diff";
 import { decodeFileDataToText } from "@/lib/decode-file-data";
 import { ExternalWriteReviewControls } from "@/extension-runtime/external-write-review-controls";
-import {
-	EXTERNAL_WRITE_REVIEW_LAUNCH_ARG,
-	type ExternalWriteReview,
-	type GranularReviewResolution,
-	type GranularReviewResolutionOutcome,
+import type {
+	ExternalWriteReview,
+	GranularReviewResolution,
+	GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
-import { planGranularReview } from "./granular-review-plan";
 import {
-	MARKDOWN_BLOCKS_AT_COMMIT_SQL,
-	parseMarkdownBlockSnapshot,
-	sortMarkdownBlocks,
-} from "./markdown-block-history";
+	useExternalWriteReview,
+	useExternalWriteReviewData,
+} from "@/shell/external-write-review-history";
+import { planGranularReview } from "./granular-review-plan";
 import { MarkdownReviewStepper } from "./markdown-review-stepper";
 import type { ReviewGuard } from "@/shell/external-write-review-guard";
 import { AnimatedZap } from "@/components/animated-zap";
@@ -46,14 +44,18 @@ type MarkdownViewProps = {
 	readonly focusOnLoad?: boolean;
 	readonly defaultBlock?: EmptyMarkdownDefaultBlock;
 	readonly syncActiveFile?: boolean;
-	readonly externalWriteReview?: ExternalWriteReview | null;
+	readonly registerExternalWriteReview?: (
+		review: ExternalWriteReview,
+	) => () => void;
 	readonly onAcceptReviewDiff?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
-	}) => void;
+		readonly review?: ExternalWriteReview;
+	}) => Promise<void>;
 	readonly onRejectReviewDiff?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
+		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
 	readonly onResolveReviewDiff?: (
 		resolution: GranularReviewResolution,
@@ -88,7 +90,7 @@ export function MarkdownView({
 	focusOnLoad = false,
 	defaultBlock,
 	syncActiveFile = true,
-	externalWriteReview = null,
+	registerExternalWriteReview,
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
 	onResolveReviewDiff,
@@ -105,7 +107,7 @@ export function MarkdownView({
 				focusOnLoad={focusOnLoad}
 				defaultBlock={defaultBlock}
 				syncActiveFile={syncActiveFile}
-				externalWriteReview={externalWriteReview}
+				registerExternalWriteReview={registerExternalWriteReview}
 				onAcceptReviewDiff={onAcceptReviewDiff}
 				onRejectReviewDiff={onRejectReviewDiff}
 				onResolveReviewDiff={onResolveReviewDiff}
@@ -139,7 +141,7 @@ function MarkdownViewLoaded({
 	focusOnLoad = false,
 	defaultBlock,
 	syncActiveFile = true,
-	externalWriteReview = null,
+	registerExternalWriteReview,
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
 	onResolveReviewDiff,
@@ -148,15 +150,23 @@ function MarkdownViewLoaded({
 }: Omit<MarkdownViewProps, "fileId"> & {
 	readonly fileRow: MarkdownFileRow | undefined;
 }) {
+	const externalWriteReview = useExternalWriteReview({
+		fileId: fileRow?.id,
+		path: fileRow?.path,
+	});
+	const externalWriteReviewData =
+		useExternalWriteReviewData(externalWriteReview);
+	useEffect(() => {
+		if (!externalWriteReview) return;
+		return registerExternalWriteReview?.(externalWriteReview);
+	}, [externalWriteReview, registerExternalWriteReview]);
 	const reviewDiff = useMemo<MarkdownReviewDiff | null>(() => {
-		if (!externalWriteReview) return null;
+		if (!externalWriteReviewData) return null;
 		return {
-			beforeMarkdown: decodeFileDataToText(externalWriteReview.beforeData),
-			afterMarkdown: decodeFileDataToText(externalWriteReview.afterData),
-			beforeDepth: externalWriteReview.beforeDepth,
-			afterDepth: externalWriteReview.afterDepth,
+			beforeMarkdown: decodeFileDataToText(externalWriteReviewData.beforeData),
+			afterMarkdown: decodeFileDataToText(externalWriteReviewData.afterData),
 		};
-	}, [externalWriteReview]);
+	}, [externalWriteReviewData]);
 
 	let content: ReactNode;
 
@@ -183,6 +193,7 @@ function MarkdownViewLoaded({
 						<TipTapEditor
 							className="h-full"
 							fileId={fileRow.id}
+							filePath={fileRow.path}
 							isActiveView={isActiveView}
 							focusOnLoad={focusOnLoad}
 							defaultBlock={defaultBlock}
@@ -190,18 +201,17 @@ function MarkdownViewLoaded({
 						<MarkdownAutosaveHint
 							enabled={isActiveView && isPanelFocused && !reviewDiff}
 						/>
-						{reviewDiff && externalWriteReview ? (
+						{reviewDiff && externalWriteReview && externalWriteReviewData ? (
 							<Suspense fallback={<MarkdownReviewOverlayFallback />}>
 								<MarkdownReviewOverlay
 									fileId={fileRow.id}
+									review={externalWriteReview}
 									reviewDiff={reviewDiff}
 									reviewId={externalWriteReview.reviewId}
 									beforeCommitId={externalWriteReview.beforeCommitId}
 									afterCommitId={externalWriteReview.afterCommitId}
-									beforeData={externalWriteReview.beforeData}
-									afterData={externalWriteReview.afterData}
-									stickyBeforeBlocks={externalWriteReview.markdownBeforeBlocks}
-									stickyAfterBlocks={externalWriteReview.markdownAfterBlocks}
+									beforeData={externalWriteReviewData.beforeData}
+									afterData={externalWriteReviewData.afterData}
 									isActive={isActiveView && isPanelFocused}
 									onAccept={onAcceptReviewDiff}
 									onReject={onRejectReviewDiff}
@@ -210,6 +220,8 @@ function MarkdownViewLoaded({
 									onReviewPendingChange={onReviewPendingChange}
 								/>
 							</Suspense>
+						) : externalWriteReview ? (
+							<MarkdownReviewOverlayFallback />
 						) : null}
 					</div>
 					{reviewDiff ? null : <SlashCommandMenu />}
@@ -280,14 +292,13 @@ function MarkdownAutosaveHint({ enabled }: { readonly enabled: boolean }) {
 
 function MarkdownReviewOverlay({
 	fileId,
+	review,
 	reviewDiff,
 	reviewId,
 	beforeCommitId,
 	afterCommitId,
 	beforeData,
 	afterData,
-	stickyBeforeBlocks,
-	stickyAfterBlocks,
 	isActive,
 	onAccept,
 	onReject,
@@ -296,27 +307,23 @@ function MarkdownReviewOverlay({
 	onReviewPendingChange,
 }: {
 	readonly fileId: string;
+	readonly review: ExternalWriteReview;
 	readonly reviewDiff: MarkdownReviewDiff;
 	readonly reviewId: string;
-	readonly beforeCommitId?: string;
-	readonly afterCommitId?: string;
+	readonly beforeCommitId: string;
+	readonly afterCommitId: string;
 	readonly beforeData: Uint8Array;
 	readonly afterData: Uint8Array;
-	/**
-	 * Markdown block snapshots captured with the review (see ExternalWriteReview).
-	 * Preferred over the reactive commit queries so a coalesced review keeps a
-	 * valid before-side even once its commit sinks deeper in history.
-	 */
-	readonly stickyBeforeBlocks?: readonly MarkdownBlockSnapshot[];
-	readonly stickyAfterBlocks?: readonly MarkdownBlockSnapshot[];
 	readonly isActive: boolean;
 	readonly onAccept?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
-	}) => void;
+		readonly review?: ExternalWriteReview;
+	}) => Promise<void>;
 	readonly onReject?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
+		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
 	readonly onResolve?: (
 		resolution: GranularReviewResolution,
@@ -327,18 +334,8 @@ function MarkdownReviewOverlay({
 		hasPendingDecisions: boolean,
 	) => void;
 }) {
-	const beforeBlocksFromCommit = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
-	const afterBlocksFromCommit = useMarkdownBlocksAtCommit(fileId, afterCommitId);
-	// Prefer the snapshots captured with the review — that sticky before-side is
-	// what keeps a coalesced review granular once its commit sinks deep in
-	// history. Empty sticky blocks mean the capture lost a race with a fresh
-	// commit, so fall back to the reactive query, which catches up.
-	const beforeBlocks = stickyBeforeBlocks?.length
-		? stickyBeforeBlocks
-		: beforeBlocksFromCommit;
-	const afterBlocks = stickyAfterBlocks?.length
-		? stickyAfterBlocks
-		: afterBlocksFromCommit;
+	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
+	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
 	const diffContainerRef = useRef<HTMLDivElement | null>(null);
 	const pendingDecisionsRef = useRef(false);
 	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
@@ -405,18 +402,18 @@ function MarkdownReviewOverlay({
 		return renderMarkdownReviewDiffHtml(enrichedReviewDiff, { blockPairings });
 	}, [enrichedReviewDiff, blockPairings]);
 
-	const rejectReview = () => void onReject?.({ fileId, reviewId });
+	const rejectReview = () => void onReject?.({ fileId, reviewId, review });
 
-	// The per-change stepper only earns its keep when there is more than one
-	// change to step through. A single change is effectively all-or-nothing, so
-	// it uses the classic accept/reject controls instead of a "1 of 1" stepper.
+	// The per-change stepper only earns its keep with more than one change. A
+	// single change is effectively all-or-nothing, so it uses the classic
+	// controls instead of a "1 of 1" stepper.
 	const isGranular =
 		!snapshotsLoading &&
 		eligibility?.status === "safe" &&
 		eligibility.plan.changes.length > 1;
 
-	// Register a partial-decision guard with the shell while the granular
-	// stepper is mounted so destructive actions can prompt before discarding.
+	// Register a partial-decision guard with the shell while the granular stepper
+	// is mounted so destructive actions can prompt before discarding decisions.
 	useEffect(() => {
 		if (!isGranular || !onRegisterReviewGuard) return;
 		const unregister = onRegisterReviewGuard({
@@ -429,40 +426,31 @@ function MarkdownReviewOverlay({
 			onReviewPendingChange?.(reviewId, false);
 			unregister();
 		};
-	}, [
-		isGranular,
-		onRegisterReviewGuard,
-		onReviewPendingChange,
-		reviewId,
-		fileId,
-	]);
+	}, [isGranular, onRegisterReviewGuard, onReviewPendingChange, reviewId, fileId]);
 
-	// Wait for the snapshot preflight before choosing a surface, so classic
-	// controls do not flash and then swap to the stepper. The stepper handles
-	// multi-change reviews; a single change uses the classic controls.
-	const controls = snapshotsLoading ? null : eligibility?.status === "safe" &&
-	  eligibility.plan.changes.length > 1 ? (
-		<MarkdownReviewStepper
-			plan={eligibility.plan}
-			reviewId={reviewId}
-			fileId={fileId}
-			beforeData={beforeData}
-			afterData={afterData}
-			isActive={isActive}
-			diffContainerRef={diffContainerRef}
-			onResolve={onResolve!}
-			onPendingDecisionsChange={(hasPending) => {
-				pendingDecisionsRef.current = hasPending;
-				onReviewPendingChange?.(reviewId, hasPending);
-			}}
-		/>
-	) : (
-		<ExternalWriteReviewControls
-			isActive={isActive}
-			onAccept={() => onAccept?.({ fileId, reviewId })}
-			onReject={rejectReview}
-		/>
-	);
+	const controls =
+		isGranular && eligibility?.status === "safe" ? (
+			<MarkdownReviewStepper
+				plan={eligibility.plan}
+				reviewId={reviewId}
+				fileId={fileId}
+				beforeData={beforeData}
+				afterData={afterData}
+				isActive={isActive}
+				diffContainerRef={diffContainerRef}
+				onResolve={onResolve!}
+				onPendingDecisionsChange={(hasPending) => {
+					pendingDecisionsRef.current = hasPending;
+					onReviewPendingChange?.(reviewId, hasPending);
+				}}
+			/>
+		) : (
+			<ExternalWriteReviewControls
+				isActive={isActive}
+				onAccept={() => void onAccept?.({ fileId, reviewId, review })}
+				onReject={rejectReview}
+			/>
+		);
 
 	return (
 		<div className="markdown-review-overlay">
@@ -509,30 +497,53 @@ function useMarkdownBlocksAtCommit(
 	const rows = useQuery<HistoricalMarkdownBlockRow>(
 		(lix) =>
 			commitId
-				? markdownBlocksAtCommitQuery(lix, commitId, fileId)
+				? historicalMarkdownBlocksQuery(lix, commitId, fileId)
 				: emptyMarkdownBlocksQuery(),
 		{ subscribe: false },
 	);
 	return useMemo(() => {
 		if (!commitId) return undefined;
-		return sortMarkdownBlocks(
-			rows
-				.map((row) => parseMarkdownBlockSnapshot(row.snapshot_content))
-				.filter((block): block is MarkdownBlockSnapshot => block !== null),
-		);
+		return rows
+			.map((row) => parseHistoricalMarkdownBlock(row.snapshot_content))
+			.filter((block): block is MarkdownBlockSnapshot => block !== null)
+			.sort(
+				(left, right) =>
+					left.orderKey.localeCompare(right.orderKey) ||
+					left.id.localeCompare(right.id),
+			);
 	}, [commitId, rows]);
 }
 
-function markdownBlocksAtCommitQuery(
+function historicalMarkdownBlocksQuery(
 	lix: ReturnType<typeof useLix>,
 	commitId: string,
 	fileId: string,
 ) {
+	const sql = `
+		WITH ranked AS (
+			SELECT
+				entity_pk,
+				snapshot_content,
+				depth,
+				ROW_NUMBER() OVER (
+					PARTITION BY entity_pk
+					ORDER BY depth ASC
+				) AS rn
+			FROM lix_state_history
+			WHERE start_commit_id = ?
+				AND file_id = ?
+				AND schema_key = 'markdown_block'
+		)
+		SELECT snapshot_content
+		FROM ranked
+		WHERE rn = 1
+			AND snapshot_content IS NOT NULL
+	`;
 	const parameters = [commitId, fileId] as const;
 	return {
-		compile: () => ({ sql: MARKDOWN_BLOCKS_AT_COMMIT_SQL, parameters }),
+		compile: () => ({ sql, parameters }),
 		execute: async () => {
-			const result = await lix.execute(MARKDOWN_BLOCKS_AT_COMMIT_SQL, parameters);
+			const result = await lix.execute(sql, parameters);
 			return result.rows.map(
 				(row) => row.toObject() as HistoricalMarkdownBlockRow,
 			);
@@ -545,6 +556,31 @@ function emptyMarkdownBlocksQuery() {
 		compile: () => ({ sql: "SELECT 1 WHERE 0", parameters: [] }),
 		execute: async () => [] as HistoricalMarkdownBlockRow[],
 	};
+}
+
+function parseHistoricalMarkdownBlock(
+	value: unknown,
+): MarkdownBlockSnapshot | null {
+	const snapshot = typeof value === "string" ? safeJsonParse(value) : value;
+	if (!snapshot || typeof snapshot !== "object") return null;
+	const record = snapshot as Record<string, unknown>;
+	const { id, order_key: orderKey, block } = record;
+	if (
+		typeof id !== "string" ||
+		typeof orderKey !== "string" ||
+		typeof block !== "string"
+	) {
+		return null;
+	}
+	return { id, orderKey, block };
+}
+
+function safeJsonParse(value: string): unknown {
+	try {
+		return JSON.parse(value);
+	} catch {
+		return null;
+	}
 }
 
 function UnsupportedFilePlaceholder({
@@ -683,11 +719,7 @@ export const extension = createReactExtensionDefinition({
 					instance.state?.defaultBlock === "heading1" ? "heading1" : undefined
 				}
 				syncActiveFile={false}
-				externalWriteReview={
-					(instance.launchArgs?.[EXTERNAL_WRITE_REVIEW_LAUNCH_ARG] as
-						| ExternalWriteReview
-						| undefined) ?? null
-				}
+				registerExternalWriteReview={context.registerExternalWriteReview}
 				onAcceptReviewDiff={context.acceptExternalWriteReview}
 				onRejectReviewDiff={context.rejectExternalWriteReview}
 				onResolveReviewDiff={context.resolveExternalWriteReviewGranular}

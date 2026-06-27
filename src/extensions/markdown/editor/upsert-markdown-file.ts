@@ -1,6 +1,5 @@
 import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
-import { markFlashtypeMarkdownWrite } from "../external-write-tracking";
 import {
 	captureTelemetryThrottled,
 	fileExtensionProperty,
@@ -34,7 +33,6 @@ export async function upsertMarkdownFile(args: {
 		.executeTakeFirst();
 
 	if (existing) {
-		markFlashtypeMarkdownWrite(fileId, markdown);
 		const resolvedPath = path ?? existing.path ?? `/${fileId}.md`;
 		const resolvedMetadata = metadata ?? existing.lixcol_metadata ?? null;
 		const updateValues: {
@@ -56,7 +54,6 @@ export async function upsertMarkdownFile(args: {
 		captureDocumentModifiedTelemetry({ lix, fileId, filePath: resolvedPath });
 	} else {
 		if (!createIfMissing) return;
-		markFlashtypeMarkdownWrite(fileId, markdown);
 		// Insert requires a path; use provided or fallback to /<fileId>.md
 		await db
 			.insertInto("lix_file")

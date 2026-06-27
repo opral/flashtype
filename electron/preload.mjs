@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { resolveMarkdownImageSrc } from "./workspace-paths.mjs";
 
 const app = {
 	checkForUpdates: () => ipcRenderer.invoke("app:checkForUpdates"),
@@ -36,8 +37,6 @@ const workspace = {
 			ipcRenderer.off("workspace:ephemeralWatchedFileTreeChanged", wrapped);
 		};
 	},
-	readEphemeralFile: (payload) =>
-		ipcRenderer.invoke("workspace:readEphemeralFile", payload),
 	profile: () => ipcRenderer.invoke("workspace:profile"),
 	onNewFile: (listener) => {
 		const wrapped = () => listener();
@@ -57,6 +56,7 @@ const workspace = {
 	resetLixRepository: () => ipcRenderer.invoke("workspace:resetLixRepository"),
 	disableTrackChanges: () =>
 		ipcRenderer.invoke("workspace:disableTrackChanges"),
+	resolveMarkdownImageSrc: (payload) => resolveMarkdownImageSrc(payload),
 	// Resolves the on-disk path of a File dropped onto the window.
 	getPathForFile: (file) => webUtils.getPathForFile(file),
 };
@@ -81,6 +81,9 @@ const lix = {
 	activeBranchId: () => ipcRenderer.invoke("lix:activeBranchId"),
 	createBranch: (payload) => ipcRenderer.invoke("lix:createBranch", payload),
 	switchBranch: (payload) => ipcRenderer.invoke("lix:switchBranch", payload),
+	importFilesystemPaths: (payload) =>
+		ipcRenderer.invoke("lix:importFilesystemPaths", payload),
+	syncDiskToLix: () => ipcRenderer.invoke("lix:syncDiskToLix"),
 	close: () => ipcRenderer.invoke("lix:close"),
 };
 
@@ -124,7 +127,37 @@ const terminal = {
 	},
 };
 
+const agentHooks = {
+	onTurnEvent: (listener) => {
+		const wrapped = (_event, payload) => {
+			if (!payload?.deliveryId) {
+				void Promise.resolve(listener(payload));
+				return;
+			}
+			void Promise.resolve(listener(payload.event))
+				.then(() =>
+					ipcRenderer.invoke("agentHooks:completeTurnEvent", {
+						deliveryId: payload.deliveryId,
+						status: "ok",
+					}),
+				)
+				.catch((error) => {
+					console.warn("[agent-hooks] renderer listener failed", error);
+					return ipcRenderer.invoke("agentHooks:completeTurnEvent", {
+						deliveryId: payload.deliveryId,
+						status: "error",
+					});
+				});
+		};
+		ipcRenderer.on("agentHooks:turnEvent", wrapped);
+		return () => {
+			ipcRenderer.off("agentHooks:turnEvent", wrapped);
+		};
+	},
+};
+
 contextBridge.exposeInMainWorld("flashtypeDesktop", {
+	agentHooks,
 	app,
 	platform: process.platform,
 	telemetry,

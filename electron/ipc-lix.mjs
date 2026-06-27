@@ -272,6 +272,17 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		return result;
 	});
 
+	ipcMain.handle("lix:importFilesystemPaths", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
+		const paths = Array.isArray(payload?.paths) ? payload.paths : [];
+		await lix.importFilesystemPaths(paths);
+	});
+
+	ipcMain.handle("lix:syncDiskToLix", async (event) => {
+		const lix = await ensureLixOpenForEvent(event);
+		await lix.syncDiskToLix();
+	});
+
 	ipcMain.handle("lix:close", async (event) => {
 		await closeLixSession(getWindowForIpcEvent(event));
 	});

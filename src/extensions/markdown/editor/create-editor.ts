@@ -26,6 +26,7 @@ type CreateEditorArgs = {
 	defaultBlock?: EmptyMarkdownDefaultBlock;
 	persistDebounceMs?: number;
 	persistState?: boolean;
+	resolveImageSrc?: (src: string) => string;
 };
 
 const createNodeId = (): string => {
@@ -80,6 +81,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		defaultBlock,
 		persistDebounceMs,
 		persistState = true,
+		resolveImageSrc,
 	} = args;
 
 	const ast = contentAst ?? (parseMarkdown(initialMarkdown ?? "") as any);
@@ -144,7 +146,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 			node.childCount === 0,
 	};
 
-	const markdownExtensions = MarkdownWc({}) as any[];
+	const markdownExtensions = MarkdownWc({ resolveImageSrc }) as any[];
 
 	editorInstance = new Editor({
 		extensions: [

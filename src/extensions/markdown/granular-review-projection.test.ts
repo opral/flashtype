@@ -1,11 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { openLix, bundledPluginArchives, type Lix } from "@/test-utils/node-lix-sdk";
-import { getExternalWriteReview } from "@/shell/external-write-review-history";
-import {
-	hashFileData,
-	markFlashtypeFileWrite,
-	consumeRecentFlashtypeFileWrite,
-} from "@/extension-runtime/external-write-tracking";
+import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import type { MarkdownBlockSnapshot } from "./review-diff";
 import {
 	renderMarkdownProjection,
@@ -38,21 +33,22 @@ async function characterizeExternalWrite(
 		const fileId = await fileIdByPath(lix, path);
 		await writeFileBytes(lix, path, toBytes(afterInput));
 
-		const review = await getExternalWriteReview(lix, fileId, path);
-		if (!review) throw new Error("expected an external write review");
+		// The two most recent committed states of the file (after, then before).
+		const [after, before] = await historyTop2(lix, fileId);
+		if (!after || !before) throw new Error("expected before/after history");
 		const beforeBlocks = await historicalMarkdownBlocks(
 			lix,
-			review.beforeCommitId,
+			before.commitId,
 			fileId,
 		);
 		const afterBlocks = await historicalMarkdownBlocks(
 			lix,
-			review.afterCommitId,
+			after.commitId,
 			fileId,
 		);
 		return {
-			beforeData: review.beforeData,
-			afterData: review.afterData,
+			beforeData: before.data,
+			afterData: after.data,
 			beforeBlocks,
 			afterBlocks,
 		};
@@ -182,11 +178,11 @@ describe("renderMarkdownProjection characterizes the Lix projection contract", (
 			const fileId = await fileIdByPath(lix, path);
 			await writeFileBytes(lix, path, toBytes("# Title\n\nUpdated body.\n"));
 
-			const review = await getExternalWriteReview(lix, fileId, path);
-			if (!review) throw new Error("expected review");
+			const [after] = await historyTop2(lix, fileId);
+			if (!after) throw new Error("expected after history");
 			const afterBlocks = await historicalMarkdownBlocks(
 				lix,
-				review.afterCommitId,
+				after.commitId,
 				fileId,
 			);
 			const canonical = renderMarkdownProjection(afterBlocks);
@@ -194,27 +190,10 @@ describe("renderMarkdownProjection characterizes the Lix projection contract", (
 			await writeFileBytes(lix, path, canonical);
 			const observed = await fileDataByPath(lix, path);
 			expectBytesEqual(observed, canonical);
-			expectBytesEqual(observed, review.afterData);
+			expectBytesEqual(observed, after.data);
 		} finally {
 			await lix.close();
 		}
-	});
-
-	test("an exact self-write hash from the canonical projection is consumed once", () => {
-		const fileId = "self-write-file";
-		const blocks: MarkdownBlockSnapshot[] = [
-			{ id: "a", orderKey: "20", block: "# Title" },
-			{ id: "b", orderKey: "40", block: "Body." },
-		];
-		const bytes = renderMarkdownProjection(blocks);
-		const now = 1_000;
-		markFlashtypeFileWrite(fileId, bytes, now);
-		const hash = hashFileData(bytes);
-
-		expect(consumeRecentFlashtypeFileWrite(fileId, "deadbeef", now)).toBe(false);
-		expect(consumeRecentFlashtypeFileWrite(fileId, hash, now)).toBe(true);
-		// Consumed exactly once.
-		expect(consumeRecentFlashtypeFileWrite(fileId, hash, now)).toBe(false);
 	});
 
 	test("an edit that changes block boundaries surfaces as snapshot churn but still round-trips", async () => {
@@ -323,6 +302,39 @@ async function fileDataByPath(lix: Lix, path: string): Promise<Uint8Array> {
 	);
 	const { decodeFileDataToBytes } = await import("@/lib/decode-file-data");
 	return decodeFileDataToBytes(result.rows[0]?.get("data"));
+}
+
+// The two most recent committed states of a file (depth 0 = latest), with each
+// state's commit id and bytes — the inputs the granular planner characterizes.
+async function historyTop2(
+	lix: Lix,
+	fileId: string,
+): Promise<Array<{ commitId: string; data: Uint8Array }>> {
+	const tip = await lix.execute(
+		"SELECT lix_active_branch_commit_id() AS commit_id",
+	);
+	const startCommitId = tip.rows[0]?.get("commit_id");
+	if (typeof startCommitId !== "string") {
+		throw new Error("missing active branch commit id");
+	}
+	const result = await lix.execute(
+		`
+			SELECT data, lixcol_observed_commit_id
+			FROM lix_file_history
+			WHERE lixcol_start_commit_id = ?
+				AND id = ?
+			ORDER BY lixcol_depth ASC
+			LIMIT 2
+		`,
+		[startCommitId, fileId],
+	);
+	return result.rows.map((row) => {
+		const observed = row.get("lixcol_observed_commit_id");
+		return {
+			commitId: typeof observed === "string" ? observed : startCommitId,
+			data: decodeFileDataToBytes(row.get("data")),
+		};
+	});
 }
 
 async function historicalMarkdownBlocks(

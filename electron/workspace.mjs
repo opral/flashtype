@@ -7,7 +7,6 @@ import {
 	lstat,
 	mkdtemp,
 	opendir,
-	readFile,
 	realpath,
 	rename,
 	rm,
@@ -59,7 +58,7 @@ export async function resolveWorkspaceTarget(requestedPath) {
 			const workspace = createTransientDirectoryWorkspace([resolved]);
 			return {
 				workspace,
-				pendingOpenFilePaths: workspace.includePaths,
+				pendingOpenFilePaths: workspace.openFilePaths,
 			};
 		}
 		return {
@@ -118,7 +117,7 @@ export async function resolveWorkspaceTargets(requestedPaths) {
 		const workspace = createTransientDirectoryWorkspace(standaloneFiles);
 		targets.splice(standaloneFilesInsertIndex ?? targets.length, 0, {
 			workspace,
-			pendingOpenFilePaths: workspace.includePaths,
+			pendingOpenFilePaths: workspace.openFilePaths,
 		});
 	}
 
@@ -175,25 +174,6 @@ export async function openWorkspaceDialog(window, options = {}) {
 	return await setWorkspaceFromPath(dir, window, options);
 }
 
-export async function exportWorkspaceLixFile(window) {
-	const workspace = getWorkspace(window);
-	if (!workspace) {
-		throw new Error(
-			"No workspace is open. Open a folder before exporting lix.",
-		);
-	}
-	if (workspace.ephemeral === true) {
-		throw new Error(
-			"Cannot export a .lix database from a transient workspace.",
-		);
-	}
-	const databasePath = await findLixDatabasePath(workspace.path);
-	if (!databasePath) {
-		throw new Error("The opened workspace does not have a .lix database.");
-	}
-	return await readFile(databasePath);
-}
-
 export function getWorkspaceLixDatabasePath(window) {
 	const workspace = getWorkspace(window);
 	if (!workspace) {
@@ -221,6 +201,21 @@ export function consumePendingOpenFiles(window) {
 	return pendingOpenFilePaths ?? [];
 }
 
+export function setWorkspaceOpenFilePaths(window, filePaths) {
+	const state = getWindowState(window);
+	if (!state?.workspace) {
+		return [];
+	}
+	const openFilePaths = uniqueWorkspaceRelativeFilePaths(filePaths);
+	if (state.workspace.ephemeral === true) {
+		state.workspace = {
+			...state.workspace,
+			openFilePaths,
+		};
+	}
+	return openFilePaths;
+}
+
 export async function setEphemeralWatchedDirectories(window, payload) {
 	const state = getOrCreateWindowState(window);
 	const workspace = state.workspace;
@@ -241,24 +236,6 @@ export async function setEphemeralWatchedDirectories(window, payload) {
 	}
 	await refreshEphemeralFileTree(window, state, { emit: false });
 	return state.ephemeralWatchedEntries;
-}
-
-export async function readEphemeralWorkspaceFile(window, payload) {
-	const state = getWindowState(window);
-	const workspace = state?.workspace;
-	if (!state || !workspace || workspace.ephemeral !== true) {
-		throw new Error("No transient workspace is open.");
-	}
-	const filePath = normalizeWorkspaceFilePath(payload?.path);
-	if (!isEphemeralWatchedFileEntry(state, filePath)) {
-		throw new Error(`File is not in the opened Files view: ${filePath}`);
-	}
-	const { localPath } = await resolveExistingWorkspacePath(
-		workspace,
-		filePath,
-		"file",
-	);
-	return await readFile(localPath);
 }
 
 export async function profileWorkspaceFilesystem(workspace) {
@@ -312,8 +289,8 @@ export async function profileWorkspaceFilesystem(workspace) {
 
 async function profileTransientWorkspaceSourceFiles(profile, workspace) {
 	const directories = new Set();
-	for (const includePath of workspace.includePaths ?? []) {
-		const sourceFilePath = path.join(workspace.path, includePath);
+	for (const openFilePath of workspace.openFilePaths ?? []) {
+		const sourceFilePath = path.join(workspace.path, openFilePath);
 		let stats;
 		try {
 			stats = await lstat(sourceFilePath);
@@ -349,16 +326,13 @@ export async function getWorkspaceFsBackendOptions(window) {
 	}
 	if (workspace.ephemeral === true) {
 		const lixDir = await ensureExternalLixDir(window);
-		const includePaths = Array.isArray(workspace.includePaths)
-			? workspace.includePaths
-			: [];
 		return {
 			path: workspace.path,
 			lixDir,
-			filter: { includePaths: [...includePaths] },
+			syncAllFiles: false,
 		};
 	}
-	return { path: workspace.path };
+	return { path: workspace.path, syncAllFiles: true };
 }
 
 export async function setWorkspaceTrackChanges(window, trackChanges) {
@@ -591,17 +565,6 @@ function normalizeWorkspaceDirectoryPath(directoryPath, state) {
 	return directoryPath;
 }
 
-function normalizeWorkspaceFilePath(filePath) {
-	if (
-		typeof filePath !== "string" ||
-		!filePath.startsWith("/") ||
-		filePath.endsWith("/")
-	) {
-		throw new Error(`Invalid workspace file path: ${filePath}`);
-	}
-	return filePath;
-}
-
 function parentDirectoryPathForDirectoryPath(directoryPath) {
 	if (directoryPath === "/") {
 		return null;
@@ -639,15 +602,6 @@ function isEphemeralWatchedDirectoryEntry(state, directoryPath) {
 			entry.kind === "directory" &&
 			entry.source === "watched" &&
 			entry.path === directoryPath,
-	);
-}
-
-function isEphemeralWatchedFileEntry(state, filePath) {
-	return state.ephemeralWatchedEntries.some(
-		(entry) =>
-			entry.kind === "file" &&
-			entry.source === "watched" &&
-			entry.path === filePath,
 	);
 }
 
@@ -960,12 +914,12 @@ function createPersistentWorkspace(workspacePath) {
 	};
 }
 
-function createEphemeralWorkspace(workspacePath, includePaths = []) {
+function createEphemeralWorkspace(workspacePath, openFilePaths = []) {
 	const resolvedPath = path.resolve(workspacePath);
 	return {
 		ephemeral: true,
 		path: resolvedPath,
-		includePaths: uniqueWorkspaceRelativeFilePaths(includePaths),
+		openFilePaths: uniqueWorkspaceRelativeFilePaths(openFilePaths),
 		name: path.basename(resolvedPath) || resolvedPath,
 	};
 }
@@ -1140,7 +1094,7 @@ function workspaceKey(workspace) {
 		return null;
 	}
 	if (workspace.ephemeral === true) {
-		return `ephemeral:${workspace.path}:${(workspace.includePaths ?? []).join("\0")}`;
+		return `ephemeral:${workspace.path}:${(workspace.openFilePaths ?? []).join("\0")}`;
 	}
 	return `directory:${workspace.path}`;
 }
@@ -1245,10 +1199,6 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 			);
 		},
 	);
-
-	ipcMain.handle("workspace:readEphemeralFile", async (event, payload) => {
-		return await readEphemeralWorkspaceFile(getWindowForEvent(event), payload);
-	});
 
 	ipcMain.handle("workspace:profile", async (event) => {
 		return await profileWorkspaceFilesystem(

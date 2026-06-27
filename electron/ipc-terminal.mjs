@@ -5,6 +5,10 @@ import {
 	resolveShell,
 	resolveShellArgs,
 } from "./terminal-shell.mjs";
+import {
+	createAgentHookEnvironment,
+	disposeAgentHookEnvironment,
+} from "./agent-hooks.mjs";
 
 const terminals = new Map();
 const ownerHooks = new Set();
@@ -23,14 +27,28 @@ export function registerTerminalIpc() {
 		const cwd = payload?.cwd;
 		const cols = clampInteger(payload?.cols, 80, 20, 500);
 		const rows = clampInteger(payload?.rows, 24, 5, 200);
+		const agentHookEnv = await createAgentHookEnvironmentSafely(
+			id,
+			event.sender,
+		);
+		const env = {
+			...normalizeExtraEnv(payload?.env),
+			...agentHookEnv,
+		};
 
-		const terminal = pty.spawn(shell, shellArgs, {
-			name: "xterm-256color",
-			cwd,
-			cols,
-			rows,
-			env: buildTerminalEnv(),
-		});
+		let terminal;
+		try {
+			terminal = pty.spawn(shell, shellArgs, {
+				name: "xterm-256color",
+				cwd,
+				cols,
+				rows,
+				env: buildTerminalEnv(process.env, process.platform, env),
+			});
+		} catch (error) {
+			disposeAgentHookEnvironment(id);
+			throw error;
+		}
 
 		const ownerId = event.sender.id;
 		ensureOwnerCleanupHook(event.sender);
@@ -49,7 +67,7 @@ export function registerTerminalIpc() {
 					signal: signal ?? null,
 				});
 			}
-			terminals.delete(id);
+			closeTerminalHandle(id, { kill: false });
 		});
 
 		terminals.set(id, {
@@ -80,21 +98,13 @@ export function registerTerminalIpc() {
 		if (!handle || handle.ownerId !== event.sender.id) {
 			return;
 		}
-		try {
-			handle.terminal.kill();
-		} finally {
-			terminals.delete(id);
-		}
+		closeTerminalHandle(id, { handle, kill: true });
 	});
 }
 
 export function disposeTerminalIpc() {
 	for (const [id, handle] of terminals.entries()) {
-		try {
-			handle.terminal.kill();
-		} finally {
-			terminals.delete(id);
-		}
+		closeTerminalHandle(id, { handle, kill: true });
 	}
 }
 
@@ -110,13 +120,26 @@ function ensureOwnerCleanupHook(sender) {
 			if (handle.ownerId !== ownerId) {
 				continue;
 			}
-			try {
-				handle.terminal.kill();
-			} finally {
-				terminals.delete(id);
-			}
+			closeTerminalHandle(id, { handle, kill: true });
 		}
 	});
+}
+
+function closeTerminalHandle(id, options = {}) {
+	const handle = options.handle ?? terminals.get(id);
+	if (!handle) {
+		disposeAgentHookEnvironment(id);
+		return;
+	}
+	if (options.kill) {
+		try {
+			handle.terminal.kill();
+		} catch {
+			// The process may already have exited.
+		}
+	}
+	disposeAgentHookEnvironment(id);
+	terminals.delete(id);
 }
 
 function getOwnedTerminal(ownerId, rawId) {
@@ -134,4 +157,26 @@ function clampInteger(value, fallback, min, max) {
 		return fallback;
 	}
 	return Math.max(min, Math.min(max, Math.floor(numeric)));
+}
+
+async function createAgentHookEnvironmentSafely(instanceId, webContents) {
+	try {
+		return await createAgentHookEnvironment({ instanceId, webContents });
+	} catch (error) {
+		console.warn("[terminal] failed to prepare agent hook environment", error);
+		return {};
+	}
+}
+
+function normalizeExtraEnv(extraEnv) {
+	if (!extraEnv || typeof extraEnv !== "object") {
+		return {};
+	}
+	return Object.fromEntries(
+		Object.entries(extraEnv).filter(([key, value]) => {
+			return (
+				typeof key === "string" && key.length > 0 && typeof value === "string"
+			);
+		}),
+	);
 }

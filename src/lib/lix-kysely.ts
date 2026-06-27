@@ -36,11 +36,7 @@ type LixTransactionalLike = LixExecuteLike & {
 	beginTransaction(): Promise<LixTransactionLike>;
 };
 
-type LixDbLike = {
-	db: unknown;
-};
-
-type LixLike = LixExecuteLike | LixDbLike;
+type LixLike = LixTransactionalLike;
 
 class LixConnection implements DatabaseConnection {
 	constructor(
@@ -93,7 +89,7 @@ class LixDriver implements Driver {
 	private transaction: LixTransactionLike | undefined;
 	private waiters: Array<() => void> = [];
 
-	constructor(private readonly lix: LixExecuteLike) {
+	constructor(private readonly lix: LixTransactionalLike) {
 		this.connection = new LixConnection((sql, params) =>
 			this.executeSql(sql, params),
 		);
@@ -106,9 +102,6 @@ class LixDriver implements Driver {
 	}
 
 	async beginTransaction(): Promise<void> {
-		if (!isLixTransactionalLike(this.lix)) {
-			throw new Error("This Lix handle does not support transactions");
-		}
 		await this.acquireTransactionSlot();
 		try {
 			this.transaction = await this.lix.beginTransaction();
@@ -206,15 +199,6 @@ class LixQueryCompiler extends SqliteQueryCompiler {
 const cache = new WeakMap<object, Map<string, Kysely<LixDatabaseSchema>>>();
 
 export function createLixKysely(lix: LixLike): Kysely<LixDatabaseSchema> {
-	if (isLixDbLike(lix)) {
-		return lix.db as Kysely<LixDatabaseSchema>;
-	}
-	if (!isLixExecuteLike(lix)) {
-		throw new TypeError(
-			"createLixKysely requires either lix.execute(sql, params) or lix.db",
-		);
-	}
-
 	const cacheKey = "__default__";
 	const cached = cache.get(lix as object)?.get(cacheKey);
 	if (cached) {
@@ -239,30 +223,6 @@ export function createLixKysely(lix: LixLike): Kysely<LixDatabaseSchema> {
 }
 
 export const qb = (lix: LixLike) => createLixKysely(lix);
-
-function isLixExecuteLike(value: unknown): value is LixExecuteLike {
-	return (
-		Boolean(value) &&
-		typeof (value as { execute?: unknown }).execute === "function"
-	);
-}
-
-function isLixTransactionalLike(value: unknown): value is LixTransactionalLike {
-	return (
-		isLixExecuteLike(value) &&
-		typeof (value as { beginTransaction?: unknown }).beginTransaction ===
-			"function"
-	);
-}
-
-function isLixDbLike(value: unknown): value is LixDbLike {
-	return (
-		value !== null &&
-		typeof value === "object" &&
-		"db" in value &&
-		Boolean((value as { db?: unknown }).db)
-	);
-}
 
 function decodeRows(
 	rows: ExecuteResult["rows"],

@@ -64,4 +64,20 @@ describe("terminal shell launch", () => {
 			"/usr/local/bin:/custom/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin",
 		);
 	});
+
+	test("merges string-only extra environment entries", () => {
+		const env = buildTerminalEnv(
+			{ PATH: "/usr/bin", FLASHTYPE_AGENT_HOOK_SCRIPT: "old" },
+			"linux",
+			{
+				FLASHTYPE_AGENT_HOOK_SCRIPT: "/tmp/hook.mjs",
+				FLASHTYPE_AGENT_HOOK_TOKEN: "token",
+				IGNORED: 123,
+			},
+		);
+
+		expect(env.FLASHTYPE_AGENT_HOOK_SCRIPT).toBe("/tmp/hook.mjs");
+		expect(env.FLASHTYPE_AGENT_HOOK_TOKEN).toBe("token");
+		expect(env.IGNORED).toBeUndefined();
+	});
 });

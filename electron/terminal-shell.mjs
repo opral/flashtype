@@ -60,8 +60,9 @@ export function resolveShellArgs(shell, platform = process.platform) {
 export function buildTerminalEnv(
 	env = process.env,
 	platform = process.platform,
+	extraEnv = {},
 ) {
-	const terminalEnv = { ...env };
+	const terminalEnv = { ...env, ...normalizeExtraEnv(extraEnv) };
 	delete terminalEnv.NO_COLOR;
 
 	if (platform === "win32") {
@@ -80,6 +81,21 @@ export function buildTerminalEnv(
 		]),
 		TERM: "xterm-256color",
 	};
+}
+
+function normalizeExtraEnv(extraEnv) {
+	if (!extraEnv || typeof extraEnv !== "object") {
+		return {};
+	}
+	return Object.fromEntries(
+		Object.entries(extraEnv)
+			.filter(([key, value]) => {
+				return (
+					typeof key === "string" && key.length > 0 && typeof value === "string"
+				);
+			})
+			.map(([key, value]) => [key, value]),
+	);
 }
 
 function mergePathEntries(entries) {

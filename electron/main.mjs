@@ -13,6 +13,7 @@ import {
 	getWorkspace,
 	registerWorkspaceIpc,
 	resolveWorkspaceTargets,
+	setWorkspaceOpenFilePaths,
 	setWorkspaceFromTarget,
 	setWorkspaceTrackChanges,
 	showWorkspaceDialog,
@@ -64,6 +65,7 @@ import {
 	workspaceRecoveryToSessionEntry,
 	writeWorkspaceRecoverySync,
 } from "./workspace-recovery.mjs";
+import { disposeAgentHookIpc, registerAgentHookIpc } from "./agent-hooks.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -216,6 +218,7 @@ function performQuitTeardown() {
 		void disposeAllWorkspaceWindowStates();
 	});
 	disposeTerminalIpc();
+	disposeAgentHookIpc();
 }
 
 // Confirm an app quit before any irreversible teardown. Only windows that hold
@@ -937,6 +940,7 @@ if (hasSingleInstanceLock) {
 		installDevelopmentDockIcon();
 		registerAppIpc();
 		registerTelemetryIpc();
+		registerAgentHookIpc();
 		installApplicationMenu();
 		app.on("activate", () => {
 			void focusOrCreateWorkspaceWindow();
@@ -1267,6 +1271,7 @@ function registerAppIpc() {
 		if (!workspaceEntry) {
 			return;
 		}
+		setWorkspaceOpenFilePaths(window, workspaceEntry.openFilePaths);
 		openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
 		openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 		persistOpenWorkspacePathsSoon();

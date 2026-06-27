@@ -17,7 +17,6 @@ import type {
 	GranularReviewResolution,
 	GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
-import { hashFileData } from "@/extension-runtime/external-write-tracking";
 import {
 	initStepperState,
 	rehydrateDecisions,
@@ -86,12 +85,12 @@ export function MarkdownReviewStepper({
 			// Anchor the session on first mount so the first fold reads as a fold,
 			// not a new session (which would clear the carried decisions).
 			if (sessionBeforeRef.current === null) {
-				sessionBeforeRef.current = hashFileData(beforeData);
+				sessionBeforeRef.current = hashBytes(beforeData);
 			}
 			return;
 		}
 		submittedRef.current = false;
-		const beforeKey = hashFileData(beforeData);
+		const beforeKey = hashBytes(beforeData);
 		if (sessionBeforeRef.current !== beforeKey) {
 			decidedByKeyRef.current.clear();
 			sessionBeforeRef.current = beforeKey;
@@ -392,4 +391,15 @@ export function MarkdownReviewStepper({
 			)}
 		</div>
 	);
+}
+
+// Stable content key for the before-state bytes, used only to detect when a
+// review's before-anchor changes (which starts a fresh decision session).
+function hashBytes(bytes: Uint8Array): string {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < bytes.length; i += 1) {
+		hash ^= bytes[i]!;
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return `${bytes.length}:${(hash >>> 0).toString(16)}`;
 }

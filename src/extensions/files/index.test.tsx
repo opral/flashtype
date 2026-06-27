@@ -641,7 +641,7 @@ describe("FilesView", () => {
 										ephemeral: true,
 										path: "/workspace",
 										name: "workspace",
-										includePaths: [],
+										openFilePaths: [],
 									},
 								})}
 							/>
@@ -860,7 +860,7 @@ describe("FilesView", () => {
 										ephemeral: true,
 										path: "/tmp/workspace",
 										name: "workspace",
-										includePaths: [],
+										openFilePaths: [],
 									},
 								})}
 							/>

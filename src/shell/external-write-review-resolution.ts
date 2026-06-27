@@ -1,9 +1,5 @@
 import type { Lix } from "@/lib/lix-types";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
-import {
-	markFlashtypeFileWrite,
-	type CancelFlashtypeFileWrite,
-} from "@/extension-runtime/external-write-tracking";
 import type {
 	GranularReviewResolution,
 	GranularReviewResolutionOutcome,
@@ -19,10 +15,9 @@ export type GranularReviewResolutionResult = {
  *
  * The mixed/all-rejected path runs in one Lix transaction that compares the
  * current `lix_file.data` byte-for-byte with the review's after-state and only
- * writes when they still match, so a newer external write is left intact.
- * Self-write suppression is registered with the canonical hash just before the
- * update and canceled if the transaction does not commit, so the write neither
- * reopens a review of itself nor masks an unrelated write.
+ * writes when they still match, so a newer external write is left intact. The
+ * write is not recorded as an agent turn, so it does not reopen a review of
+ * itself; the caller clears the agent-turn range entry once it succeeds.
  *
  * The all-accepted path writes nothing but still reads `lix_file.data` to
  * confirm it equals the after-state: a newer external write makes the
@@ -60,13 +55,6 @@ export async function applyGranularReviewResolution(
 		}
 	}
 
-	// Register the exact canonical self-write expectation before the write can
-	// become observable, then cancel it if the transaction does not commit the
-	// write. This never opens a broad time-window ignore for the file.
-	const cancelMarker: CancelFlashtypeFileWrite = markFlashtypeFileWrite(
-		fileId,
-		resolvedData,
-	);
 	try {
 		const outcome = await lix.transaction(async (tx) => {
 			const current = await tx.execute(
@@ -86,12 +74,8 @@ export async function applyGranularReviewResolution(
 			]);
 			return "applied" as const;
 		});
-		if (outcome !== "applied") {
-			cancelMarker();
-		}
 		return { outcome };
 	} catch (error) {
-		cancelMarker();
 		return { outcome: "failed", error };
 	}
 }

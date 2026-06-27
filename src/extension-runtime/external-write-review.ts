@@ -1,30 +1,16 @@
-/** A `markdown_block` snapshot captured for a review (id, order key, content). */
-export type ExternalWriteReviewMarkdownBlock = {
-	readonly id: string;
-	readonly orderKey: string;
-	readonly block: string;
-};
-
 export type ExternalWriteReview = {
 	readonly fileId: string;
 	readonly path: string;
 	readonly reviewId: string;
-	readonly beforeData: Uint8Array;
-	readonly afterData: Uint8Array;
-	readonly beforeCommitId?: string;
-	readonly afterCommitId?: string;
-	readonly beforeDepth?: number;
-	readonly afterDepth?: number;
-	/**
-	 * Markdown block snapshots captured when the review was computed, so granular
-	 * review survives coalescing: a folded review keeps the original before-side
-	 * snapshots even after its commit is no longer the most convenient to query.
-	 */
-	readonly markdownBeforeBlocks?: readonly ExternalWriteReviewMarkdownBlock[];
-	readonly markdownAfterBlocks?: readonly ExternalWriteReviewMarkdownBlock[];
+	readonly beforeCommitId: string;
+	readonly afterCommitId: string;
+	readonly agentTurnRangeIds: readonly string[];
 };
 
-export const EXTERNAL_WRITE_REVIEW_LAUNCH_ARG = "externalWriteReview";
+export type ExternalWriteReviewData = {
+	readonly beforeData: Uint8Array;
+	readonly afterData: Uint8Array;
+};
 
 /**
  * Aggregate, content-free payload describing the outcome of a granular review

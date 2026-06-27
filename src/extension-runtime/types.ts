@@ -1,9 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import type { Lix } from "@/lib/lix-types";
 import type {
+	ExternalWriteReview,
 	GranularReviewResolution,
 	GranularReviewResolutionOutcome,
-} from "@/extension-runtime/external-write-review";
+} from "./external-write-review";
 import type { ReviewGuard } from "@/shell/external-write-review-guard";
 
 /**
@@ -42,7 +43,7 @@ export type WorkspaceContext =
 			readonly ephemeral: true;
 			readonly path: string;
 			readonly name: string;
-			readonly includePaths: readonly string[];
+			readonly openFilePaths: readonly string[];
 	  };
 
 /**
@@ -149,11 +150,16 @@ export interface ExtensionContext {
 	readonly acceptExternalWriteReview?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
-	}) => void;
+		readonly review?: ExternalWriteReview;
+	}) => Promise<void>;
 	readonly rejectExternalWriteReview?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
+		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
+	readonly registerExternalWriteReview?: (
+		review: ExternalWriteReview,
+	) => () => void;
 	readonly resolveExternalWriteReviewGranular?: (
 		resolution: GranularReviewResolution,
 	) => Promise<GranularReviewResolutionOutcome>;

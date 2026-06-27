@@ -1,11 +1,11 @@
 import { renderHtmlDiff } from "@lix-js/html-diff";
 import { decodeFileDataToText } from "@/lib/decode-file-data";
-import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import type { ExternalWriteReviewData } from "@/extension-runtime/external-write-review";
 import { parseCsv, type CsvParseResult, type CsvRow } from "./csv-data";
 
-export function renderCsvReviewDiffHtml(review: ExternalWriteReview): string {
-	const beforeParsed = parseCsv(decodeFileDataToText(review.beforeData));
-	const afterParsed = parseCsv(decodeFileDataToText(review.afterData));
+export function renderCsvReviewDiffHtml(data: ExternalWriteReviewData): string {
+	const beforeParsed = parseCsv(decodeFileDataToText(data.beforeData));
+	const afterParsed = parseCsv(decodeFileDataToText(data.afterData));
 	const beforeRows = assignCsvRowKeys(beforeParsed.rows);
 	const afterRows = assignCsvRowKeys(afterParsed.rows, beforeRows, "after");
 	return renderHtmlDiff({
@@ -51,16 +51,24 @@ function renderStaticCsvTable(
 	const header = parsed.columns
 		.map(
 			(column, index) =>
-				`<th data-diff-key="header:${index}" data-diff-mode="words" data-diff-show-when-removed="true">${escapeHtml(column)}</th>`,
+				`<th data-diff-key="header:${index}" data-diff-mode="words" data-diff-show-when-removed="true">${escapeHtml(
+					column,
+				)}</th>`,
 		)
 		.join("");
 	const body = rows
 		.map((row) => {
 			const cells = Array.from({ length: columnCount }, (_, index) => {
 				const value = row.cells[index] ?? "";
-				return `<td data-diff-key="${escapeAttribute(row.diffKey)}:cell:${index}" data-diff-mode="words" data-diff-show-when-removed="true">${escapeHtml(value)}</td>`;
+				return `<td data-diff-key="${escapeAttribute(
+					row.diffKey,
+				)}:cell:${index}" data-diff-mode="words" data-diff-show-when-removed="true">${escapeHtml(
+					value,
+				)}</td>`;
 			}).join("");
-			return `<tr data-diff-key="${escapeAttribute(row.diffKey)}" data-diff-show-when-removed="true">${cells}</tr>`;
+			return `<tr data-diff-key="${escapeAttribute(
+				row.diffKey,
+			)}" data-diff-show-when-removed="true">${cells}</tr>`;
 		})
 		.join("");
 	return `<table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>`;

@@ -147,7 +147,7 @@ describe("recent workspaces", () => {
 				ephemeral: true,
 				path: "/tmp",
 				name: "tmp",
-				includePaths: ["file.md"],
+				openFilePaths: ["file.md"],
 			}),
 		).toBeNull();
 	});

@@ -81,6 +81,8 @@ export type DesktopLixApi = {
 	switchBranch(payload: {
 		branchId: string;
 	}): Promise<DesktopSwitchBranchResult>;
+	importFilesystemPaths(payload: { paths: readonly string[] }): Promise<void>;
+	syncDiskToLix(): Promise<void>;
 	close(): Promise<void>;
 };
 
@@ -89,6 +91,7 @@ export type DesktopTerminalCreatePayload = {
 	shell?: string;
 	cols?: number;
 	rows?: number;
+	env?: Record<string, string>;
 };
 
 export type DesktopTerminalCreateResult = {
@@ -117,18 +120,36 @@ export type DesktopTerminalApi = {
 	onExit(listener: (event: DesktopTerminalExitEvent) => void): () => void;
 };
 
+export type DesktopAgentTurnEvent = {
+	id: string;
+	instanceId?: string;
+	agent: "claude" | "codex";
+	phase: "turn-start" | "turn-stop";
+	hookEventName?: string;
+	sessionId?: string;
+	turnId?: string;
+	cwd?: string;
+	createdAt: number;
+};
+
+export type DesktopAgentHooksApi = {
+	onTurnEvent(
+		listener: (event: DesktopAgentTurnEvent) => void | Promise<void>,
+	): () => void;
+};
+
 export type DesktopWorkspace =
 	| {
 			ephemeral: false;
 			path: string;
 			name: string;
-			includePaths?: never;
+			openFilePaths?: never;
 	  }
 	| {
 			ephemeral: true;
 			path: string;
 			name: string;
-			includePaths: string[];
+			openFilePaths: string[];
 	  };
 
 export type DesktopWorkspaceRecovery = {
@@ -179,7 +200,6 @@ export type DesktopWorkspaceApi = {
 	onEphemeralWatchedFileTreeChanged(
 		listener: (entries: DesktopWatchedFilesystemEntry[]) => void,
 	): () => void;
-	readEphemeralFile(payload: { path: string }): Promise<Uint8Array>;
 	profile(): Promise<DesktopWorkspaceProfile | null>;
 	/** Fired when the native menu asks the workspace UI to start a new file. */
 	onNewFile(listener: () => void): () => void;
@@ -199,6 +219,11 @@ export type DesktopWorkspaceApi = {
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	disableTrackChanges(): Promise<DesktopWorkspace>;
+	resolveMarkdownImageSrc(payload: {
+		src: string;
+		sourceFilePath: string;
+		workspacePath: string;
+	}): string;
 	getPathForFile(file: File): string;
 };
 
@@ -281,6 +306,7 @@ export type DesktopReviewGuardApi = {
 declare global {
 	interface Window {
 		flashtypeDesktop?: {
+			agentHooks: DesktopAgentHooksApi;
 			app: DesktopAppApi;
 			platform: string;
 			telemetry: DesktopTelemetryApi;
