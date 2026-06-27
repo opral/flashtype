@@ -14,7 +14,7 @@ Agents edit. You review the diff. Nothing lands without you.
 | ----------------------- | ------------------------------------------------ |
 | Local files             | Edit `.md` and `.markdown` files directly.       |
 | Claude & Codex          | Run agents next to the document.                 |
-| Inline diffs            | Accept or reject edits with word-level context.  |
+| Inline diffs            | Keep or undo edits with word-level context.      |
 | History                 | Inspect checkpoints and restore earlier drafts.  |
 | Markdown-native         | Keep portable markdown as the source of truth.   |
 

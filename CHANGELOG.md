@@ -75,7 +75,7 @@
 
 - Improved Markdown review diffs so edits inside lists, tables, and other structured Markdown render with less noise.
 
-  FlashType now uses Markdown-aware structure when showing review changes, making accepted and rejected edits easier to inspect before applying them.
+  FlashType now uses Markdown-aware structure when showing review changes, making edits easier to inspect before you keep or undo them.
 
 ### Patch
 
@@ -101,7 +101,7 @@
 
 - Added diff review views for external Markdown and CSV file changes.
 
-  FlashType now detects supported files changed outside the app and lets you accept or reject the update from an inline review.
+  FlashType now detects supported files changed outside the app and lets you keep or undo the update from an inline review.
 
 ### Patch
 

@@ -54,7 +54,7 @@ export function ExternalWriteReviewControls({
 				className="external-write-review-button external-write-review-button-reject"
 				onClick={onReject}
 			>
-				<span>Reject</span>
+				<span>Undo</span>
 				<kbd className="external-write-review-shortcut external-write-review-shortcut-dark">
 					Esc
 				</kbd>
@@ -64,7 +64,7 @@ export function ExternalWriteReviewControls({
 				className="external-write-review-button external-write-review-button-accept"
 				onClick={onAccept}
 			>
-				<span>Accept</span>
+				<span>Keep</span>
 				<kbd className="external-write-review-shortcut">
 					{isMacPlatform() ? "⌘↩" : "Ctrl↩"}
 				</kbd>

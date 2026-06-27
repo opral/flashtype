@@ -405,9 +405,9 @@ describe("MarkdownView", () => {
 		});
 
 		expect(
-			await screen.findByRole("button", { name: /accept/i }),
+			await screen.findByRole("button", { name: /keep/i }),
 		).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /undo/i })).toBeInTheDocument();
 
 		await act(async () => {
 			utils?.unmount();

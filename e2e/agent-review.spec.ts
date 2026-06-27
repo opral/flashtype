@@ -62,8 +62,8 @@ test.skip("restored markdown file shows a review after Codex edits it", async ({
 		await expect(
 			page.getByRole("group", { name: "External write review actions" }),
 		).toBeVisible();
-		await expect(page.getByRole("button", { name: "Accept" })).toBeVisible();
-		await expect(page.getByRole("button", { name: "Reject" })).toBeVisible();
+		await expect(page.getByRole("button", { name: "Keep" })).toBeVisible();
+		await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
 	} finally {
 		process.env.PATH = originalPath;
 		if (originalShell === undefined) {
