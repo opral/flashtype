@@ -394,7 +394,15 @@ export function forgetTelemetrySessionContextForWebContents(webContents) {
 	if (!webContents) {
 		return;
 	}
+	const forgottenSessionId = rendererPostHogSessionIdsByWebContentsId.get(
+		webContents.id,
+	);
 	rendererPostHogSessionIdsByWebContentsId.delete(webContents.id);
+	if (latestRendererPostHogSessionId === forgottenSessionId) {
+		latestRendererPostHogSessionId = Array.from(
+			rendererPostHogSessionIdsByWebContentsId.values(),
+		).at(-1);
+	}
 }
 
 export function setTelemetrySessionContextForWebContents(

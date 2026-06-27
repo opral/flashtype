@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import os from "node:os";
 import {
 	beforeSendTelemetryEvent,
+	forgetTelemetrySessionContextForWebContents,
 	getDevelopmentTelemetryDistinctId,
 	scrubTelemetrySensitiveValues,
 	setTelemetrySessionContextForWebContents,
@@ -59,6 +60,41 @@ describe("beforeSendTelemetryEvent", () => {
 				},
 			})?.properties?.$session_id,
 		).toBe(explicitSessionId);
+	});
+
+	test("does not keep a closed window session as the latest renderer fallback", () => {
+		forgetTelemetrySessionContextForWebContents({ id: 42 });
+		const remainingWebContents = { id: 101 };
+		const closedWebContents = { id: 202 };
+		const remainingSessionId = "77777777-7777-4777-8777-777777777777";
+		const closedSessionId = "88888888-8888-4888-8888-888888888888";
+		setTelemetrySessionContextForWebContents(
+			remainingWebContents,
+			remainingSessionId,
+		);
+		setTelemetrySessionContextForWebContents(
+			closedWebContents,
+			closedSessionId,
+		);
+
+		forgetTelemetrySessionContextForWebContents(closedWebContents);
+
+		expect(
+			beforeSendTelemetryEvent({
+				event: "$exception",
+				distinctId: "install-id",
+				properties: {},
+			})?.properties?.$session_id,
+		).toBe(remainingSessionId);
+
+		forgetTelemetrySessionContextForWebContents(remainingWebContents);
+		expect(
+			beforeSendTelemetryEvent({
+				event: "$exception",
+				distinctId: "install-id",
+				properties: {},
+			})?.properties?.$session_id,
+		).toBeUndefined();
 	});
 });
 
