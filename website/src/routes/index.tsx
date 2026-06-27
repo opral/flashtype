@@ -229,7 +229,7 @@ function Features() {
 				>
 					<div className="flex flex-col gap-[22px]">
 						{feature.badge && (
-							<span className="inline-flex w-fit items-center rounded-full border border-[rgba(232,89,12,0.25)] bg-[rgba(249,115,22,0.1)] px-[13px] py-[5px] text-[12px] font-bold uppercase tracking-[0.12em] text-flash">
+							<span className="inline-flex w-fit items-center rounded-full border border-[rgba(232,89,12,0.25)] bg-[rgba(249,115,22,0.1)] px-[13px] py-[5px] text-[12px] font-bold uppercase tracking-[0.12em] text-[#9A3412]">
 								{feature.badge}
 							</span>
 						)}
@@ -381,7 +381,7 @@ function AgentsVisual() {
 							Ready to edit
 						</div>
 						<ClaudeCodeMascot compact />
-						<div className="mt-[9px] text-[11.5px] leading-[1.45] text-faint">
+						<div className="mt-[9px] text-[11.5px] leading-[1.45] text-muted">
 							Agent session · local project
 							<br />
 							~/Documents/flashtype
@@ -447,7 +447,7 @@ function HistoryVisual() {
 					aria-hidden="true"
 					data-nosnippet=""
 				>
-					<div className="mb-[16px] font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-faint">
+					<div className="mb-[16px] font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
 						Version History
 					</div>
 					<div className="relative flex flex-col gap-[2px] before:absolute before:bottom-[8px] before:left-[15px] before:top-[8px] before:w-[1.5px] before:bg-[#EAE4DC]">
@@ -545,13 +545,13 @@ function Footer() {
 	return (
 		<footer className="bg-paper">
 			<div className="mx-auto flex max-w-[1240px] items-center justify-between px-[40px] pt-[110px] pb-[56px] max-md:flex-col max-md:items-start max-md:px-[22px] max-md:pt-[80px] max-md:pb-[40px]">
-				<a href="/" className="flex items-center gap-[8px] text-[14px] font-semibold text-faint no-underline" aria-label="Flashtype home">
+				<a href="/" className="inline-flex min-h-[24px] items-center gap-[8px] text-[14px] font-semibold text-muted no-underline" aria-label="Flashtype home">
 					<Bolt className="h-[16px] w-[16px] fill-flash-bright text-flash-bright" />
 					<span>Flashtype</span>
 				</a>
 				<nav className="flex items-center gap-[24px] text-[14px] text-muted max-md:flex-wrap max-md:gap-x-[20px] max-md:gap-y-[14px]" aria-label="Footer navigation">
-					<a href={GITHUB_URL} className="no-underline hover:text-ink">GitHub</a>
-					<DownloadLink className="no-underline hover:text-ink">Download for Mac</DownloadLink>
+					<a href={GITHUB_URL} className="inline-flex min-h-[24px] items-center no-underline hover:text-ink">GitHub</a>
+					<DownloadLink className="inline-flex min-h-[24px] items-center no-underline hover:text-ink">Download for Mac</DownloadLink>
 					<span>© 2026 Opral</span>
 				</nav>
 			</div>
@@ -624,7 +624,7 @@ function MockWindow({
 				<div
 					className={
 						hero
-							? "ml-[18px] flex items-center gap-[9px] text-[16.5px] text-faint"
+							? "ml-[18px] flex items-center gap-[9px] text-[16.5px] text-muted"
 							: "pointer-events-none absolute inset-0 flex items-center justify-center gap-[6px] text-[12.5px] font-semibold text-muted"
 					}
 				>
@@ -644,7 +644,7 @@ function FileSidebar() {
 			aria-hidden="true"
 			data-nosnippet=""
 		>
-			<div className="px-[12px] pb-[10px] font-mono text-[14.5px] font-bold uppercase tracking-[0.12em] text-faint">
+			<div className="px-[12px] pb-[10px] font-mono text-[14.5px] font-bold uppercase tracking-[0.12em] text-muted">
 				Files
 			</div>
 			<FileLine kind="file" large>AGENTS.md</FileLine>
@@ -727,7 +727,7 @@ function TerminalPane() {
 				</span>
 				<strong className="text-ink">Ready to edit</strong>
 				<ClaudeCodeMascot />
-				<small className="text-[16px] leading-[1.5] text-faint">
+				<small className="text-[16px] leading-[1.5] text-muted">
 					Agent session · local project
 					<br />
 					~/Documents/flashtype
@@ -738,7 +738,7 @@ function TerminalPane() {
 			</p>
 			<p className="mt-[14px] text-secondary">⏺ Edited <strong className="text-ink">san-francisco-blog-post.md</strong> - 8 additions, 12 deletions</p>
 			<p className="mt-[14px] text-secondary">⏺ Added section <strong className="text-ink">A city of microclimates</strong></p>
-			<div className="mt-auto rounded-[9px] border border-[#E7E2DA] p-[16px_18px] text-faint">
+			<div className="mt-auto rounded-[9px] border border-[#E7E2DA] p-[16px_18px] text-muted">
 				<span className="text-terminal">&gt;</span> Type a task for Claude...
 			</div>
 		</aside>
@@ -822,11 +822,11 @@ function HistoryItem({
 				<strong className={`block text-[13.5px] leading-[1.2] ${current || selected ? "font-semibold text-ink" : "font-medium text-[#44403C]"}`}>
 					{title}
 				</strong>
-				<small className="mt-[2px] block text-[11.5px] text-faint">{meta}</small>
+				<small className="mt-[2px] block text-[11.5px] text-muted">{meta}</small>
 				{selected && (
-					<button type="button" className="mt-[8px] rounded-[7px] border border-[#EAD9C8] bg-transparent px-[11px] py-[5px] text-[11.5px] font-bold text-[#C2410C]">
+					<span className="mt-[8px] inline-flex rounded-[7px] border border-[#EAD9C8] bg-transparent px-[11px] py-[5px] text-[11.5px] font-bold text-[#C2410C]">
 						Restore this version
-					</button>
+					</span>
 				)}
 			</div>
 		</div>

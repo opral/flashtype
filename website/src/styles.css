@@ -11,7 +11,7 @@
 	--color-ink: #1c1917;
 	--color-body: #292524;
 	--color-secondary: #57534e;
-	--color-muted: #78716c;
+	--color-muted: #746d68;
 	--color-faint: #a8a29e;
 	--color-flash: #e8590c;
 	--color-flash-bright: #f97316;
@@ -21,7 +21,7 @@
 	--color-delete-bg: #fef2f2;
 	--color-insert-text: #15803d;
 	--color-insert-bg: #f0fdf4;
-	--color-terminal: #e2725b;
+	--color-terminal: #b4533f;
 }
 
 html {
