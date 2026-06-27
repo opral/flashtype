@@ -14,6 +14,13 @@ export type SimplifiedState = {
 	head: number;
 };
 
+export type SimplifiedSelection = {
+	anchor: number;
+	head: number;
+	rawAnchor: number;
+	rawHead: number;
+};
+
 export type FuzzOperation =
 	| { kind: "type"; value: string }
 	| { kind: "enter" }
@@ -27,12 +34,8 @@ export type MarkdownFuzzSnapshot = {
 	plainText: string;
 	editorJson: unknown;
 	positionCount: number;
-	selection: {
-		anchor: number;
-		head: number;
-		rawAnchor: number;
-		rawHead: number;
-	} | null;
+	domSelection: SimplifiedSelection | null;
+	selection: SimplifiedSelection | null;
 };
 
 type RandomSource = () => number;
@@ -251,8 +254,57 @@ export function simplifiedOffsetPositions(editor: Editor): number[] {
 export function simplifiedSelectionFromEditor(
 	editor: Editor,
 ): MarkdownFuzzSnapshot["selection"] {
-	const positions = simplifiedOffsetPositions(editor);
 	const { anchor: rawAnchor, head: rawHead } = editor.state.selection as any;
+	return simplifiedSelectionFromRawPositions(editor, rawAnchor, rawHead);
+}
+
+export function simplifiedSelectionFromDom(
+	editor: Editor,
+): MarkdownFuzzSnapshot["domSelection"] {
+	const view = editor.view as any;
+	const domSelection = view.domSelectionRange?.();
+	if (
+		!domSelection?.anchorNode ||
+		!domSelection?.focusNode ||
+		!isNodeInsideEditor(editor.view.dom, domSelection.anchorNode) ||
+		!isNodeInsideEditor(editor.view.dom, domSelection.focusNode)
+	) {
+		return null;
+	}
+
+	const rawAnchor = view.docView?.posFromDOM?.(
+		domSelection.anchorNode,
+		domSelection.anchorOffset,
+		1,
+	);
+	const rawHead = view.docView?.posFromDOM?.(
+		domSelection.focusNode,
+		domSelection.focusOffset,
+		1,
+	);
+	if (
+		typeof rawAnchor !== "number" ||
+		typeof rawHead !== "number" ||
+		rawAnchor < 0 ||
+		rawHead < 0
+	) {
+		return null;
+	}
+
+	return simplifiedSelectionFromRawPositions(editor, rawAnchor, rawHead);
+}
+
+function isNodeInsideEditor(editorDom: HTMLElement, node: Node): boolean {
+	const element = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
+	return Boolean(element && editorDom.contains(element));
+}
+
+function simplifiedSelectionFromRawPositions(
+	editor: Editor,
+	rawAnchor: number,
+	rawHead: number,
+): SimplifiedSelection | null {
+	const positions = simplifiedOffsetPositions(editor);
 	const anchor = positions.indexOf(rawAnchor);
 	const head = positions.indexOf(rawHead);
 	if (anchor < 0 || head < 0) {
@@ -282,6 +334,7 @@ export function validateEditorPositionMap(
 export function validateSimplifiedSelectionInvariant(args: {
 	state: SimplifiedState;
 	positionCount: number;
+	domSelection?: MarkdownFuzzSnapshot["domSelection"];
 	selection: MarkdownFuzzSnapshot["selection"];
 }): string | null {
 	const expectedPositionCount = args.state.chars.length + 1;
@@ -293,23 +346,63 @@ export function validateSimplifiedSelectionInvariant(args: {
 		].join("\n");
 	}
 
-	if (!args.selection) {
-		return "Editor selection does not map to a simplified offset.";
+	if (args.domSelection !== undefined) {
+		const domReason = validateSelectionMatchesState(
+			"DOM selection",
+			args.domSelection,
+			args.state,
+		);
+		if (domReason) return domReason;
 	}
 
+	const editorReason = validateSelectionMatchesState(
+		"Editor selection",
+		args.selection,
+		args.state,
+	);
+	if (editorReason) return editorReason;
+
 	if (
-		args.selection.anchor !== args.state.anchor ||
-		args.selection.head !== args.state.head
+		args.domSelection &&
+		args.selection &&
+		(args.domSelection.anchor !== args.selection.anchor ||
+			args.domSelection.head !== args.selection.head)
 	) {
 		return [
-			"Editor selection does not match simplified state.",
-			`expectedSelection=${args.state.anchor}:${args.state.head}`,
-			`actualSelection=${args.selection.anchor}:${args.selection.head}`,
-			`rawSelection=${args.selection.rawAnchor}:${args.selection.rawHead}`,
+			"DOM selection and editor selection do not agree.",
+			`domSelection=${formatSelection(args.domSelection)}`,
+			`editorSelection=${formatSelection(args.selection)}`,
 		].join("\n");
 	}
 
 	return null;
+}
+
+function validateSelectionMatchesState(
+	label: string,
+	selection: SimplifiedSelection | null,
+	state: SimplifiedState,
+): string | null {
+	if (!selection) {
+		return `${label} does not map to a simplified offset.`;
+	}
+
+	if (selection.anchor !== state.anchor || selection.head !== state.head) {
+		return [
+			`${label} does not match simplified state.`,
+			`expectedSelection=${state.anchor}:${state.head}`,
+			`actualSelection=${selection.anchor}:${selection.head}`,
+			`rawSelection=${selection.rawAnchor}:${selection.rawHead}`,
+		].join("\n");
+	}
+
+	return null;
+}
+
+function formatSelection(selection: SimplifiedSelection | null): string {
+	return selection
+		? `${selection.anchor}:${selection.head} (${selection.rawAnchor}:${selection.rawHead})`
+		: "<unmapped>";
 }
 
 export function buildSelectionInvariantFailureMessage(args: {
@@ -319,6 +412,7 @@ export function buildSelectionInvariantFailureMessage(args: {
 	state: SimplifiedState;
 	reason: string;
 	positionCount: number;
+	domSelection?: MarkdownFuzzSnapshot["domSelection"];
 	selection: MarkdownFuzzSnapshot["selection"];
 	editorJson?: unknown;
 }): string {
@@ -328,11 +422,10 @@ export function buildSelectionInvariantFailureMessage(args: {
 		`operationIndex=${args.index}`,
 		`operation=${JSON.stringify(args.operation)}`,
 		`expectedSelection=${args.state.anchor}:${args.state.head}`,
-		`actualSelection=${
-			args.selection
-				? `${args.selection.anchor}:${args.selection.head}`
-				: "<unmapped>"
-		}`,
+		args.domSelection === undefined
+			? null
+			: `domSelection=${formatSelection(args.domSelection)}`,
+		`editorSelection=${formatSelection(args.selection)}`,
 		`positionCount=${args.positionCount}`,
 		`simplified=${JSON.stringify(expectedPlainText(args.state))}`,
 		`reason=${args.reason}`,
