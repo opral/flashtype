@@ -176,6 +176,28 @@ export const MarkdownWcShortcuts = Extension.create({
 			return true;
 		};
 
+		const insertHardBreak = () => {
+			const { state, view } = this.editor;
+			const hardBreak = (state.schema.nodes as any).hardBreak;
+			if (!hardBreak) return false;
+
+			const { selection } = state;
+			const { $from, $to } = selection as any;
+			if (!$from.sameParent($to) || !$from.parent?.isTextblock) {
+				return false;
+			}
+			if (!$from.parent.canReplaceWith($from.index(), $to.index(), hardBreak)) {
+				return false;
+			}
+
+			const marks =
+				state.storedMarks ?? ($from.parentOffset ? $from.marks() : null);
+			const tr = state.tr.replaceSelectionWith(hardBreak.create());
+			if (marks) tr.ensureMarks(marks);
+			view.dispatch(tr.scrollIntoView());
+			return true;
+		};
+
 		return {
 			// Bold / Italic / Strike
 			"Mod-b": () => this.editor.chain().focus().toggleMark("bold").run(),
@@ -264,6 +286,8 @@ export const MarkdownWcShortcuts = Extension.create({
 					return true;
 				});
 			},
+
+			"Shift-Enter": insertHardBreak,
 
 			Backspace: () => {
 				const { state } = this.editor;
