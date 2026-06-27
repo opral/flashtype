@@ -105,7 +105,12 @@ import {
 	type ReviewGuard,
 } from "./external-write-review-guard";
 import { ExternalWriteReviewAbandonDialog } from "./external-write-review-abandon-dialog";
-import { keepProposedThenContinue } from "./external-write-review-abandon";
+import {
+	keepProposedThenContinue,
+	rejectAllThenContinue,
+	type KeepProposedOutcome,
+	type RejectAllOutcome,
+} from "./external-write-review-abandon";
 
 type NewFileDraftHandlerRegistration = {
 	readonly panelSide: PanelSide;
@@ -1580,21 +1585,26 @@ function LayoutShellLoadedContent({
 			readonly fileId: string;
 			readonly reviewId: string;
 			readonly review?: ExternalWriteReview;
-		}) => {
+		}): Promise<KeepProposedOutcome> => {
 			const review = getExternalWriteReviewForFile(args);
 			if (!review) {
-				return;
+				return "noop";
 			}
-			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return;
+			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return "noop";
 			await clearAgentTurnCommitRangeFile(lix, {
 				fileId: review.fileId,
 				reviewId: review.reviewId,
 				agentTurnRangeIds: review.agentTurnRangeIds,
 			});
-			const outcome = (await isExternalWriteReviewCurrent(review))
+			// "accepted" only when the file still holds the after-state the user saw;
+			// otherwise a newer write landed and the proposed state was not preserved.
+			const outcome: KeepProposedOutcome = (await isExternalWriteReviewCurrent(
+				review,
+			))
 				? "accepted"
 				: "abandoned";
 			resolveDiffReviewTelemetry(review, outcome);
+			return outcome;
 		},
 		[
 			lix,
@@ -1609,12 +1619,12 @@ function LayoutShellLoadedContent({
 			readonly fileId: string;
 			readonly reviewId: string;
 			readonly review?: ExternalWriteReview;
-		}) => {
+		}): Promise<RejectAllOutcome> => {
 			const review = getExternalWriteReviewForFile(args);
 			if (!review) {
-				return;
+				return "noop";
 			}
-			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return;
+			if (diffResolvedReviewIdsRef.current.has(review.reviewId)) return "noop";
 			if (!(await isExternalWriteReviewCurrent(review))) {
 				await clearAgentTurnCommitRangeFile(lix, {
 					fileId: review.fileId,
@@ -1622,7 +1632,7 @@ function LayoutShellLoadedContent({
 					agentTurnRangeIds: review.agentTurnRangeIds,
 				});
 				resolveDiffReviewTelemetry(review, "abandoned");
-				return;
+				return "abandoned";
 			}
 			const beforeData = await getFileDataAtCommit(
 				lix,
@@ -1636,7 +1646,7 @@ function LayoutShellLoadedContent({
 					agentTurnRangeIds: review.agentTurnRangeIds,
 				});
 				resolveDiffReviewTelemetry(review, "abandoned");
-				return;
+				return "abandoned";
 			}
 			const { fileId } = args;
 			const result = await qb(lix)
@@ -1651,9 +1661,10 @@ function LayoutShellLoadedContent({
 			});
 			if (Number(result.numUpdatedRows) > 0) {
 				resolveDiffReviewTelemetry(review, "rejected");
-			} else {
-				resolveDiffReviewTelemetry(review, "abandoned");
+				return "rejected";
 			}
+			resolveDiffReviewTelemetry(review, "abandoned");
+			return "abandoned";
 		},
 		[
 			lix,
@@ -1772,15 +1783,14 @@ function LayoutShellLoadedContent({
 		setAbandonDialog(null);
 		if (!dialog) return;
 		// Keep the proposed (after) changes by accepting the whole review, and
-		// continue only once that acceptance resolves.
+		// continue only when the acceptance actually preserved that state — if a
+		// newer write made it stale, the accept reports "abandoned" and we cancel.
 		void keepProposedThenContinue({
-			accept: async () => {
-				await handleAcceptExternalWriteReview({
+			accept: () =>
+				handleAcceptExternalWriteReview({
 					fileId: dialog.guard.fileId,
 					reviewId: dialog.guard.reviewId,
-				});
-				return "accepted" as const;
-			},
+				}),
 			continuation: dialog.continuation,
 			cancel: dialog.onCancel,
 		});
@@ -1790,13 +1800,17 @@ function LayoutShellLoadedContent({
 		const dialog = abandonDialog;
 		setAbandonDialog(null);
 		if (!dialog) return;
-		void (async () => {
-			await handleRejectExternalWriteReview({
-				fileId: dialog.guard.fileId,
-				reviewId: dialog.guard.reviewId,
-			});
-			dialog.continuation();
-		})();
+		// Discard the proposed changes by rejecting the whole review, and continue
+		// only when it actually restored the before-state; otherwise cancel.
+		void rejectAllThenContinue({
+			reject: () =>
+				handleRejectExternalWriteReview({
+					fileId: dialog.guard.fileId,
+					reviewId: dialog.guard.reviewId,
+				}),
+			continuation: dialog.continuation,
+			cancel: dialog.onCancel,
+		});
 	}, [abandonDialog, handleRejectExternalWriteReview]);
 
 	const handleCloseView = useCallback(
@@ -2392,8 +2406,22 @@ function LayoutShellLoadedContent({
 			resizePanel: handleResizePanel,
 			focusPanel: focusPanel,
 			registerNewFileDraftHandler,
-			acceptExternalWriteReview: handleAcceptExternalWriteReview,
-			rejectExternalWriteReview: handleRejectExternalWriteReview,
+			// The view context's accept/reject return void; the richer outcome is
+			// consumed by the abandonment guard, which calls the handlers directly.
+			acceptExternalWriteReview: async (args: {
+				readonly fileId: string;
+				readonly reviewId: string;
+				readonly review?: ExternalWriteReview;
+			}) => {
+				await handleAcceptExternalWriteReview(args);
+			},
+			rejectExternalWriteReview: async (args: {
+				readonly fileId: string;
+				readonly reviewId: string;
+				readonly review?: ExternalWriteReview;
+			}) => {
+				await handleRejectExternalWriteReview(args);
+			},
 			resolveExternalWriteReviewGranular:
 				handleResolveExternalWriteReviewGranular,
 			registerExternalWriteReviewGuard,
