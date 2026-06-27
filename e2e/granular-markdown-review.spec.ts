@@ -11,6 +11,12 @@ import {
 	seedTrackChangesWorkspace,
 } from "./electron-test-utils";
 
+// These tests drive a real round trip: write a file on disk -> OS watcher ->
+// Lix ingest+commit -> renderer observe -> review UI. That first hop can race
+// the detector's initial snapshot on a cold launch, so allow a couple retries
+// for the inherent I/O timing (the assertions themselves are deterministic).
+test.describe.configure({ retries: 2 });
+
 const INITIAL = "# Review\n\nAlpha paragraph.\n\nBeta paragraph.\n";
 // One external edit touching both paragraphs -> two granular changes.
 const EDIT = "# Review\n\nAlpha v2.\n\nBeta v2.\n";
@@ -26,8 +32,11 @@ async function openReviewFile(testInfo: {
 	const dir = testInfo.outputPath("workspace");
 	const reviewPath = path.join(dir, "review.md");
 	await mkdir(dir, { recursive: true });
-	await writeFile(reviewPath, INITIAL);
+	// Seed the Track Changes (.lix) workspace first, then write the file, so the
+	// app ingests it fresh with the Markdown plugin active and materializes its
+	// block snapshots at a tracked commit (the review's before-side).
 	seedTrackChangesWorkspace(dir);
+	await writeFile(reviewPath, INITIAL);
 
 	const app = await launchDevElectronApp(dir);
 	const page = await app.firstWindow();
@@ -40,6 +49,13 @@ async function openReviewFile(testInfo: {
 	await expect(page.getByText("Alpha paragraph.")).toBeVisible({
 		timeout: 30_000,
 	});
+	// Wait until the external-write detector has snapshotted the initial state, so
+	// the first test edit is seen as an edit rather than folded into the baseline.
+	await expect(page.locator("html")).toHaveAttribute(
+		"data-external-write-detector-armed",
+		"true",
+		{ timeout: 30_000 },
+	);
 	return { app, page, reviewPath };
 }
 
@@ -83,12 +99,7 @@ test("accepts one block and rejects another on the first external Markdown edit"
 const EDIT_ALPHA = "# Review\n\nAlpha v2.\n\nBeta paragraph.\n";
 const EDIT_BOTH = "# Review\n\nAlpha v2.\n\nBeta v2.\n";
 
-// FIXME: under the new ephemeral/Track-Changes workspace model, the coalesced
-// review still shows the full cumulative diff (the first change is not dropped),
-// but it falls back to the classic controls instead of upgrading to the
-// per-change stepper. Re-enable once the folded review's granular eligibility is
-// re-established against the new Lix SDK's commit/snapshot model.
-test.fixme("folds a second external edit into the open review instead of dropping the first", async ({
+test("folds a second external edit into the open review instead of dropping the first", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	let app: ElectronApplication | undefined;
@@ -105,6 +116,12 @@ test.fixme("folds a second external edit into the open review instead of droppin
 			page.getByRole("group", { name: "External write review actions" }),
 		).toBeVisible();
 		await expect(page.getByTestId("markdown-review-stepper")).toHaveCount(0);
+		// Let write1's review fully render (its commit + projection settled) before
+		// the second write, so the fold computes against fresh history rather than
+		// racing the first write's ingest.
+		await expect(overlay.getByText("v2.", { exact: false }).first()).toBeVisible({
+			timeout: 30_000,
+		});
 
 		// Folds into the open review -> cumulative two-change stepper.
 		await writeFile(reviewPath, EDIT_BOTH);

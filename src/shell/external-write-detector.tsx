@@ -81,6 +81,10 @@ export function ExternalWriteDetector({
 			lastHashesRef.current = nextHashes;
 			if (!hasInitialSnapshotRef.current) {
 				hasInitialSnapshotRef.current = true;
+				// Mark the detector as armed once its initial snapshot is recorded.
+				// Until then an external write would be folded into the baseline and
+				// not seen as an edit; tests wait on this before writing.
+				document.documentElement.dataset.externalWriteDetectorArmed = "true";
 				return;
 			}
 			if (externalWrites.length === 0) return;

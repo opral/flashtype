@@ -29,6 +29,11 @@ import {
 	type GranularReviewResolutionOutcome,
 } from "@/extension-runtime/external-write-review";
 import { planGranularReview } from "./granular-review-plan";
+import {
+	MARKDOWN_BLOCKS_AT_COMMIT_SQL,
+	parseMarkdownBlockSnapshot,
+	sortMarkdownBlocks,
+} from "./markdown-block-history";
 import { MarkdownReviewStepper } from "./markdown-review-stepper";
 import type { ReviewGuard } from "@/shell/external-write-review-guard";
 import { AnimatedZap } from "@/components/animated-zap";
@@ -195,6 +200,8 @@ function MarkdownViewLoaded({
 									afterCommitId={externalWriteReview.afterCommitId}
 									beforeData={externalWriteReview.beforeData}
 									afterData={externalWriteReview.afterData}
+									stickyBeforeBlocks={externalWriteReview.markdownBeforeBlocks}
+									stickyAfterBlocks={externalWriteReview.markdownAfterBlocks}
 									isActive={isActiveView && isPanelFocused}
 									onAccept={onAcceptReviewDiff}
 									onReject={onRejectReviewDiff}
@@ -279,6 +286,8 @@ function MarkdownReviewOverlay({
 	afterCommitId,
 	beforeData,
 	afterData,
+	stickyBeforeBlocks,
+	stickyAfterBlocks,
 	isActive,
 	onAccept,
 	onReject,
@@ -293,6 +302,13 @@ function MarkdownReviewOverlay({
 	readonly afterCommitId?: string;
 	readonly beforeData: Uint8Array;
 	readonly afterData: Uint8Array;
+	/**
+	 * Markdown block snapshots captured with the review (see ExternalWriteReview).
+	 * Preferred over the reactive commit queries so a coalesced review keeps a
+	 * valid before-side even once its commit sinks deeper in history.
+	 */
+	readonly stickyBeforeBlocks?: readonly MarkdownBlockSnapshot[];
+	readonly stickyAfterBlocks?: readonly MarkdownBlockSnapshot[];
 	readonly isActive: boolean;
 	readonly onAccept?: (args: {
 		readonly fileId: string;
@@ -311,8 +327,18 @@ function MarkdownReviewOverlay({
 		hasPendingDecisions: boolean,
 	) => void;
 }) {
-	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
-	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
+	const beforeBlocksFromCommit = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
+	const afterBlocksFromCommit = useMarkdownBlocksAtCommit(fileId, afterCommitId);
+	// Prefer the snapshots captured with the review — that sticky before-side is
+	// what keeps a coalesced review granular once its commit sinks deep in
+	// history. Empty sticky blocks mean the capture lost a race with a fresh
+	// commit, so fall back to the reactive query, which catches up.
+	const beforeBlocks = stickyBeforeBlocks?.length
+		? stickyBeforeBlocks
+		: beforeBlocksFromCommit;
+	const afterBlocks = stickyAfterBlocks?.length
+		? stickyAfterBlocks
+		: afterBlocksFromCommit;
 	const diffContainerRef = useRef<HTMLDivElement | null>(null);
 	const pendingDecisionsRef = useRef(false);
 	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
@@ -483,53 +509,30 @@ function useMarkdownBlocksAtCommit(
 	const rows = useQuery<HistoricalMarkdownBlockRow>(
 		(lix) =>
 			commitId
-				? historicalMarkdownBlocksQuery(lix, commitId, fileId)
+				? markdownBlocksAtCommitQuery(lix, commitId, fileId)
 				: emptyMarkdownBlocksQuery(),
 		{ subscribe: false },
 	);
 	return useMemo(() => {
 		if (!commitId) return undefined;
-		return rows
-			.map((row) => parseHistoricalMarkdownBlock(row.snapshot_content))
-			.filter((block): block is MarkdownBlockSnapshot => block !== null)
-			.sort(
-				(left, right) =>
-					left.orderKey.localeCompare(right.orderKey) ||
-					left.id.localeCompare(right.id),
-			);
+		return sortMarkdownBlocks(
+			rows
+				.map((row) => parseMarkdownBlockSnapshot(row.snapshot_content))
+				.filter((block): block is MarkdownBlockSnapshot => block !== null),
+		);
 	}, [commitId, rows]);
 }
 
-function historicalMarkdownBlocksQuery(
+function markdownBlocksAtCommitQuery(
 	lix: ReturnType<typeof useLix>,
 	commitId: string,
 	fileId: string,
 ) {
-	const sql = `
-		WITH ranked AS (
-			SELECT
-				entity_pk,
-				snapshot_content,
-				depth,
-				ROW_NUMBER() OVER (
-					PARTITION BY entity_pk
-					ORDER BY depth ASC
-				) AS rn
-			FROM lix_state_history
-			WHERE start_commit_id = ?
-				AND file_id = ?
-				AND schema_key = 'markdown_block'
-		)
-		SELECT snapshot_content
-		FROM ranked
-		WHERE rn = 1
-			AND snapshot_content IS NOT NULL
-	`;
 	const parameters = [commitId, fileId] as const;
 	return {
-		compile: () => ({ sql, parameters }),
+		compile: () => ({ sql: MARKDOWN_BLOCKS_AT_COMMIT_SQL, parameters }),
 		execute: async () => {
-			const result = await lix.execute(sql, parameters);
+			const result = await lix.execute(MARKDOWN_BLOCKS_AT_COMMIT_SQL, parameters);
 			return result.rows.map(
 				(row) => row.toObject() as HistoricalMarkdownBlockRow,
 			);
@@ -542,31 +545,6 @@ function emptyMarkdownBlocksQuery() {
 		compile: () => ({ sql: "SELECT 1 WHERE 0", parameters: [] }),
 		execute: async () => [] as HistoricalMarkdownBlockRow[],
 	};
-}
-
-function parseHistoricalMarkdownBlock(
-	value: unknown,
-): MarkdownBlockSnapshot | null {
-	const snapshot = typeof value === "string" ? safeJsonParse(value) : value;
-	if (!snapshot || typeof snapshot !== "object") return null;
-	const record = snapshot as Record<string, unknown>;
-	const { id, order_key: orderKey, block } = record;
-	if (
-		typeof id !== "string" ||
-		typeof orderKey !== "string" ||
-		typeof block !== "string"
-	) {
-		return null;
-	}
-	return { id, orderKey, block };
-}
-
-function safeJsonParse(value: string): unknown {
-	try {
-		return JSON.parse(value);
-	} catch {
-		return null;
-	}
 }
 
 function UnsupportedFilePlaceholder({

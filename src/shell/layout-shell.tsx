@@ -1806,6 +1806,10 @@ function LayoutShellLoadedContent({
 							beforeData: existingReview.beforeData,
 							beforeCommitId: existingReview.beforeCommitId,
 							beforeDepth: existingReview.beforeDepth,
+							// Keep the original before-side snapshots and advance only the
+							// after-side, so the folded review stays granular-eligible.
+							markdownBeforeBlocks: existingReview.markdownBeforeBlocks,
+							markdownAfterBlocks: latest.markdownAfterBlocks,
 							reviewId: `${write.fileId}:${hashFileData(
 								existingReview.beforeData,
 							)}:${hashFileData(latest.afterData)}`,

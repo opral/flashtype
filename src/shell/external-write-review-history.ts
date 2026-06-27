@@ -2,7 +2,9 @@ import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import { hashFileData } from "@/extension-runtime/external-write-tracking";
+import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
 import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import { loadMarkdownBlocksAtCommit } from "@/extensions/markdown/markdown-block-history";
 
 type FileHistoryRow = {
 	readonly data: unknown;
@@ -19,15 +21,37 @@ export async function getExternalWriteReview(
 	if (!rows || rows.history.length < 2) return null;
 	const afterData = decodeFileDataToBytes(rows.history[0]?.data);
 	const beforeData = decodeFileDataToBytes(rows.history[1]?.data);
+	const afterCommitId =
+		rows.history[0]?.lixcol_observed_commit_id ?? rows.startCommitId;
+	const beforeCommitId =
+		rows.history[1]?.lixcol_observed_commit_id ?? undefined;
+
+	// Capture the before/after block snapshots now, while these commits are still
+	// convenient to query. A coalescing fold keeps the original before-side, so
+	// granular review survives even after that commit sinks deeper in history.
+	const markdown = isMarkdownFilePath(path)
+		? {
+				markdownBeforeBlocks: await loadMarkdownBlocksAtCommit(
+					lix,
+					fileId,
+					beforeCommitId,
+				),
+				markdownAfterBlocks: await loadMarkdownBlocksAtCommit(
+					lix,
+					fileId,
+					afterCommitId,
+				),
+			}
+		: undefined;
+
 	return {
 		fileId,
 		path,
 		reviewId: `${fileId}:${hashFileData(beforeData)}:${hashFileData(afterData)}`,
 		afterData,
 		beforeData,
-		afterCommitId:
-			rows.history[0]?.lixcol_observed_commit_id ?? rows.startCommitId,
-		beforeCommitId: rows.history[1]?.lixcol_observed_commit_id ?? undefined,
+		afterCommitId,
+		beforeCommitId,
 		afterDepth:
 			typeof rows.history[0]?.lixcol_depth === "number"
 				? rows.history[0].lixcol_depth
@@ -36,6 +60,8 @@ export async function getExternalWriteReview(
 			typeof rows.history[1]?.lixcol_depth === "number"
 				? rows.history[1].lixcol_depth
 				: undefined,
+		markdownBeforeBlocks: markdown?.markdownBeforeBlocks,
+		markdownAfterBlocks: markdown?.markdownAfterBlocks,
 	};
 }
 
