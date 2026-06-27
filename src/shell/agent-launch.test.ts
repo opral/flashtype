@@ -41,7 +41,7 @@ describe("buildAgentLaunchArgsWithActiveFile", () => {
 		expect(command).toContain("UserPromptSubmit");
 		expect(command).toContain("StopFailure");
 		expect(command).toContain(
-			'node \\"$FLASHTYPE_AGENT_HOOK_SCRIPT\\" claude turn-start',
+			'ELECTRON_RUN_AS_NODE=1 \\"$FLASHTYPE_AGENT_HOOK_NODE\\" \\"$FLASHTYPE_AGENT_HOOK_SCRIPT\\" claude turn-start',
 		);
 		expect(command).toContain(
 			"--append-system-prompt 'The user is using Flashtype.com. The active file right now, which may change later, is: ./docs/intro.md'",
@@ -65,7 +65,7 @@ describe("buildAgentLaunchArgsWithActiveFile", () => {
 		expect(command).toContain("hooks.UserPromptSubmit=");
 		expect(command).toContain("hooks.Stop=");
 		expect(command).toContain(
-			'node \\"$FLASHTYPE_AGENT_HOOK_SCRIPT\\" codex turn-start',
+			'ELECTRON_RUN_AS_NODE=1 \\"$FLASHTYPE_AGENT_HOOK_NODE\\" \\"$FLASHTYPE_AGENT_HOOK_SCRIPT\\" codex turn-start',
 		);
 		expect(command).toContain(
 			"-c 'developer_instructions=\"The user is using Flashtype.com. The active file right now, which may change later, is: ./docs/intro.md\"'",

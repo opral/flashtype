@@ -11,24 +11,24 @@ import {
 
 describe("normalizeAgentHookEvent", () => {
 	test("normalizes valid hook events", () => {
-		expect(
-			normalizeAgentHookEvent(
-				{
-					id: "event-1",
-					token: "secret",
-					instanceId: "terminal:1",
-					agent: "claude",
-					phase: "turn-start",
-					hookEventName: "UserPromptSubmit",
-					sessionId: "session-1",
-					turnId: "turn-1",
+		const normalized = normalizeAgentHookEvent(
+			{
+				token: "secret",
+				instanceId: "terminal:1",
+				agent: "claude",
+				phase: "turn-start",
+				stdinRaw: JSON.stringify({
+					hook_event_name: "UserPromptSubmit",
+					session_id: "session-1",
+					turn_id: "turn-1",
 					cwd: "/workspace",
-					createdAt: 123,
-				},
-				"secret",
-			),
-		).toEqual({
-			id: "event-1",
+				}),
+				createdAt: 123,
+			},
+			"secret",
+		);
+
+		expect(normalized).toMatchObject({
 			instanceId: "terminal:1",
 			agent: "claude",
 			phase: "turn-start",
@@ -38,6 +38,7 @@ describe("normalizeAgentHookEvent", () => {
 			cwd: "/workspace",
 			createdAt: 123,
 		});
+		expect(normalized?.id).toEqual(expect.any(String));
 	});
 
 	test("rejects malformed events and token mismatches", () => {
@@ -144,6 +145,13 @@ describe("agentHookScriptSource", () => {
 			await listen(server, socketPath);
 
 			let exited = false;
+			const hookStdin = JSON.stringify({
+				hook_event_name: "Stop",
+				session_id: "session-1",
+				turn_id: "turn-1",
+				cwd: "/workspace",
+				transcript: "x".repeat(70 * 1024),
+			});
 			const runPromise = runHookScript({
 				scriptPath,
 				args: ["codex", "turn-stop"],
@@ -152,17 +160,22 @@ describe("agentHookScriptSource", () => {
 					FLASHTYPE_AGENT_HOOK_TOKEN: "secret",
 					FLASHTYPE_AGENT_HOOK_INSTANCE_ID: "terminal:1",
 				},
-				stdin: JSON.stringify({
-					hook_event_name: "Stop",
-					session_id: "session-1",
-					turn_id: "turn-1",
-					cwd: "/workspace",
-				}),
+				stdin: hookStdin,
 			}).then(() => {
 				exited = true;
 			});
 
 			const raw = await received.promise;
+			expect(raw).toMatchObject({
+				instanceId: "terminal:1",
+				token: "secret",
+				agent: "codex",
+				phase: "turn-stop",
+				stdinRaw: hookStdin,
+				createdAt: expect.any(Number),
+			});
+			expect(raw.id).toBeUndefined();
+			expect(raw.hookEventName).toBeUndefined();
 			expect(
 				normalizeAgentHookEvent(raw, "secret", "terminal:1"),
 			).toMatchObject({

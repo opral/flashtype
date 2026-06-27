@@ -7,7 +7,6 @@ const HOOK_ROOT_DIR = "agent-hooks";
 const HOOK_SCRIPT_NAME = "flashtype-agent-hook.mjs";
 const EVENT_CHANNEL = "agentHooks:turnEvent";
 const EVENT_COMPLETE_CHANNEL = "agentHooks:completeTurnEvent";
-const MAX_EVENT_BYTES = 64 * 1024;
 const HOOK_SOCKET_TIMEOUT_MS = 9_000;
 const RENDERER_ACK_TIMEOUT_MS = 8_000;
 
@@ -70,6 +69,7 @@ export async function createAgentHookEnvironment(args) {
 	});
 	endpoints.set(instanceId, endpoint);
 	return {
+		FLASHTYPE_AGENT_HOOK_NODE: process.execPath,
 		FLASHTYPE_AGENT_HOOK_SCRIPT: bridgeState.scriptPath,
 		FLASHTYPE_AGENT_HOOK_SOCKET: endpoint.socketPath,
 		FLASHTYPE_AGENT_HOOK_TOKEN: endpoint.token,
@@ -107,15 +107,22 @@ export function normalizeAgentHookEvent(
 	if (!agent || !phase) {
 		return null;
 	}
+	const hookInput = parseHookStdin(record.stdinRaw);
 	return {
 		id: readNonEmptyString(record.id) ?? crypto.randomUUID(),
 		instanceId,
 		agent,
 		phase,
-		hookEventName: readNonEmptyString(record.hookEventName),
-		sessionId: readNonEmptyString(record.sessionId),
-		turnId: readNonEmptyString(record.turnId),
-		cwd: readNonEmptyString(record.cwd),
+		hookEventName:
+			readNonEmptyString(record.hookEventName) ??
+			readNonEmptyString(hookInput.hook_event_name),
+		sessionId:
+			readNonEmptyString(record.sessionId) ??
+			readNonEmptyString(hookInput.session_id),
+		turnId:
+			readNonEmptyString(record.turnId) ??
+			readNonEmptyString(hookInput.turn_id),
+		cwd: readNonEmptyString(record.cwd) ?? readNonEmptyString(hookInput.cwd),
 		createdAt:
 			typeof record.createdAt === "number" && Number.isFinite(record.createdAt)
 				? record.createdAt
@@ -222,9 +229,6 @@ function handleAgentHookConnection(endpoint, socket) {
 	});
 	socket.on("data", (chunk) => {
 		input += chunk;
-		if (Buffer.byteLength(input, "utf8") > MAX_EVENT_BYTES) {
-			finish({ ok: false, error: "event_too_large" });
-		}
 	});
 	socket.on("end", () => {
 		if (settled) {
@@ -343,43 +347,38 @@ function readEnum(value, allowed) {
 	return typeof value === "string" && allowed.includes(value) ? value : null;
 }
 
+function parseHookStdin(value) {
+	if (typeof value !== "string" || value.length === 0) {
+		return {};
+	}
+	try {
+		const parsed = JSON.parse(value);
+		return parsed && typeof parsed === "object" ? parsed : {};
+	} catch {
+		return {};
+	}
+}
+
 export function agentHookScriptSource() {
-	return String.raw`import { connect } from "node:net";
+	return String.raw`import { readFileSync } from "node:fs";
+import { connect } from "node:net";
 
 const [agent, phase] = process.argv.slice(2);
 const socketPath = process.env.FLASHTYPE_AGENT_HOOK_SOCKET;
 const token = process.env.FLASHTYPE_AGENT_HOOK_TOKEN;
 const instanceId = process.env.FLASHTYPE_AGENT_HOOK_INSTANCE_ID;
 const SOCKET_ACK_TIMEOUT_MS = 9000;
-const MAX_ACK_BYTES = 64 * 1024;
 
 if (!socketPath || !token || !instanceId || !agent || !phase) {
 	process.exit(0);
 }
 
-let input = "";
-for await (const chunk of process.stdin) {
-	input += chunk;
-	if (input.length > 64 * 1024) break;
-}
-
-let hookInput = {};
-try {
-	hookInput = input ? JSON.parse(input) : {};
-} catch {
-	hookInput = {};
-}
-
 const payload = {
-	id: crypto.randomUUID(),
 	instanceId,
 	token,
 	agent,
 	phase,
-	hookEventName: readString(hookInput.hook_event_name),
-	sessionId: readString(hookInput.session_id),
-	turnId: readString(hookInput.turn_id),
-	cwd: readString(hookInput.cwd),
+	stdinRaw: readFileSync(0, "utf8"),
 	createdAt: Date.now(),
 };
 
@@ -414,9 +413,6 @@ function sendHookEvent(payload) {
 		});
 		socket.on("data", (chunk) => {
 			response += chunk;
-			if (response.length > MAX_ACK_BYTES) {
-				finish(new Error("Hook acknowledgement is too large"));
-			}
 		});
 		socket.on("end", () => {
 			if (response.length === 0) {
@@ -438,8 +434,5 @@ function sendHookEvent(payload) {
 	});
 }
 
-function readString(value) {
-	return typeof value === "string" && value.length > 0 ? value : undefined;
-}
 `;
 }

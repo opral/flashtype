@@ -164,7 +164,7 @@ function buildAgentHookCommand(
 	agent: "claude" | "codex",
 	phase: "turn-start" | "turn-stop",
 ): string {
-	return `node "$FLASHTYPE_AGENT_HOOK_SCRIPT" ${agent} ${phase}`;
+	return `ELECTRON_RUN_AS_NODE=1 "$FLASHTYPE_AGENT_HOOK_NODE" "$FLASHTYPE_AGENT_HOOK_SCRIPT" ${agent} ${phase}`;
 }
 
 function shellQuote(value: string): string {
