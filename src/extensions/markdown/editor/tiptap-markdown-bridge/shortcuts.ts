@@ -149,11 +149,16 @@ export const MarkdownWcShortcuts = Extension.create({
 	},
 
 	addKeyboardShortcuts() {
+		const flushDomSelection = () => {
+			(this.editor.view as any).domObserver?.flush?.();
+		};
+
 		const deletePreviousWord = () => {
+			flushDomSelection();
 			const { state, view } = this.editor;
 			const { selection } = state;
 			if (!selection.empty) {
-				return this.editor.chain().focus().deleteSelection().run();
+				return this.editor.commands.deleteSelection();
 			}
 
 			const $from: any = selection.$from;
@@ -177,6 +182,7 @@ export const MarkdownWcShortcuts = Extension.create({
 		};
 
 		const insertHardBreak = () => {
+			flushDomSelection();
 			const { state, view } = this.editor;
 			const hardBreak = (state.schema.nodes as any).hardBreak;
 			if (!hardBreak) return false;
@@ -368,6 +374,7 @@ export const MarkdownWcShortcuts = Extension.create({
 
 			// Enter in list: create a new list item; for tasks, make it unchecked
 			Enter: () => {
+				flushDomSelection();
 				const { state } = this.editor;
 				const $from: any = state.selection.$from;
 				// Find enclosing listItem
@@ -383,7 +390,7 @@ export const MarkdownWcShortcuts = Extension.create({
 				}
 				if (!inListItem) {
 					// Default behavior outside lists: split the block (new paragraph)
-					return this.editor.chain().focus().splitBlock().run();
+					return this.editor.commands.splitBlock();
 				}
 				// If current paragraph is empty, exit the list (lift)
 				const para: any = $from.parent;
@@ -391,13 +398,14 @@ export const MarkdownWcShortcuts = Extension.create({
 					para?.type?.name === "paragraph" &&
 					(para.textContent || "").length === 0;
 				if (isEmptyPara) {
-					return this.editor.chain().focus().liftListItem("listItem").run();
+					return this.editor.commands.liftListItem("listItem");
 				}
-				const chain = this.editor.chain().focus();
 				if (isTask) {
-					return chain.splitListItem("listItem", { checked: false }).run();
+					return this.editor.commands.splitListItem("listItem", {
+						checked: false,
+					});
 				}
-				return chain.splitListItem("listItem").run();
+				return this.editor.commands.splitListItem("listItem");
 			},
 		};
 	},

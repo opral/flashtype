@@ -131,14 +131,8 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 		for (let index = 0; index < operationCount; index += 1) {
 			const operation = nextOperation(rng, state);
 			try {
-				if (operation.kind !== "move") {
-					await setUiEditorSelection(page, state.anchor, state.head);
-				}
 				await applyOperationToUiPage(page, operation);
 				applyOperationToSimplifiedState(state, operation);
-				if (operation.kind === "left" || operation.kind === "right") {
-					await setUiEditorSelection(page, state.anchor, state.head);
-				}
 			} catch (error) {
 				const snapshot = await safeUiSnapshot(page);
 				throw new Error(
@@ -154,6 +148,7 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 			}
 
 			const snapshot = await readUiSnapshot(page);
+			assertUiSnapshotSelectionMatches(snapshot, state, seed, index, operation);
 			const expected = expectedPlainText(state);
 			if (snapshot.plainText !== expected) {
 				throw new Error(
@@ -420,6 +415,50 @@ function buildUiPlainTextMismatchMessage(args: {
 		`expected=${JSON.stringify(args.expected)}`,
 		`actual=${JSON.stringify(args.actual)}`,
 		formatUiSnapshot(args.snapshot),
+	].join("\n");
+}
+
+function assertUiSnapshotSelectionMatches(
+	snapshot: UiMarkdownFuzzSnapshot,
+	state: SimplifiedState,
+	seed: string,
+	index: number,
+	operation: FuzzOperation,
+): void {
+	if (
+		snapshot.selection &&
+		snapshot.selection.anchor === state.anchor &&
+		snapshot.selection.head === state.head
+	) {
+		return;
+	}
+
+	throw new Error(
+		buildUiSelectionMismatchMessage({
+			seed,
+			index,
+			operation,
+			state,
+			snapshot,
+		}),
+	);
+}
+
+function buildUiSelectionMismatchMessage(args: {
+	seed: string;
+	index: number;
+	operation: FuzzOperation;
+	state: SimplifiedState;
+	snapshot: UiMarkdownFuzzSnapshot;
+}): string {
+	return [
+		"Markdown editor UI selection fuzz mismatch.",
+		`seed=${args.seed}`,
+		`operationIndex=${args.index}`,
+		`operation=${JSON.stringify(args.operation)}`,
+		`expectedSelection=${args.state.anchor}:${args.state.head}`,
+		formatUiSnapshot(args.snapshot),
+		`simplified=${JSON.stringify(expectedPlainText(args.state))}`,
 	].join("\n");
 }
 
