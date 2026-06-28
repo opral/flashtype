@@ -51,6 +51,55 @@ function canonicalAst(ast: Ast): Ast {
 	return stripNullData(normalizeAst(ast));
 }
 
+function renderPlainText(ast: Ast): string {
+	return (ast?.children ?? []).map(renderBlockPlainText).join("\x1E");
+}
+
+function renderBlockPlainText(node: any): string {
+	if (!node || typeof node !== "object") return "";
+	if (
+		node.type === "paragraph" &&
+		isEmptyParagraphPlaceholder(node.children ?? [])
+	) {
+		return "";
+	}
+	if (Array.isArray(node.children)) {
+		return node.children.map(renderInlinePlainText).join("");
+	}
+	return typeof node.value === "string" ? node.value : "";
+}
+
+function renderInlinePlainText(node: any): string {
+	if (!node || typeof node !== "object") return "";
+	if (node.type === "text" || node.type === "inlineCode") {
+		return typeof node.value === "string" ? node.value : "";
+	}
+	if (node.type === "break") return "\n";
+	if (isHtmlHardBreak(node)) return "\n";
+	if (Array.isArray(node.children)) {
+		return node.children.map(renderInlinePlainText).join("");
+	}
+	return "";
+}
+
+function isHtmlHardBreak(node: any): boolean {
+	return (
+		node?.type === "html" &&
+		typeof node.value === "string" &&
+		/^<br\s*\/?>$/i.test(node.value)
+	);
+}
+
+function isEmptyParagraphPlaceholder(children: any[]): boolean {
+	return (
+		children.length === 2 &&
+		children[0]?.type === "html" &&
+		children[0]?.value === "<span>" &&
+		children[1]?.type === "html" &&
+		children[1]?.value === "</span>"
+	);
+}
+
 describe("root & paragraph", () => {
 	test("simple paragraph", () => {
 		const input: Ast = {
@@ -66,6 +115,103 @@ describe("root & paragraph", () => {
 		expect(canonicalAst(output)).toEqual(canonicalAst(input));
 		const editorOutput = roundtripThroughEditor(input);
 		expect(canonicalAst(editorOutput)).toEqual(canonicalAst(input));
+	});
+
+	test("empty top-level paragraph serializes as a span placeholder", () => {
+		const markdown = serializeAst(
+			tiptapDocToAst({
+				type: "doc",
+				content: [
+					{
+						type: "paragraph",
+						content: [{ type: "text", text: "a" }],
+					},
+					{ type: "paragraph" },
+					{
+						type: "paragraph",
+						content: [{ type: "text", text: "b" }],
+					},
+				],
+			}),
+		);
+
+		expect(markdown).toBe("a\n\n<span></span>\n\nb\n");
+		expect(renderPlainText(parseMarkdown(markdown))).toBe("a\x1E\x1Eb");
+	});
+
+	test("leading and trailing empty top-level paragraphs are preserved", () => {
+		const markdown = serializeAst(
+			tiptapDocToAst({
+				type: "doc",
+				content: [
+					{ type: "paragraph" },
+					{
+						type: "paragraph",
+						content: [{ type: "text", text: "a" }],
+					},
+					{ type: "paragraph" },
+				],
+			}),
+		);
+
+		expect(markdown).toBe("<span></span>\n\na\n\n<span></span>\n");
+		expect(renderPlainText(parseMarkdown(markdown))).toBe("\x1Ea\x1E");
+	});
+
+	test("span placeholder parses back into an empty editable paragraph", () => {
+		const pmDoc = astToTiptapDoc(parseMarkdown("<span></span>\n"));
+
+		expect(pmDoc.content?.[0]?.type).toBe("paragraph");
+		expect(pmDoc.content?.[0]?.content ?? []).toEqual([]);
+		expect(serializeAst(tiptapDocToAst(pmDoc))).toBe("<span></span>\n");
+	});
+
+	test("trailing hard break serializes as inline br and parses back", () => {
+		const markdown = serializeAst(
+			tiptapDocToAst({
+				type: "doc",
+				content: [
+					{
+						type: "paragraph",
+						content: [
+							{ type: "text", text: "x" },
+							{ type: "hardBreak" },
+						],
+					},
+				],
+			}),
+		);
+		const pmDoc = astToTiptapDoc(parseMarkdown(markdown));
+
+		expect(markdown).toBe("x<br>\n");
+		expect(renderPlainText(parseMarkdown(markdown))).toBe("x\n");
+		expect(pmDoc.content?.[0]?.content?.[1]?.type).toBe("hardBreak");
+	});
+
+	test("hard-break-only paragraph keeps a paragraph anchor", () => {
+		const markdown = serializeAst(
+			tiptapDocToAst({
+				type: "doc",
+				content: [
+					{
+						type: "paragraph",
+						content: [{ type: "hardBreak" }],
+					},
+				],
+			}),
+		);
+		const pmDoc = astToTiptapDoc(parseMarkdown(markdown));
+
+		expect(markdown).toBe("<span></span><br>\n");
+		expect(renderPlainText(parseMarkdown(markdown))).toBe("\n");
+		expect(pmDoc.content?.[0]?.type).toBe("paragraph");
+		expect(pmDoc.content?.[0]?.content?.[0]?.type).toBe("hardBreak");
+	});
+
+	test("untouched empty document scaffold serializes as empty markdown", () => {
+		const pmDoc = astToTiptapDoc({ type: "root", children: [] });
+
+		expect(serializeAst(tiptapDocToAst(pmDoc))).toBe("");
 	});
 });
 

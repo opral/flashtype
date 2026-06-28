@@ -272,6 +272,41 @@ describe("Keyboard shortcuts (keymap)", () => {
 		expect(buildMarkdownFromEditor(editor)).toBe("alpha  gamma\n");
 	});
 
+	test("Shift-Enter inserts a hard break inside a paragraph", () => {
+		const editor = createEditor();
+		typeText(editor, "line");
+		sendKey(editor, "Enter", { shift: true });
+		typeText(editor, "break");
+
+		const paragraph: any = editor.state.doc.child(0);
+		expect(editor.state.doc.childCount).toBe(1);
+		expect(paragraph.type.name).toBe("paragraph");
+		expect(paragraph.childCount).toBe(3);
+		expect(paragraph.child(0).type.name).toBe("text");
+		expect(paragraph.child(0).text).toBe("line");
+		expect(paragraph.child(1).type.name).toBe("hardBreak");
+		expect(paragraph.child(2).type.name).toBe("text");
+		expect(paragraph.child(2).text).toBe("break");
+		expect(buildMarkdownFromEditor(editor)).toBe("line\\\nbreak\n");
+	});
+
+	test("Shift-Enter in a bullet list inserts a hard break without creating another item", () => {
+		const editor = createEditor();
+		typeText(editor, "- ");
+		typeText(editor, "line");
+		sendKey(editor, "Enter", { shift: true });
+		typeText(editor, "break");
+
+		const list: any = editor.state.doc.child(0);
+		const item: any = list.child(0);
+		const paragraph: any = item.child(0);
+		expect(list.type.name).toBe("bulletList");
+		expect(list.childCount).toBe(1);
+		expect(item.type.name).toBe("listItem");
+		expect(paragraph.childCount).toBe(3);
+		expect(paragraph.child(1).type.name).toBe("hardBreak");
+	});
+
 	test("Enter in bullet list creates another bullet item", () => {
 		const editor = createEditor();
 		typeText(editor, "- ");

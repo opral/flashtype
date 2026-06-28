@@ -18,6 +18,7 @@ import { FirstRunScreen } from "./shell/first-run-screen";
 import { WorkspaceLoadingScreen } from "./shell/workspace-loading-screen";
 import { openDesktopLix } from "./lib/lix-client";
 import { captureWorkspaceProfile } from "./lib/workspace-profile-telemetry";
+import { MarkdownEditorFuzzHarness } from "./extensions/markdown/editor/markdown-editor-fuzz-harness";
 import {
 	activatePostHogRecording,
 	syncPostHogWorkspaceContext,
@@ -301,8 +302,21 @@ function workspaceNameFromPath(path: string): string | null {
 	return name || null;
 }
 
-createRoot(document.getElementById("root")!).render(
-	<StrictMode>
-		<AppRoot />
-	</StrictMode>,
-);
+const root = createRoot(document.getElementById("root")!);
+if (shouldRenderMarkdownEditorFuzzHarness()) {
+	root.render(<MarkdownEditorFuzzHarness />);
+} else {
+	root.render(
+		<StrictMode>
+			<AppRoot />
+		</StrictMode>,
+	);
+}
+
+function shouldRenderMarkdownEditorFuzzHarness(): boolean {
+	return (
+		import.meta.env.DEV &&
+		new URLSearchParams(window.location.search).get("e2e") ===
+			"markdown-editor-fuzz"
+	);
+}

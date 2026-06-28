@@ -45,6 +45,23 @@ const createNodeId = (): string => {
 const normalizePersistedMarkdown = (markdown: string): string =>
 	markdown.endsWith("\n") ? markdown : `${markdown}\n`;
 
+function flushEditorViewDomObserver(view: any): void {
+	view?.domObserver?.flush?.();
+}
+
+function isSelectionNavigationKey(event: KeyboardEvent): boolean {
+	return (
+		event.key === "ArrowLeft" ||
+		event.key === "ArrowRight" ||
+		event.key === "ArrowUp" ||
+		event.key === "ArrowDown" ||
+		event.key === "Home" ||
+		event.key === "End" ||
+		event.key === "PageUp" ||
+		event.key === "PageDown"
+	);
+}
+
 function ensureTopLevelIds(children: any[]): void {
 	const seen = new Set<string>();
 	for (const node of children) {
@@ -218,6 +235,18 @@ export function createEditor(args: CreateEditorArgs): Editor {
 				});
 			},
 			...editorProps,
+			handleDOMEvents: {
+				...(editorProps?.handleDOMEvents ?? {}),
+				keyup: (view: any, event: KeyboardEvent) => {
+					if (isSelectionNavigationKey(event)) {
+						flushEditorViewDomObserver(view);
+					}
+					const handleKeyUp = editorProps?.handleDOMEvents?.keyup;
+					return typeof handleKeyUp === "function"
+						? handleKeyUp(view, event)
+						: false;
+				},
+			},
 		},
 	});
 	currentEditor = editorInstance;

@@ -1,5 +1,8 @@
 import { normalizeAst } from "../markdown";
-import { EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY } from "./mdwc-to-tiptap";
+import {
+	EMPTY_MARKDOWN_PARAGRAPH_DATA_KEY,
+	EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY,
+} from "./mdwc-to-tiptap";
 
 const SPREAD_META_KEY = "__mdwc_spread";
 
@@ -21,6 +24,7 @@ function extractNodeData(attrs: PMNode["attrs"]): {
 		delete clone[SPREAD_META_KEY];
 	}
 	delete clone[EMPTY_MARKDOWN_SCAFFOLD_DATA_KEY];
+	delete clone[EMPTY_MARKDOWN_PARAGRAPH_DATA_KEY];
 	return {
 		data: Object.keys(clone).length > 0 ? clone : undefined,
 		spread,
@@ -41,11 +45,17 @@ export type PMNode = {
 
 export function tiptapDocToAst(doc: PMNode): any {
 	const outChildren: any[] = [];
-	for (const n of doc.content || []) {
-		// Drop empty top-level paragraphs used only as editor UI scaffolds.
+	const children = doc.content || [];
+	for (const n of children) {
 		if (n.type === "paragraph") {
 			const inline = pmInlineToMd(n.content || []);
-			if (!inline.length) continue;
+			if (
+				!inline.length &&
+				children.length === 1 &&
+				!isExplicitEmptyParagraph(n)
+			) {
+				continue;
+			}
 		}
 		if (
 			n.type === "heading" &&
@@ -54,19 +64,49 @@ export function tiptapDocToAst(doc: PMNode): any {
 			const inline = pmInlineToMd(n.content || []);
 			if (!inline.length) continue;
 		}
-		outChildren.push(pmBlockToAst(n));
+		const preserveEmptyParagraph =
+			n.type === "paragraph" &&
+			!pmInlineToMd(n.content || []).length &&
+			(children.length > 1 || isExplicitEmptyParagraph(n));
+		outChildren.push(pmBlockToAst(n, { preserveEmptyParagraph }));
 	}
 	return normalizeAst({ type: "root", children: outChildren } as any);
 }
 
-function pmBlockToAst(node: PMNode): any {
+function isExplicitEmptyParagraph(node: PMNode): boolean {
+	return Boolean(node.attrs?.data?.[EMPTY_MARKDOWN_PARAGRAPH_DATA_KEY]);
+}
+
+function emptyParagraphPlaceholderChildren(): any[] {
+	return [
+		{ type: "html", value: "<span>" },
+		{ type: "html", value: "</span>" },
+	];
+}
+
+function anchorHardBreakOnlyParagraph(children: any[]): any[] {
+	return children.length > 0 && children.every(isHtmlHardBreak)
+		? [...emptyParagraphPlaceholderChildren(), ...children]
+		: children;
+}
+
+function pmBlockToAst(
+	node: PMNode,
+	options: { preserveEmptyParagraph?: boolean } = {},
+): any {
 	switch (node.type) {
 		case "paragraph":
 			const paraData = extractNodeData(node.attrs);
+			const inline = anchorHardBreakOnlyParagraph(
+				pmInlineToMd(node.content || []),
+			);
 			return {
 				type: "paragraph",
 				data: paraData.data,
-				children: pmInlineToMd(node.content || []),
+				children:
+					inline.length || !options.preserveEmptyParagraph
+						? inline
+						: emptyParagraphPlaceholderChildren(),
 			};
 		case "heading":
 			const headingData = extractNodeData(node.attrs);
@@ -86,7 +126,7 @@ function pmBlockToAst(node: PMNode): any {
 				type: "list",
 				ordered,
 				data: listData.data,
-				children: (node.content || []).map(pmBlockToAst),
+				children: (node.content || []).map((child) => pmBlockToAst(child)),
 			};
 			if (spread !== undefined) base.spread = spread;
 			if (ordered && node.attrs?.start != null && node.attrs.start !== 1)
@@ -97,7 +137,7 @@ function pmBlockToAst(node: PMNode): any {
 			const listItemData = extractNodeData(node.attrs);
 			const out: any = {
 				type: "listItem",
-				children: (node.content || []).map(pmBlockToAst),
+				children: (node.content || []).map((child) => pmBlockToAst(child)),
 			};
 			if (listItemData.data) out.data = listItemData.data;
 			if (listItemData.spread !== undefined) out.spread = listItemData.spread;
@@ -114,7 +154,7 @@ function pmBlockToAst(node: PMNode): any {
 			return {
 				type: "blockquote",
 				data: blockquoteData.data,
-				children: (node.content || []).map(pmBlockToAst),
+				children: (node.content || []).map((child) => pmBlockToAst(child)),
 			};
 		case "codeBlock": {
 			const text = collectText(node.content || []);
@@ -136,7 +176,7 @@ function pmBlockToAst(node: PMNode): any {
 				type: "table",
 				align,
 				data: tableData.data,
-				children: (node.content || []).map(pmBlockToAst),
+				children: (node.content || []).map((child) => pmBlockToAst(child)),
 			} as any;
 		}
 		case "tableRow": {
@@ -144,7 +184,7 @@ function pmBlockToAst(node: PMNode): any {
 			return {
 				type: "tableRow",
 				data: rowData.data,
-				children: (node.content || []).map(pmBlockToAst),
+				children: (node.content || []).map((child) => pmBlockToAst(child)),
 			};
 		}
 		case "tableCell": {
@@ -192,11 +232,14 @@ function pmBlockToAst(node: PMNode): any {
 
 function pmInlineToMd(nodes: PMNode[]): any[] {
 	const out: any[] = [];
-	for (const n of nodes) {
+	for (let index = 0; index < nodes.length; index += 1) {
+		const n = nodes[index];
 		if (n.type === "text") {
 			out.push(applyMarksToText(n.text || "", n.marks || []));
 		} else if (n.type === "hardBreak") {
-			const br: any = { type: "break" };
+			const br: any = isTrailingHardBreak(nodes, index)
+				? { type: "html", value: "<br>" }
+				: { type: "break" };
 			if (n.attrs?.data != null) br.data = n.attrs.data;
 			out.push(br as any);
 		} else if (n.type === "markdownInlineHtml") {
@@ -215,6 +258,21 @@ function pmInlineToMd(nodes: PMNode[]): any[] {
 		}
 	}
 	return out;
+}
+
+function isTrailingHardBreak(nodes: PMNode[], index: number): boolean {
+	for (let nextIndex = index + 1; nextIndex < nodes.length; nextIndex += 1) {
+		if (nodes[nextIndex]?.type !== "hardBreak") return false;
+	}
+	return true;
+}
+
+function isHtmlHardBreak(node: any): boolean {
+	return (
+		node?.type === "html" &&
+		typeof node.value === "string" &&
+		/^<br\s*\/?>$/i.test(node.value)
+	);
 }
 
 function applyMarksToText(value: string, marks: PMMark[]): any {
