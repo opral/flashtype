@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, ExternalLink, FileText, Github, Loader2 } from "lucide-react";
 import {
@@ -22,11 +22,18 @@ import { SlashCommandMenu } from "./components/slash-command-menu";
 import type { MarkdownBlockSnapshot, MarkdownReviewDiff } from "./review-diff";
 import { decodeFileDataToText } from "@/lib/decode-file-data";
 import { ExternalWriteReviewControls } from "@/extension-runtime/external-write-review-controls";
-import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import type {
+	ExternalWriteReview,
+	GranularReviewResolution,
+	GranularReviewResolutionOutcome,
+} from "@/extension-runtime/external-write-review";
 import {
 	useExternalWriteReview,
 	useExternalWriteReviewData,
 } from "@/shell/external-write-review-history";
+import { planGranularReview } from "./granular-review-plan";
+import { MarkdownReviewStepper } from "./markdown-review-stepper";
+import type { ReviewGuard } from "@/shell/external-write-review-guard";
 import { AnimatedZap } from "@/components/animated-zap";
 
 type MarkdownViewProps = {
@@ -50,6 +57,15 @@ type MarkdownViewProps = {
 		readonly reviewId: string;
 		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
+	readonly onResolveReviewDiff?: (
+		resolution: GranularReviewResolution,
+		review?: ExternalWriteReview,
+	) => Promise<GranularReviewResolutionOutcome>;
+	readonly onRegisterReviewGuard?: (guard: ReviewGuard) => () => void;
+	readonly onReviewPendingChange?: (
+		reviewId: string,
+		hasPendingDecisions: boolean,
+	) => void;
 };
 
 type HistoricalMarkdownBlockRow = {
@@ -78,6 +94,9 @@ export function MarkdownView({
 	registerExternalWriteReview,
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
+	onResolveReviewDiff,
+	onRegisterReviewGuard,
+	onReviewPendingChange,
 }: MarkdownViewProps) {
 	return (
 		<Suspense fallback={<MarkdownLoadingSpinner />}>
@@ -92,6 +111,9 @@ export function MarkdownView({
 				registerExternalWriteReview={registerExternalWriteReview}
 				onAcceptReviewDiff={onAcceptReviewDiff}
 				onRejectReviewDiff={onRejectReviewDiff}
+				onResolveReviewDiff={onResolveReviewDiff}
+				onRegisterReviewGuard={onRegisterReviewGuard}
+				onReviewPendingChange={onReviewPendingChange}
 			/>
 		</Suspense>
 	);
@@ -123,6 +145,9 @@ function MarkdownViewLoaded({
 	registerExternalWriteReview,
 	onAcceptReviewDiff,
 	onRejectReviewDiff,
+	onResolveReviewDiff,
+	onRegisterReviewGuard,
+	onReviewPendingChange,
 }: Omit<MarkdownViewProps, "fileId"> & {
 	readonly fileRow: MarkdownFileRow | undefined;
 }) {
@@ -177,7 +202,7 @@ function MarkdownViewLoaded({
 						<MarkdownAutosaveHint
 							enabled={isActiveView && isPanelFocused && !reviewDiff}
 						/>
-						{reviewDiff && externalWriteReview ? (
+						{reviewDiff && externalWriteReview && externalWriteReviewData ? (
 							<Suspense fallback={<MarkdownReviewOverlayFallback />}>
 								<MarkdownReviewOverlay
 									fileId={fileRow.id}
@@ -186,9 +211,14 @@ function MarkdownViewLoaded({
 									reviewId={externalWriteReview.reviewId}
 									beforeCommitId={externalWriteReview.beforeCommitId}
 									afterCommitId={externalWriteReview.afterCommitId}
+									beforeData={externalWriteReviewData.beforeData}
+									afterData={externalWriteReviewData.afterData}
 									isActive={isActiveView && isPanelFocused}
 									onAccept={onAcceptReviewDiff}
 									onReject={onRejectReviewDiff}
+									onResolve={onResolveReviewDiff}
+									onRegisterReviewGuard={onRegisterReviewGuard}
+									onReviewPendingChange={onReviewPendingChange}
 								/>
 							</Suspense>
 						) : externalWriteReview ? (
@@ -268,9 +298,14 @@ function MarkdownReviewOverlay({
 	reviewId,
 	beforeCommitId,
 	afterCommitId,
+	beforeData,
+	afterData,
 	isActive,
 	onAccept,
 	onReject,
+	onResolve,
+	onRegisterReviewGuard,
+	onReviewPendingChange,
 }: {
 	readonly fileId: string;
 	readonly review: ExternalWriteReview;
@@ -278,6 +313,8 @@ function MarkdownReviewOverlay({
 	readonly reviewId: string;
 	readonly beforeCommitId: string;
 	readonly afterCommitId: string;
+	readonly beforeData: Uint8Array;
+	readonly afterData: Uint8Array;
 	readonly isActive: boolean;
 	readonly onAccept?: (args: {
 		readonly fileId: string;
@@ -289,9 +326,20 @@ function MarkdownReviewOverlay({
 		readonly reviewId: string;
 		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
+	readonly onResolve?: (
+		resolution: GranularReviewResolution,
+		review?: ExternalWriteReview,
+	) => Promise<GranularReviewResolutionOutcome>;
+	readonly onRegisterReviewGuard?: (guard: ReviewGuard) => () => void;
+	readonly onReviewPendingChange?: (
+		reviewId: string,
+		hasPendingDecisions: boolean,
+	) => void;
 }) {
 	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
 	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
+	const diffContainerRef = useRef<HTMLDivElement | null>(null);
+	const pendingDecisionsRef = useRef(false);
 	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
 		const beforeSnapshotsAvailable =
 			beforeBlocks !== undefined &&
@@ -309,26 +357,131 @@ function MarkdownReviewOverlay({
 			afterBlocks: afterBlocks ?? [],
 		};
 	}, [afterBlocks, beforeBlocks, reviewDiff]);
+	// Granular review is only attempted when both historical snapshots can be
+	// loaded; otherwise we keep the classic all-or-nothing controls.
+	const canAttemptGranular = Boolean(
+		beforeCommitId && afterCommitId && onResolve,
+	);
+	const snapshotsLoading =
+		canAttemptGranular &&
+		(beforeBlocks === undefined || afterBlocks === undefined);
+
+	const eligibility = useMemo(() => {
+		if (!canAttemptGranular || snapshotsLoading) return null;
+		return planGranularReview({
+			beforeBlocks,
+			afterBlocks,
+			beforeData,
+			afterData,
+		});
+	}, [
+		afterBlocks,
+		afterData,
+		beforeBlocks,
+		beforeData,
+		canAttemptGranular,
+		snapshotsLoading,
+	]);
+
+	// Pair each change that swaps one block for one block so the diff renders a
+	// word-level inline diff for it, even when Lix gave the edited block a new id
+	// (an in-place edit that kept its id already word-diffs).
+	const blockPairings = useMemo(() => {
+		if (eligibility?.status !== "safe") return undefined;
+		return eligibility.plan.changes
+			.filter(
+				(change) =>
+					change.beforeBlockIds.length === 1 &&
+					change.afterBlockIds.length === 1,
+			)
+			.map((change) => ({
+				beforeId: change.beforeBlockIds[0]!,
+				afterId: change.afterBlockIds[0]!,
+			}));
+	}, [eligibility]);
+
 	const diffHtml = useMemo(() => {
-		return renderMarkdownReviewDiffHtml(enrichedReviewDiff);
-	}, [enrichedReviewDiff]);
+		return renderMarkdownReviewDiffHtml(enrichedReviewDiff, { blockPairings });
+	}, [enrichedReviewDiff, blockPairings]);
+
 	const rejectReview = () => void onReject?.({ fileId, reviewId, review });
+
+	// The per-change stepper only earns its keep with more than one change. A
+	// single change is effectively all-or-nothing, so it uses the classic
+	// controls instead of a "1 of 1" stepper.
+	const isGranular =
+		!snapshotsLoading &&
+		eligibility?.status === "safe" &&
+		eligibility.plan.changes.length > 1;
+
+	// Register a partial-decision guard with the shell while the granular stepper
+	// is mounted so destructive actions can prompt before discarding decisions.
+	useEffect(() => {
+		if (!isGranular || !onRegisterReviewGuard) return;
+		const unregister = onRegisterReviewGuard({
+			reviewId,
+			fileId,
+			hasPendingDecisions: () => pendingDecisionsRef.current,
+		});
+		return () => {
+			pendingDecisionsRef.current = false;
+			onReviewPendingChange?.(reviewId, false);
+			unregister();
+		};
+	}, [isGranular, onRegisterReviewGuard, onReviewPendingChange, reviewId, fileId]);
+
+	// Bind this overlay's live review into the resolve call so the shell can clear
+	// it even if a sibling panel showing the same file cleared the shared ref.
+	const resolveWithReview = useCallback(
+		(resolution: GranularReviewResolution) => onResolve!(resolution, review),
+		[onResolve, review],
+	);
+
+	const controls =
+		isGranular && eligibility?.status === "safe" ? (
+			<MarkdownReviewStepper
+				plan={eligibility.plan}
+				reviewId={reviewId}
+				fileId={fileId}
+				beforeData={beforeData}
+				afterData={afterData}
+				isActive={isActive}
+				diffContainerRef={diffContainerRef}
+				onResolve={resolveWithReview}
+				onPendingDecisionsChange={(hasPending) => {
+					pendingDecisionsRef.current = hasPending;
+					onReviewPendingChange?.(reviewId, hasPending);
+				}}
+			/>
+		) : (
+			<ExternalWriteReviewControls
+				isActive={isActive}
+				onAccept={() => void onAccept?.({ fileId, reviewId, review })}
+				onReject={rejectReview}
+			/>
+		);
 
 	return (
 		<div className="markdown-review-overlay">
 			<div className="markdown-review-surface">
-				<div className="ph-mask tiptap-container w-full h-full overflow-y-auto bg-background">
+				<div
+					ref={diffContainerRef}
+					className="ph-mask tiptap-container w-full h-full overflow-y-auto bg-background"
+				>
 					<div
 						className="ProseMirror tiptap w-full mx-auto"
 						dangerouslySetInnerHTML={{ __html: diffHtml }}
 					/>
 				</div>
 			</div>
-			<ExternalWriteReviewControls
-				isActive={isActive}
-				onAccept={() => void onAccept?.({ fileId, reviewId, review })}
-				onReject={rejectReview}
-			/>
+			{snapshotsLoading ? (
+				<div className="markdown-review-loading" role="status">
+					<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+					<span>Loading review…</span>
+				</div>
+			) : (
+				controls
+			)}
 		</div>
 	);
 }
@@ -578,6 +731,9 @@ export const extension = createReactExtensionDefinition({
 				registerExternalWriteReview={context.registerExternalWriteReview}
 				onAcceptReviewDiff={context.acceptExternalWriteReview}
 				onRejectReviewDiff={context.rejectExternalWriteReview}
+				onResolveReviewDiff={context.resolveExternalWriteReviewGranular}
+				onRegisterReviewGuard={context.registerExternalWriteReviewGuard}
+				onReviewPendingChange={context.setExternalWriteReviewPending}
 			/>
 		</LixProvider>
 	),

@@ -56,6 +56,7 @@ import {
 	recentWorkspaceEntryFromWorkspace,
 	writeRecentWorkspaceEntriesSync,
 } from "./recent-workspaces.mjs";
+import { createWindowCloseGuard } from "./window-close-guard.mjs";
 import {
 	clearWorkspaceRecoverySync,
 	readWorkspaceRecoveries,
@@ -86,6 +87,15 @@ const CRASH_LIKE_PROCESS_GONE_REASONS = new Set([
 	"launch-failed",
 	"oom",
 ]);
+const windowCloseGuard = createWindowCloseGuard();
+const pendingCloseQueries = new Map();
+let nextCloseQueryId = 1;
+// Window ids whose renderer currently holds a partially-decided Markdown
+// review. Pushed by the renderer via `review-guard:set-pending` so the main
+// process can decide close/quit synchronously and only query (and wait on) the
+// renderer when a partial review would actually be lost.
+const windowsWithPendingReview = new Set();
+
 const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
 const closedWorkspaceEntryWindowIds = new Set();
@@ -116,6 +126,118 @@ let registerTerminalIpc = () => {};
 let recentWorkspaceEntries = [];
 let workspaceBootRecoveryGuardArmed = false;
 let workspaceBootRecoveryInitialWindowsCreated = false;
+
+// Renderer-mediated window close guard. The main process prevents the first
+// close, asks the renderer whether a partially-decided Markdown review would be
+// lost, and only proceeds once the renderer reports the user chose to leave.
+ipcMain.on("review-guard:close-decision", (_event, payload) => {
+	const queryId = payload?.queryId;
+	const settle = pendingCloseQueries.get(queryId);
+	if (!settle) return;
+	settle(payload?.decision === "allow" ? "allow" : "cancel");
+});
+
+ipcMain.on("review-guard:set-pending", (event, payload) => {
+	const window = BrowserWindow.fromWebContents(event.sender);
+	if (!window) return;
+	if (payload?.pending === true) {
+		windowsWithPendingReview.add(window.id);
+	} else {
+		windowsWithPendingReview.delete(window.id);
+	}
+});
+
+function guardWindowCloseEvent(window, event) {
+	// A confirmed app quit: every window already agreed to close.
+	if (windowCloseGuard.isQuitConfirmed()) return;
+	// No partial review in this window: let the close proceed immediately, with
+	// no renderer round-trip, so closing/quitting stays instant.
+	if (!windowsWithPendingReview.has(window.id)) return;
+	const { allow, ask } = windowCloseGuard.handleCloseRequest(window.id);
+	if (allow) return;
+	event.preventDefault();
+	if (!ask) return;
+	void (async () => {
+		const decision = await queryRendererCloseDecision(window);
+		const { closeNow } = windowCloseGuard.resolveDecision(window.id, decision);
+		if (closeNow && !window.isDestroyed()) {
+			window.close();
+		}
+	})();
+}
+
+function queryRendererCloseDecision(window) {
+	return new Promise((resolve) => {
+		if (window.isDestroyed() || window.webContents.isDestroyed()) {
+			resolve("allow");
+			return;
+		}
+		const queryId = nextCloseQueryId;
+		nextCloseQueryId += 1;
+		let settled = false;
+		const settle = (decision) => {
+			if (settled) return;
+			settled = true;
+			pendingCloseQueries.delete(queryId);
+			resolve(decision);
+		};
+		pendingCloseQueries.set(queryId, settle);
+		// Never trap the close: a renderer that goes away before answering allows
+		// it. We deliberately do not time out otherwise — the renderer always
+		// replies (the abandon dialog forces a choice), and a fixed timeout could
+		// fire while the user is mid-decision and silently discard their review.
+		window.webContents.once("destroyed", () => settle("allow"));
+		try {
+			window.webContents.send("review-guard:query-close", { queryId });
+		} catch {
+			settle("allow");
+		}
+	});
+}
+
+// Perform the irreversible shutdown work exactly once, only after a quit has
+// been confirmed. Kept out of the first `before-quit` pass so a cancelled quit
+// (a window kept reviewing) leaves the app fully functional.
+let quitTeardownDone = false;
+function performQuitTeardown() {
+	if (quitTeardownDone) return;
+	quitTeardownDone = true;
+	isQuitting = true;
+	if (
+		!workspaceBootRecoveryGuardArmed ||
+		workspaceBootRecoveryInitialWindowsCreated
+	) {
+		flushOpenWorkspacePaths();
+	}
+	if (
+		workspaceBootRecoveryGuardArmed &&
+		workspaceBootRecoveryInitialWindowsCreated
+	) {
+		clearWorkspaceBootRecoveryGuard();
+	}
+	void disposeLixIpc().finally(() => {
+		void disposeAllWorkspaceWindowStates();
+	});
+	disposeTerminalIpc();
+	disposeAgentHookIpc();
+}
+
+// Confirm an app quit before any irreversible teardown. Only windows that hold
+// a partially-decided review are asked; if any cancels, the whole quit is
+// aborted and the app stays fully functional. With nothing pending this resolves
+// synchronously, so quitting is instant.
+async function confirmQuitThenProceed(pendingWindows) {
+	for (const window of pendingWindows) {
+		if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+		const decision = await queryRendererCloseDecision(window);
+		if (decision === "cancel") {
+			windowCloseGuard.cancelQuit();
+			return;
+		}
+	}
+	windowCloseGuard.confirmQuit();
+	app.quit();
+}
 
 if (isHeadless && process.platform === "darwin") {
 	app.dock.hide();
@@ -745,6 +867,8 @@ async function createMainWindow(workspaceRequest) {
 		if (showFallback !== undefined) {
 			clearTimeout(showFallback);
 		}
+		windowCloseGuard.forget(window.id);
+		windowsWithPendingReview.delete(window.id);
 		forgetTelemetrySessionContextForWebContents(window.webContents);
 		workspaceWindows.delete(window);
 		forgetClosedWorkspaceIfOtherWindowsRemain(window);
@@ -753,6 +877,7 @@ async function createMainWindow(workspaceRequest) {
 		});
 	};
 
+	window.on("close", (event) => guardWindowCloseEvent(window, event));
 	window.on("closed", cleanupWorkspaceWindow);
 	window.webContents.once("destroyed", cleanupWorkspaceWindow);
 	window.on("focus", () => {
@@ -1021,25 +1146,29 @@ app.on("window-all-closed", () => {
 	}
 });
 
-app.on("before-quit", () => {
-	isQuitting = true;
-	if (
-		!workspaceBootRecoveryGuardArmed ||
-		workspaceBootRecoveryInitialWindowsCreated
-	) {
-		flushOpenWorkspacePaths();
+app.on("before-quit", (event) => {
+	if (windowCloseGuard.isQuitConfirmed()) {
+		performQuitTeardown();
+		return;
 	}
-	if (
-		workspaceBootRecoveryGuardArmed &&
-		workspaceBootRecoveryInitialWindowsCreated
-	) {
-		clearWorkspaceBootRecoveryGuard();
+	const pendingWindows = [...workspaceWindows].filter(
+		(window) =>
+			!window.isDestroyed() &&
+			!window.webContents.isDestroyed() &&
+			windowsWithPendingReview.has(window.id),
+	);
+	if (pendingWindows.length === 0) {
+		// Nothing to confirm: let this quit proceed normally and tear down now.
+		windowCloseGuard.confirmQuit();
+		performQuitTeardown();
+		return;
 	}
-	void disposeLixIpc().finally(() => {
-		void disposeAllWorkspaceWindowStates();
-	});
-	disposeTerminalIpc();
-	disposeAgentHookIpc();
+	// A window holds a partial review: hold the quit, confirm with each such
+	// window, and only re-issue the quit once they all agree.
+	event.preventDefault();
+	const { alreadyConfirming } = windowCloseGuard.beginQuitConfirmation();
+	if (alreadyConfirming) return;
+	void confirmQuitThenProceed(pendingWindows);
 });
 
 app.on("will-quit", (event) => {
@@ -1049,6 +1178,10 @@ app.on("will-quit", (event) => {
 	event.preventDefault();
 	void shutdownTelemetry().finally(() => {
 		telemetryShutdownComplete = true;
+		// Re-issue the quit on a fresh macrotask. If telemetry shuts down
+		// synchronously (e.g. with no network in tests), calling app.quit() here
+		// would land inside the current will-quit dispatch and be ignored, leaving
+		// the process alive until it is force-killed.
 		setImmediate(() => {
 			app.quit();
 		});

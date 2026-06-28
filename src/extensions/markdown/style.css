@@ -341,6 +341,11 @@
 	min-height: 0;
 	flex-direction: column;
 	background: var(--background);
+	/* Query container for the floating review toolbar so it can adapt to the
+	   panel width. The container must live here, not on the toolbar itself: an
+	   auto-width absolutely-positioned element with inline-size containment
+	   collapses toward zero width and would always match the narrow query. */
+	container-type: inline-size;
 }
 
 .markdown-review .markdown-review-surface {
@@ -376,4 +381,15 @@
 	background-color: var(--color-bg-diff-modified);
 	border-radius: 0.25rem;
 	color: var(--color-text-diff-modified);
+}
+
+/* Soft selection ring on the block(s) of the active per-change review step.
+   Uses outline so it never shifts surrounding layout, and does not dim or
+   tint the other blocks. */
+.markdown-review .ProseMirror .markdown-review-active-block {
+	outline: 2px solid var(--color-bg-action-primary);
+	outline-offset: 3px;
+	border-radius: 0.25rem;
+	scroll-margin-top: 2rem;
+	scroll-margin-bottom: 6rem;
 }

@@ -1,6 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 import type { Lix } from "@/lib/lix-types";
-import type { ExternalWriteReview } from "./external-write-review";
+import type {
+	ExternalWriteReview,
+	GranularReviewResolution,
+	GranularReviewResolutionOutcome,
+} from "./external-write-review";
+import type { ReviewGuard } from "@/shell/external-write-review-guard";
 
 /**
  * Union of registry keys for views available in the layout.
@@ -155,6 +160,22 @@ export interface ExtensionContext {
 	readonly registerExternalWriteReview?: (
 		review: ExternalWriteReview,
 	) => () => void;
+	readonly resolveExternalWriteReviewGranular?: (
+		resolution: GranularReviewResolution,
+		review?: ExternalWriteReview,
+	) => Promise<GranularReviewResolutionOutcome>;
+	readonly registerExternalWriteReviewGuard?: (
+		guard: ReviewGuard,
+	) => () => void;
+	/**
+	 * Report whether a specific review currently holds partial (some decided,
+	 * some pending) decisions, so the shell can tell the desktop main process to
+	 * guard window-close/quit only when something would actually be lost.
+	 */
+	readonly setExternalWriteReviewPending?: (
+		reviewId: string,
+		hasPendingDecisions: boolean,
+	) => void;
 	readonly closeExtension?: (args: {
 		readonly panel?: PanelSide;
 		readonly instance?: string;

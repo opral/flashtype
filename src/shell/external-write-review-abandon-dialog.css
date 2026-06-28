@@ -1,0 +1,84 @@
+.external-write-review-abandon-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	background: rgba(0, 0, 0, 0.45);
+}
+
+.external-write-review-abandon-dialog {
+	width: 100%;
+	max-width: 26rem;
+	padding: 1.25rem;
+	border-radius: 0.85rem;
+	background: var(--color-bg-surface, rgb(38, 34, 31));
+	color: var(--color-text-primary, rgb(245, 243, 240));
+	box-shadow:
+		0 30px 80px rgba(0, 0, 0, 0.4),
+		0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.external-write-review-abandon-title {
+	margin: 0 0 0.5rem;
+	font-size: 1.02rem;
+	font-weight: 720;
+	line-height: 1.2;
+}
+
+.external-write-review-abandon-description {
+	margin: 0 0 1.1rem;
+	font-size: 0.88rem;
+	line-height: 1.45;
+	color: var(--color-text-secondary, rgba(245, 243, 240, 0.74));
+}
+
+.external-write-review-abandon-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.external-write-review-abandon-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 2.3rem;
+	padding: 0 0.95rem;
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	border-radius: 0.6rem;
+	background: transparent;
+	color: inherit;
+	font-size: 0.88rem;
+	font-weight: 640;
+	transition:
+		background-color 120ms ease,
+		border-color 120ms ease;
+}
+
+.external-write-review-abandon-button:hover {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.external-write-review-abandon-button:focus-visible {
+	outline: 2px solid var(--color-ring-focus-visible, rgb(255, 255, 255));
+	outline-offset: 2px;
+}
+
+.external-write-review-abandon-button-primary {
+	background: var(--color-bg-action-primary);
+	color: var(--color-text-on-action-primary);
+	border-color: transparent;
+}
+
+.external-write-review-abandon-button-primary:hover {
+	background: var(--color-bg-action-primary-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.external-write-review-abandon-button {
+		transition: none;
+	}
+}

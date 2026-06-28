@@ -1,0 +1,240 @@
+.markdown-review-stepper {
+	position: absolute;
+	left: 50%;
+	bottom: 1.5rem;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.38rem;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 0.85rem;
+	background: rgb(38, 34, 31);
+	box-shadow:
+		0 26px 70px rgba(38, 34, 31, 0.28),
+		0 10px 30px rgba(38, 34, 31, 0.18),
+		0 1px 0 rgba(255, 255, 255, 0.08) inset;
+	transform: translateX(-50%);
+	backdrop-filter: blur(16px);
+	/* Width comes from the toolbar's own content (a horizontal row). The query
+	   container lives on `.markdown-review-overlay` (the panel) so the
+	   max-width queries below adapt to the panel width, not this element. */
+	width: max-content;
+	max-width: calc(100cqi - 2rem);
+}
+
+.markdown-review-loading {
+	position: absolute;
+	left: 50%;
+	bottom: 1.5rem;
+	z-index: 20;
+	display: inline-flex;
+	align-items: center;
+	padding: 0.5rem 0.95rem;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 0.85rem;
+	background: rgb(38, 34, 31);
+	color: rgba(255, 255, 255, 0.82);
+	font-size: 0.84rem;
+	font-weight: 600;
+	transform: translateX(-50%);
+}
+
+.markdown-review-live {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.markdown-review-nav {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.markdown-review-counter {
+	min-width: 3.6rem;
+	text-align: center;
+	color: rgba(255, 255, 255, 0.82);
+	font-size: 0.78rem;
+	font-weight: 700;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+
+.markdown-review-chevron {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.05rem;
+	height: 2.05rem;
+	border: 1px solid transparent;
+	border-radius: 0.6rem;
+	color: rgba(255, 255, 255, 0.82);
+	background: transparent;
+	transition:
+		background-color 120ms ease,
+		color 120ms ease,
+		opacity 120ms ease;
+}
+
+.markdown-review-chevron svg {
+	width: 1.05rem;
+	height: 1.05rem;
+}
+
+.markdown-review-chevron:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.09);
+	color: rgb(255, 255, 255);
+}
+
+.markdown-review-chevron:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.markdown-review-decisions {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+.markdown-review-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.42rem;
+	height: 2.05rem;
+	min-width: 4.9rem;
+	padding: 0 0.85rem;
+	border: 1px solid transparent;
+	border-radius: 0.68rem;
+	font-size: 0.86rem;
+	font-weight: 720;
+	line-height: 1;
+	white-space: nowrap;
+	transition:
+		background-color 120ms ease,
+		border-color 120ms ease,
+		color 120ms ease;
+}
+
+.markdown-review-button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.markdown-review-button-accept {
+	background: var(--color-bg-action-primary);
+	color: var(--color-text-on-action-primary);
+	box-shadow:
+		0 1px 0 rgba(255, 255, 255, 0.18) inset,
+		0 8px 18px rgba(0, 0, 0, 0.14);
+}
+
+.markdown-review-button-accept:hover:not(:disabled) {
+	background: var(--color-bg-action-primary-hover);
+}
+
+.markdown-review-button-accept[data-chosen="true"] {
+	outline: 2px solid rgba(255, 255, 255, 0.85);
+	outline-offset: 1px;
+}
+
+.markdown-review-button-reject {
+	background: transparent;
+	color: rgba(255, 255, 255, 0.88);
+}
+
+.markdown-review-button-reject:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.09);
+	color: rgb(255, 255, 255);
+}
+
+.markdown-review-button-reject[data-chosen="true"] {
+	background: rgba(255, 255, 255, 0.14);
+	outline: 2px solid rgba(255, 255, 255, 0.4);
+	outline-offset: 1px;
+}
+
+.markdown-review-shortcut {
+	color: rgba(255, 255, 255, 0.72);
+	font-family:
+		-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+	font-size: 0.68rem;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.markdown-review-shortcut-dark {
+	color: rgba(255, 255, 255, 0.58);
+}
+
+.markdown-review-button-retry {
+	background: transparent;
+	color: rgba(255, 255, 255, 0.92);
+	border-color: rgba(255, 255, 255, 0.24);
+	min-width: 0;
+}
+
+.markdown-review-button-retry:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.09);
+}
+
+.markdown-review-error {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0 0.4rem;
+	color: rgba(255, 255, 255, 0.92);
+	font-size: 0.84rem;
+	font-weight: 600;
+}
+
+.markdown-review-applying {
+	color: rgba(255, 255, 255, 0.72);
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+/* Hide the keyboard shortcut hints first when space is constrained. */
+@container (max-width: 22rem) {
+	.markdown-review-shortcut {
+		display: none;
+	}
+}
+
+/* When even the single row cannot fit, stack navigation over decisions. */
+@container (max-width: 17rem) {
+	.markdown-review-stepper {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.4rem;
+	}
+
+	.markdown-review-nav {
+		justify-content: center;
+	}
+
+	.markdown-review-decisions {
+		justify-content: stretch;
+	}
+
+	.markdown-review-button {
+		flex: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.markdown-review-stepper,
+	.markdown-review-button,
+	.markdown-review-chevron {
+		transition: none;
+	}
+}

@@ -44,6 +44,19 @@ export async function bundledPluginArchives(): Promise<BundledPluginArchive[]> {
 	return await sdk.bundledPluginArchives();
 }
 
+/**
+ * Construct a filesystem-backed Lix backend for tests that need to reproduce
+ * the real desktop ingest path (files scanned from disk are ingested as
+ * untracked state with no observed commit). Pass the result as
+ * `openLix({ backend })`.
+ */
+export async function createFsBackend(options: {
+	path: string;
+}): Promise<NonNullable<SdkOpenLixOptions["backend"]>> {
+	const sdk = await loadSdk();
+	return new sdk.FsBackend({ path: options.path, syncAllFiles: true });
+}
+
 async function loadSdk(): Promise<SdkModule> {
 	if (!sdkModulePromise) {
 		const sdkPath = resolve(
@@ -91,31 +104,79 @@ async function seedKeyValues(
 }
 
 function createTestLixAdapter(sdkLix: SdkLix): Lix {
+	// Serialize operations like the production lix client (lix-client.ts): a
+	// transaction holds the handle exclusively and concurrent reads/writes queue
+	// behind it, rather than overlapping and hitting "Lix handle has an active
+	// transaction". `observe` is a long-lived stream and stays outside the queue.
+	let operationQueue: Promise<void> = Promise.resolve();
+	const acquireSlot = async (): Promise<() => void> => {
+		const previous = operationQueue;
+		let release!: () => void;
+		const current = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		operationQueue = previous.then(() => current);
+		await previous;
+		return release;
+	};
+	const runQueued = async <T>(operation: () => Promise<T>): Promise<T> => {
+		const release = await acquireSlot();
+		try {
+			return await operation();
+		} finally {
+			release();
+		}
+	};
+
+	const beginTransaction = async (): Promise<SqlTransaction> => {
+		const releaseSlot = await acquireSlot();
+		let transaction: Awaited<ReturnType<SdkLix["beginTransaction"]>>;
+		try {
+			transaction = await sdkLix.beginTransaction();
+		} catch (error) {
+			releaseSlot();
+			throw error;
+		}
+		let closed = false;
+		const finish = () => {
+			if (!closed) {
+				closed = true;
+				releaseSlot();
+			}
+		};
+		return {
+			async execute(sql: string, params: ReadonlyArray<unknown> = []) {
+				return await transaction.execute(sql, toSqlParams(params));
+			},
+			async commit() {
+				try {
+					await transaction.commit();
+				} finally {
+					finish();
+				}
+			},
+			async rollback() {
+				try {
+					await transaction.rollback();
+				} finally {
+					finish();
+				}
+			},
+		};
+	};
+
 	return {
 		async execute(sql: string, params: ReadonlyArray<unknown> = []) {
-			return await sdkLix.execute(sql, toSqlParams(params));
+			return await runQueued(() => sdkLix.execute(sql, toSqlParams(params)));
 		},
-		async beginTransaction() {
-			const transaction = await sdkLix.beginTransaction();
-			return {
-				async execute(sql: string, params: ReadonlyArray<unknown> = []) {
-					return await transaction.execute(sql, toSqlParams(params));
-				},
-				async commit() {
-					await transaction.commit();
-				},
-				async rollback() {
-					await transaction.rollback();
-				},
-			};
-		},
+		beginTransaction,
 		async transaction<T>(
 			callback: (tx: SqlTransaction) => Promise<T>,
 		): Promise<T> {
 			if (typeof callback !== "function") {
 				throw new TypeError("transaction requires a callback");
 			}
-			const tx = await this.beginTransaction();
+			const tx = await beginTransaction();
 			try {
 				const result = await callback(tx);
 				await tx.commit();
@@ -126,18 +187,18 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			}
 		},
 		async executeTransaction(statements: ReadonlyArray<TransactionStatement>) {
-			const transaction = await this.beginTransaction();
+			const tx = await beginTransaction();
 			let result: ExecuteResult = emptyExecuteResult();
 			try {
 				for (const statement of statements) {
-					result = await transaction.execute(statement.sql, [
+					result = await tx.execute(statement.sql, [
 						...(statement.params ?? []),
 					]);
 				}
-				await transaction.commit();
+				await tx.commit();
 				return result;
 			} catch (error) {
-				await transaction.rollback();
+				await tx.rollback();
 				throw error;
 			}
 		},
@@ -145,13 +206,13 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			return sdkLix.observe(sql, toSqlParams(params));
 		},
 		async activeBranchId() {
-			return await sdkLix.activeBranchId();
+			return await runQueued(() => sdkLix.activeBranchId());
 		},
 		async createBranch(options) {
-			return await sdkLix.createBranch(options);
+			return await runQueued(() => sdkLix.createBranch(options));
 		},
 		async switchBranch(options) {
-			return await sdkLix.switchBranch(options);
+			return await runQueued(() => sdkLix.switchBranch(options));
 		},
 		async importFilesystemPaths(paths) {
 			await sdkLix.importFilesystemPaths(paths);
@@ -160,10 +221,10 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			await sdkLix.syncDiskToLix();
 		},
 		async mergeBranchPreview(options) {
-			return await sdkLix.mergeBranchPreview(options);
+			return await runQueued(() => sdkLix.mergeBranchPreview(options));
 		},
 		async mergeBranch(options) {
-			return await sdkLix.mergeBranch(options);
+			return await runQueued(() => sdkLix.mergeBranch(options));
 		},
 		async close() {
 			await sdkLix.close();

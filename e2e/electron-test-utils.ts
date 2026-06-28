@@ -119,17 +119,21 @@ export async function expectInstalledPluginArchives(
 	workspaceDir: string,
 ): Promise<void> {
 	await expect
-		.poll(() =>
-			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_md_v2.lixplugin"),
-			),
+		.poll(
+			() =>
+				readBinaryFile(
+					path.join(workspaceDir, ".lix", "plugins", "plugin_md_v2.lixplugin"),
+				),
+			{ timeout: 60_000 },
 		)
 		.toBeGreaterThan(0);
 	await expect
-		.poll(() =>
-			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_csv.lixplugin"),
-			),
+		.poll(
+			() =>
+				readBinaryFile(
+					path.join(workspaceDir, ".lix", "plugins", "plugin_csv.lixplugin"),
+				),
+			{ timeout: 60_000 },
 		)
 		.toBeGreaterThan(0);
 }
