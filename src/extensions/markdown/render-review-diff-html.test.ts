@@ -89,6 +89,51 @@ describe("renderMarkdownReviewDiffHtml", () => {
 		expect(statusesForText(html, "New document")).toContain("added");
 	});
 
+	test("resolves image sources in review diffs", () => {
+		const resolveImageSrc = (src: string) => `file:///workspace/docs/${src}`;
+		const fullDocumentHtml = renderMarkdownReviewDiffHtml(
+			{
+				beforeMarkdown: "![Lix mark](./lix-mark-2.svg)\n",
+				afterMarkdown: "![Lix mark](./lix-mark-3.svg)\n",
+			},
+			{ resolveImageSrc },
+		);
+
+		expect(imageSrcsForAlt(fullDocumentHtml, "Lix mark")).toEqual([
+			"file:///workspace/docs/./lix-mark-2.svg",
+			"file:///workspace/docs/./lix-mark-3.svg",
+		]);
+		expect(fullDocumentHtml).not.toContain('src="./lix-mark');
+
+		const snapshotHtml = renderMarkdownReviewDiffHtml(
+			{
+				beforeMarkdown: "![Lix mark](./lix-mark-2.svg)\n",
+				afterMarkdown: "![Lix mark](./lix-mark-3.svg)\n",
+				beforeBlocks: [
+					{
+						id: "image_block",
+						orderKey: "40",
+						block: "![Lix mark](./lix-mark-2.svg)",
+					},
+				],
+				afterBlocks: [
+					{
+						id: "image_block",
+						orderKey: "40",
+						block: "![Lix mark](./lix-mark-3.svg)",
+					},
+				],
+			},
+			{ resolveImageSrc },
+		);
+
+		expect(imageSrcsForAlt(snapshotHtml, "Lix mark")).toEqual([
+			"file:///workspace/docs/./lix-mark-2.svg",
+			"file:///workspace/docs/./lix-mark-3.svg",
+		]);
+		expect(snapshotHtml).not.toContain('src="./lix-mark');
+	});
+
 	test("keeps unchanged list items stable inside a changed list block", () => {
 		const fixture = fixtureById("quick-facts-list");
 		const html = renderMarkdownReviewDiffHtml(fixture);
@@ -704,6 +749,15 @@ function imageTitlesForAlt(html: string, alt: string): string[] {
 		.filter((image) => image.getAttribute("alt") === alt)
 		.map((image) => image.getAttribute("title"))
 		.filter((title): title is string => title !== null)
+		.sort();
+}
+
+function imageSrcsForAlt(html: string, alt: string): string[] {
+	const root = htmlRoot(html);
+	return [...root.querySelectorAll("img")]
+		.filter((image) => image.getAttribute("alt") === alt)
+		.map((image) => image.getAttribute("src"))
+		.filter((src): src is string => src !== null)
 		.sort();
 }
 

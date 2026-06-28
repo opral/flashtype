@@ -7,8 +7,13 @@ import {
 import { parseMarkdown } from "@/extensions/markdown/editor/markdown";
 import type { MarkdownReviewDiff } from "./review-diff";
 
+type RenderMarkdownReviewDiffHtmlOptions = {
+	readonly resolveImageSrc?: (src: string) => string;
+};
+
 export function renderMarkdownReviewDiffHtml(
 	reviewDiff: MarkdownReviewDiff,
+	options: RenderMarkdownReviewDiffHtmlOptions = {},
 ): string {
 	if (
 		reviewDiff.beforeBlocks !== undefined &&
@@ -16,8 +21,8 @@ export function renderMarkdownReviewDiffHtml(
 	) {
 		return normalizeHtmlDiffFragment(
 			renderHtmlDiff({
-				beforeHtml: renderMarkdownBlocksHtml(reviewDiff.beforeBlocks),
-				afterHtml: renderMarkdownBlocksHtml(reviewDiff.afterBlocks),
+				beforeHtml: renderMarkdownBlocksHtml(reviewDiff.beforeBlocks, options),
+				afterHtml: renderMarkdownBlocksHtml(reviewDiff.afterBlocks, options),
 				diffAttribute: "data-diff-key",
 			}),
 		);
@@ -26,8 +31,8 @@ export function renderMarkdownReviewDiffHtml(
 	const beforeAst = parseMarkdown(reviewDiff.beforeMarkdown) as any;
 	const afterAst = parseMarkdown(reviewDiff.afterMarkdown) as any;
 	ensurePairedDiffIds(beforeAst, afterAst);
-	const beforeHtml = renderMarkdownAstEditorHtml(beforeAst);
-	const afterHtml = renderMarkdownAstEditorHtml(afterAst);
+	const beforeHtml = renderMarkdownAstEditorHtml(beforeAst, options);
+	const afterHtml = renderMarkdownAstEditorHtml(afterAst, options);
 	return normalizeHtmlDiffFragment(
 		renderHtmlDiff({
 			beforeHtml,
@@ -73,12 +78,16 @@ function serializeHtmlFragmentWithoutWhitespaceText(
 
 function renderMarkdownBlocksHtml(
 	blocks: NonNullable<MarkdownReviewDiff["beforeBlocks"]>,
+	options: RenderMarkdownReviewDiffHtmlOptions,
 ): string {
-	return blocks.map(renderMarkdownBlockHtml).join("\n");
+	return blocks
+		.map((block) => renderMarkdownBlockHtml(block, options))
+		.join("\n");
 }
 
 function renderMarkdownBlockHtml(
 	block: NonNullable<MarkdownReviewDiff["beforeBlocks"]>[number],
+	options: RenderMarkdownReviewDiffHtmlOptions,
 ): string {
 	const ast = parseMarkdown(block.block) as any;
 	ensureDiffIds(ast);
@@ -97,7 +106,7 @@ function renderMarkdownBlockHtml(
 			break;
 		}
 	}
-	return renderMarkdownAstEditorHtml(ast);
+	return renderMarkdownAstEditorHtml(ast, options);
 }
 
 function ensureNestedDiffIds(ast: any, blockId: string): void {

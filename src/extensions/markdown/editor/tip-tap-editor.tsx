@@ -12,6 +12,10 @@ import type { EmptyMarkdownDefaultBlock } from "./tiptap-markdown-bridge";
 import { parseMarkdown, serializeAst } from "./markdown";
 import { tiptapDocToAst } from "./tiptap-markdown-bridge";
 import { decodeMarkdownData } from "./decode-markdown-data";
+import {
+	desktopWorkspaceApi,
+	useDesktopWorkspaceDir,
+} from "./desktop-workspace";
 
 type TipTapEditorProps = {
 	fileId?: string | null;
@@ -23,66 +27,6 @@ type TipTapEditorProps = {
 	defaultBlock?: EmptyMarkdownDefaultBlock;
 	isActiveView?: boolean;
 };
-
-type WorkspaceDirState = {
-	readonly loaded: boolean;
-	readonly workspaceDir: string | null;
-};
-
-function useDesktopWorkspaceDir(): WorkspaceDirState {
-	const [state, setState] = useState<WorkspaceDirState>(() => {
-		const desktopLix = desktopLixApi();
-		return desktopLix
-			? { loaded: false, workspaceDir: null }
-			: { loaded: true, workspaceDir: null };
-	});
-
-	useEffect(() => {
-		const desktopLix = desktopLixApi();
-		if (!desktopLix) {
-			setState({ loaded: true, workspaceDir: null });
-			return;
-		}
-
-		let cancelled = false;
-		void desktopLix.workspaceDir().then(
-			(workspaceDir) => {
-				if (!cancelled) {
-					setState({ loaded: true, workspaceDir });
-				}
-			},
-			() => {
-				if (!cancelled) {
-					setState({ loaded: true, workspaceDir: null });
-				}
-			},
-		);
-
-		return () => {
-			cancelled = true;
-		};
-	}, []);
-
-	return state;
-}
-
-function desktopLixApi():
-	| NonNullable<Window["flashtypeDesktop"]>["lix"]
-	| undefined {
-	if (typeof window === "undefined") {
-		return undefined;
-	}
-	return window.flashtypeDesktop?.lix;
-}
-
-function desktopWorkspaceApi():
-	| NonNullable<Window["flashtypeDesktop"]>["workspace"]
-	| undefined {
-	if (typeof window === "undefined") {
-		return undefined;
-	}
-	return window.flashtypeDesktop?.workspace;
-}
 
 /**
  * Rich text editor for Markdown files backed by the Lix store.

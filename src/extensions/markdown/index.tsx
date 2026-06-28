@@ -12,6 +12,10 @@ import { qb } from "@/lib/lix-kysely";
 import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
 import { EditorProvider } from "@/extensions/markdown/editor/editor-context";
 import { TipTapEditor } from "@/extensions/markdown/editor/tip-tap-editor";
+import {
+	desktopWorkspaceApi,
+	useDesktopWorkspaceDir,
+} from "@/extensions/markdown/editor/desktop-workspace";
 import type { EmptyMarkdownDefaultBlock } from "@/extensions/markdown/editor/tiptap-markdown-bridge";
 import { renderMarkdownReviewDiffHtml } from "./render-review-diff-html";
 import "./style.css";
@@ -181,6 +185,7 @@ function MarkdownViewLoaded({
 							<Suspense fallback={<MarkdownReviewOverlayFallback />}>
 								<MarkdownReviewOverlay
 									fileId={fileRow.id}
+									sourceFilePath={fileRow.path}
 									review={externalWriteReview}
 									reviewDiff={reviewDiff}
 									reviewId={externalWriteReview.reviewId}
@@ -263,6 +268,7 @@ function MarkdownAutosaveHint({ enabled }: { readonly enabled: boolean }) {
 
 function MarkdownReviewOverlay({
 	fileId,
+	sourceFilePath,
 	review,
 	reviewDiff,
 	reviewId,
@@ -273,6 +279,7 @@ function MarkdownReviewOverlay({
 	onReject,
 }: {
 	readonly fileId: string;
+	readonly sourceFilePath: string;
 	readonly review: ExternalWriteReview;
 	readonly reviewDiff: MarkdownReviewDiff;
 	readonly reviewId: string;
@@ -290,8 +297,26 @@ function MarkdownReviewOverlay({
 		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
 }) {
+	const workspaceDirState = useDesktopWorkspaceDir();
 	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
 	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
+	const resolveImageSrc = useMemo(() => {
+		const workspaceApi = desktopWorkspaceApi();
+		const workspacePath = workspaceDirState.workspaceDir;
+		if (
+			!sourceFilePath ||
+			!workspacePath ||
+			!workspaceApi?.resolveMarkdownImageSrc
+		) {
+			return undefined;
+		}
+		return (src: string) =>
+			workspaceApi.resolveMarkdownImageSrc({
+				src,
+				sourceFilePath,
+				workspacePath,
+			});
+	}, [sourceFilePath, workspaceDirState.workspaceDir]);
 	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
 		const beforeSnapshotsAvailable =
 			beforeBlocks !== undefined &&
@@ -310,9 +335,15 @@ function MarkdownReviewOverlay({
 		};
 	}, [afterBlocks, beforeBlocks, reviewDiff]);
 	const diffHtml = useMemo(() => {
-		return renderMarkdownReviewDiffHtml(enrichedReviewDiff);
-	}, [enrichedReviewDiff]);
+		return renderMarkdownReviewDiffHtml(enrichedReviewDiff, {
+			resolveImageSrc,
+		});
+	}, [enrichedReviewDiff, resolveImageSrc]);
 	const rejectReview = () => void onReject?.({ fileId, reviewId, review });
+
+	if (!workspaceDirState.loaded) {
+		return <MarkdownReviewOverlayFallback />;
+	}
 
 	return (
 		<div className="markdown-review-overlay">
