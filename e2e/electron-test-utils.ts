@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { _electron as electron, type ElectronApplication } from "playwright";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -89,6 +89,49 @@ export async function ensureFilesViewOpenInLeftPanel(
 	await expect(filesTab).toBeVisible();
 	await filesTab.click();
 	await expect(filesTab).toHaveAttribute("data-focused", "true");
+}
+
+export function fileTreeFiles(page: Page): Locator {
+	return page.locator(
+		'[data-type="item"][data-item-type="file"][data-item-path]',
+	);
+}
+
+export function fileTreeFile(page: Page, appPath: string): Locator {
+	return page.locator(fileTreeItemSelector(appPath, "file"));
+}
+
+export function fileTreeDirectory(page: Page, appPath: string): Locator {
+	return page.locator(fileTreeItemSelector(appPath, "folder"));
+}
+
+function fileTreeItemSelector(
+	appPath: string,
+	itemType: "file" | "folder",
+): string {
+	const treePath =
+		itemType === "folder"
+			? appDirectoryPathToTreePath(appPath)
+			: appFilePathToTreePath(appPath);
+	return `[data-type="item"][data-item-type="${itemType}"][data-item-path=${cssString(treePath)}]`;
+}
+
+function appFilePathToTreePath(appPath: string): string {
+	const withoutLeadingSlash = appPath.startsWith("/")
+		? appPath.slice(1)
+		: appPath;
+	return withoutLeadingSlash.endsWith("/")
+		? withoutLeadingSlash.slice(0, -1)
+		: withoutLeadingSlash;
+}
+
+function appDirectoryPathToTreePath(appPath: string): string {
+	const filePath = appFilePathToTreePath(appPath);
+	return filePath === "" ? "" : `${filePath}/`;
+}
+
+function cssString(value: string): string {
+	return JSON.stringify(value);
 }
 
 /**

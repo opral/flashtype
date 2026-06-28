@@ -25,6 +25,7 @@ import {
 import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
+	fileTreeFile,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
@@ -117,10 +118,10 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 
 		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
-		const file = page.getByTestId("file-tree-item-fuzz-md");
+		const file = fileTreeFile(page, uiFuzzFilePath);
 		await expect(file).toBeVisible();
 		await file.click();
-		await expect(file).toHaveAttribute("data-selected", "true");
+		await expect(file).toHaveAttribute("data-item-selected", "true");
 
 		const editor = page.locator('[data-testid="tiptap-editor"] .ProseMirror');
 		await expect(editor).toBeVisible();

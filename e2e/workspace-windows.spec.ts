@@ -6,6 +6,8 @@ import path from "node:path";
 import {
 	closeElectronApp,
 	expectInstalledPluginArchives,
+	fileTreeDirectory,
+	fileTreeFile,
 	launchDevElectronAppWithArgs,
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
@@ -37,10 +39,10 @@ test("launching with multiple workspace args creates independent windows", async
 		registerRendererConsoleLogging(firstPage);
 		registerRendererConsoleLogging(secondPage);
 
-		await expect(firstPage.getByText("first-marker.md")).toBeVisible();
-		await expect(firstPage.getByText("second-marker.md")).toHaveCount(0);
-		await expect(secondPage.getByText("second-marker.md")).toBeVisible();
-		await expect(secondPage.getByText("first-marker.md")).toHaveCount(0);
+		await expect(fileTreeFile(firstPage, "/first-marker.md")).toBeVisible();
+		await expect(fileTreeFile(firstPage, "/second-marker.md")).toHaveCount(0);
+		await expect(fileTreeFile(secondPage, "/second-marker.md")).toBeVisible();
+		await expect(fileTreeFile(secondPage, "/first-marker.md")).toHaveCount(0);
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -78,9 +80,9 @@ test("opening a folder from an existing workspace creates a new window", async (
 
 		await expectWindowCount(electronApp, 2);
 		await expect(firstPage).toHaveTitle(path.basename(firstWorkspaceDir));
-		await expect(firstPage.getByText("first-marker.md")).toBeVisible();
-		await expect(firstPage.getByText("second-marker.md")).toHaveCount(0);
-		await expect(secondPage.getByText("second-marker.md")).toBeVisible();
+		await expect(fileTreeFile(firstPage, "/first-marker.md")).toBeVisible();
+		await expect(fileTreeFile(firstPage, "/second-marker.md")).toHaveCount(0);
+		await expect(fileTreeFile(secondPage, "/second-marker.md")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -124,7 +126,9 @@ test("relaunch reopens saved directory and transient file workspaces", async ({
 		registerRendererConsoleLogging(filePage);
 
 		await expectWindowCount(electronApp, 2);
-		await expect(directoryPage.getByText("directory-marker.md")).toBeVisible();
+		await expect(
+			fileTreeFile(directoryPage, "/directory-marker.md"),
+		).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
@@ -182,8 +186,8 @@ test("relaunch restores saved workspaces with explicit paths deduped last", asyn
 		await expectTitleCount(electronApp, path.basename(firstWorkspaceDir), 1);
 		await expectTitleCount(electronApp, path.basename(secondWorkspaceDir), 1);
 		await expectTitleCount(electronApp, path.basename(standaloneFileDir), 1);
-		await expect(firstPage.getByText("first-marker.md")).toBeVisible();
-		await expect(secondPage.getByText("second-marker.md")).toBeVisible();
+		await expect(fileTreeFile(firstPage, "/first-marker.md")).toBeVisible();
+		await expect(fileTreeFile(secondPage, "/second-marker.md")).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
@@ -234,7 +238,7 @@ test("closed workspace windows are removed from the relaunch session", async ({
 
 		await expectWindowCount(electronApp, 1);
 		await expectTitleCount(electronApp, path.basename(secondWorkspaceDir), 0);
-		await expect(restoredPage.getByText("first-marker.md")).toBeVisible();
+		await expect(fileTreeFile(restoredPage, "/first-marker.md")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -284,7 +288,7 @@ test("opening a folder from first run reuses the empty window", async ({
 
 		await expectWindowCount(electronApp, 1);
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
-		await expect(page.getByText("marker.md")).toBeVisible();
+		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -304,10 +308,10 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 		const page = await pageWithTitle(electronApp, path.basename(workspaceDir));
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByText("marker.md")).toBeVisible();
+		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
 		await expectTrackChangesMenuChecked(electronApp, false);
 		await expectPathMissing(path.join(workspaceDir, ".lix"));
-		await page.getByTestId("file-tree-item-marker-md").click();
+		await fileTreeFile(page, "/marker.md").click();
 		await expect(
 			page.getByRole("heading", { name: "marker.md" }),
 		).toBeVisible();
@@ -330,14 +334,14 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
 		await expectTrackChangesSettled(electronApp, workspaceDir, true);
 		await expectLixFilePath(page, "/marker.md");
-		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
+		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
 		await expectInstalledPluginArchives(workspaceDir);
 
 		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
 		await expectTrackChangesSettled(electronApp, workspaceDir, false);
 		await expectLixFilePath(page, "/marker.md");
-		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
+		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -401,7 +405,7 @@ test("Track Changes recovery screen can disable tracking", async ({
 			page.getByRole("button", { name: "Disable Track Changes" }).click(),
 		]);
 
-		await expect(page.getByTestId("file-tree-item-marker-md")).toBeVisible();
+		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
 		await expectTrackChangesMenuChecked(electronApp, false);
 		await expectPathMissing(path.join(workspaceDir, ".lix"));
 		await expect(readFile(filePath, "utf8")).resolves.toBe("# marker.md\n");
@@ -446,7 +450,7 @@ test("macOS open-file events create workspace windows for folders and files", as
 
 		await expectWindowCount(electronApp, 3);
 		await expect(firstRunPage).toHaveTitle("Flashtype");
-		await expect(folderPage.getByText("folder-marker.md")).toBeVisible();
+		await expect(fileTreeFile(folderPage, "/folder-marker.md")).toBeVisible();
 		await expect(
 			filePage.getByRole("heading", { name: "file-marker.md" }),
 		).toBeVisible();
@@ -492,7 +496,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 				.first(),
 		).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
-		await expect(filePage.getByText("sibling.md")).toBeVisible();
+		await expect(fileTreeFile(filePage, "/sibling.md")).toBeVisible();
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
 
@@ -566,20 +570,17 @@ test("launching with multiple standalone markdown files creates one grouped tran
 		await expect(
 			groupedPage.getByRole("heading", { name: "Alpha" }),
 		).toBeVisible();
-		await groupedPage
-			.getByTestId("file-tree-directory-standalone-markdown-alpha")
-			.click();
+		await fileTreeDirectory(groupedPage, "/standalone-markdown-alpha/").click();
 		await expect(
-			groupedPage.getByTestId(
-				"file-tree-item-standalone-markdown-alpha-alpha-md",
-			),
+			fileTreeFile(groupedPage, "/standalone-markdown-alpha/alpha.md"),
 		).toBeVisible();
-		await expect(groupedPage.getByText("sibling.md")).toBeVisible();
-		await groupedPage
-			.getByTestId("file-tree-directory-standalone-markdown-beta")
-			.click();
-		const betaItem = groupedPage.getByTestId(
-			"file-tree-item-standalone-markdown-beta-beta-markdown",
+		await expect(
+			fileTreeFile(groupedPage, "/standalone-markdown-alpha/sibling.md"),
+		).toBeVisible();
+		await fileTreeDirectory(groupedPage, "/standalone-markdown-beta/").click();
+		const betaItem = fileTreeFile(
+			groupedPage,
+			"/standalone-markdown-beta/beta.markdown",
 		);
 		await expect(betaItem).toBeVisible();
 		await betaItem.click();
@@ -673,16 +674,17 @@ test("mixed folder and standalone markdown args create folder and grouped file w
 		registerRendererConsoleLogging(groupedFilePage);
 
 		await expectWindowCount(electronApp, 2);
-		await expect(folderPage.getByText("folder-marker.md")).toBeVisible();
+		await expect(fileTreeFile(folderPage, "/folder-marker.md")).toBeVisible();
 		await expect(
 			groupedFilePage.getByRole("heading", { name: "One" }),
 		).toBeVisible();
-		await expect(groupedFilePage.getByText("folder-marker.md")).toHaveCount(0);
-		await groupedFilePage
-			.getByTestId("file-tree-directory-standalone-mixed-two")
-			.click();
-		const secondItem = groupedFilePage.getByTestId(
-			"file-tree-item-standalone-mixed-two-two-md",
+		await expect(
+			fileTreeFile(groupedFilePage, "/folder-marker.md"),
+		).toHaveCount(0);
+		await fileTreeDirectory(groupedFilePage, "/standalone-mixed-two/").click();
+		const secondItem = fileTreeFile(
+			groupedFilePage,
+			"/standalone-mixed-two/two.md",
 		);
 		await expect(secondItem).toBeVisible();
 		await secondItem.click();
@@ -731,11 +733,10 @@ test("relaunch restores grouped transient file workspace", async ({
 		await expect(
 			restoredPage.getByRole("heading", { name: "First" }),
 		).toBeVisible();
-		await restoredPage
-			.getByTestId("file-tree-directory-restore-markdown-second")
-			.click();
-		const restoredSecondItem = restoredPage.getByTestId(
-			"file-tree-item-restore-markdown-second-second-md",
+		await fileTreeDirectory(restoredPage, "/restore-markdown-second/").click();
+		const restoredSecondItem = fileTreeFile(
+			restoredPage,
+			"/restore-markdown-second/second.md",
 		);
 		await expect(restoredSecondItem).toBeVisible();
 		await restoredSecondItem.click();

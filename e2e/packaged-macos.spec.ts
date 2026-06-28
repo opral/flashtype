@@ -8,6 +8,7 @@ import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
 	expectPathMissing,
+	fileTreeFiles,
 	launchPackagedElectronApp,
 	registerRendererConsoleLogging,
 	repoRoot,
@@ -127,10 +128,10 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 		await expectPathMissing(path.join(workspaceDir, ".lix"));
 		await ensureFilesViewOpenInLeftPanel(page);
 
-		const firstFile = page.locator('[data-testid^="file-tree-item-"]').first();
+		const firstFile = fileTreeFiles(page).first();
 		await expect(firstFile).toBeVisible();
 		await firstFile.click();
-		await expect(firstFile).toHaveAttribute("data-selected", "true");
+		await expect(firstFile).toHaveAttribute("data-item-selected", "true");
 		await expect(
 			page.locator('[data-view-key="flashtype_file"]').first(),
 		).toBeVisible();

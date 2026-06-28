@@ -4,6 +4,8 @@ import seedrandom from "seedrandom";
 import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
+	fileTreeFile,
+	fileTreeFiles,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
 	writeStarterFiles,
@@ -30,11 +32,11 @@ test("left files panel survives a seeded random file click tour", async ({
 		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
 
-		const fileItems = page.locator('[data-testid^="file-tree-item-"]');
+		const fileItems = fileTreeFiles(page);
 		await expect(fileItems.first()).toBeVisible();
-		const csvFile = page.getByTestId("file-tree-item-metrics-csv");
+		const csvFile = fileTreeFile(page, "/metrics.csv");
 		await csvFile.click();
-		await expect(csvFile).toHaveAttribute("data-selected", "true");
+		await expect(csvFile).toHaveAttribute("data-item-selected", "true");
 		await expect(
 			page.locator('[data-active="true"][data-view-key="flashtype_csv"]'),
 		).toBeVisible();
@@ -48,11 +50,11 @@ test("left files panel survives a seeded random file click tour", async ({
 			const fileIndex = Math.floor(rng() * fileCount);
 			const delayMs = Math.floor(rng() * 1001);
 			const file = fileItems.nth(fileIndex);
-			const testId = await file.getAttribute("data-testid");
+			const treePath = await file.getAttribute("data-item-path");
 
 			await test.step(`click ${index + 1}/${clickCount}: file index ${fileIndex}, delay ${delayMs}ms`, async () => {
 				await file.click();
-				await expect(file).toHaveAttribute("data-selected", "true");
+				await expect(file).toHaveAttribute("data-item-selected", "true");
 				await expect(
 					page
 						.locator(
@@ -60,7 +62,7 @@ test("left files panel survives a seeded random file click tour", async ({
 						)
 						.first(),
 				).toBeVisible();
-				if (testId === "file-tree-item-metrics-csv") {
+				if (treePath === "metrics.csv") {
 					await expectCsvGridCanvasToRender(page);
 				}
 				await page.waitForTimeout(delayMs);
@@ -71,9 +73,7 @@ test("left files panel survives a seeded random file click tour", async ({
 	}
 });
 
-async function expectCsvGridCanvasToRender(
-	page: Page,
-): Promise<void> {
+async function expectCsvGridCanvasToRender(page: Page): Promise<void> {
 	const canvas = page
 		.locator('[data-active="true"][data-view-key="flashtype_csv"] canvas')
 		.first();
@@ -83,7 +83,11 @@ async function expectCsvGridCanvasToRender(
 			return await canvas.evaluate((element) => {
 				const canvasElement = element as HTMLCanvasElement;
 				const context = canvasElement.getContext("2d");
-				if (!context || canvasElement.width === 0 || canvasElement.height === 0) {
+				if (
+					!context ||
+					canvasElement.width === 0 ||
+					canvasElement.height === 0
+				) {
 					return 0;
 				}
 				const width = Math.min(canvasElement.width, 500);
@@ -121,10 +125,10 @@ test("deleting the active file closes the central file view", async ({
 		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
 
-		const file = page.getByTestId("file-tree-item-welcome-md");
+		const file = fileTreeFile(page, "/welcome.md");
 		await expect(file).toBeVisible();
 		await file.click();
-		await expect(file).toHaveAttribute("data-selected", "true");
+		await expect(file).toHaveAttribute("data-item-selected", "true");
 		await expect(
 			page.locator('[data-active="true"][data-view-key="flashtype_file"]'),
 		).toBeVisible();

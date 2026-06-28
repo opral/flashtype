@@ -5,6 +5,7 @@ import path from "node:path";
 import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
+	fileTreeFile,
 	launchDevElectronAppWithArgs,
 	registerRendererConsoleLogging,
 	writeStarterFiles,
@@ -77,10 +78,10 @@ test.skip("restored markdown file shows a review after Codex edits it", async ({
 
 async function openWelcomeMarkdown(page: Page): Promise<void> {
 	await ensureFilesViewOpenInLeftPanel(page);
-	const file = page.getByTestId("file-tree-item-welcome-md");
+	const file = fileTreeFile(page, "/welcome.md");
 	await expect(file).toBeVisible();
 	await file.click();
-	await expect(file).toHaveAttribute("data-selected", "true");
+	await expect(file).toHaveAttribute("data-item-selected", "true");
 	await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 	await expect(
 		page.locator('[data-active="true"][data-view-key="flashtype_file"]'),

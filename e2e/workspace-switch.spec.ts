@@ -5,6 +5,7 @@ import path from "node:path";
 import {
 	closeElectronApp,
 	expectPathMissing,
+	fileTreeFile,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
@@ -28,7 +29,7 @@ test("switching to an empty workspace closes the previous lix session", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByText("old-workspace-marker.md")).toBeVisible();
+		await expect(fileTreeFile(page, "/old-workspace-marker.md")).toBeVisible();
 		await expectPathMissing(path.join(firstWorkspaceDir, ".lix"));
 
 		await page.evaluate(async (workspacePath) => {
@@ -38,7 +39,7 @@ test("switching to an empty workspace closes the previous lix session", async ({
 		await page.reload({ waitUntil: "domcontentloaded" });
 
 		await expect(page).toHaveTitle(path.basename(secondWorkspaceDir));
-		await expect(page.getByText("old-workspace-marker.md")).toHaveCount(0);
+		await expect(fileTreeFile(page, "/old-workspace-marker.md")).toHaveCount(0);
 		await expect(page.getByText("Start writing")).toBeVisible();
 		await expectPathMissing(path.join(secondWorkspaceDir, ".lix"));
 	} finally {
