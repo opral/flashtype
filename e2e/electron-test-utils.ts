@@ -20,6 +20,7 @@ export async function launchDevElectronApp(
 }
 
 type LaunchDevElectronAppOptions = {
+	env?: NodeJS.ProcessEnv;
 	userDataDir?: string;
 };
 
@@ -41,6 +42,7 @@ export async function launchDevElectronAppWithArgs(
 			...process.env,
 			FLASHTYPE_HEADLESS: devElectronHeadless,
 			VITE_DEV_SERVER_URL: rendererUrl,
+			...options.env,
 		},
 	});
 }
