@@ -7,6 +7,7 @@ import type {
 	FileTreeItemHandle,
 	FileTreeRenameEvent,
 	FileTreeRenamingItem,
+	GitStatusEntry,
 } from "@pierre/trees";
 import type { FilesystemTreeNode } from "@/extensions/files/build-filesystem-tree";
 
@@ -36,6 +37,7 @@ export type FileTreeProps = {
 	readonly isPanelFocused?: boolean;
 	readonly onSelectItem?: (path: string, kind: "file" | "directory") => void;
 	readonly openDirectories?: ReadonlySet<string>;
+	readonly reviewPaths?: ReadonlySet<string>;
 	readonly onOpenDirectoriesChange?: (paths: ReadonlySet<string>) => void;
 	readonly onCreateCommit?: (
 		request: FileTreeCreateRequest,
@@ -64,6 +66,29 @@ type TreeInput = {
 };
 
 const FILE_TREE_UNSAFE_CSS = `
+	[data-item-git-status='modified'] > [data-item-section='icon']
+		> :where(:not([data-icon-name='file-tree-icon-chevron'])),
+	[data-item-git-status='modified'] > [data-item-section='content'] {
+		color: inherit;
+	}
+
+	[data-item-git-status='modified'] > [data-item-section='git'] {
+		color: var(--color-warning-600);
+		font-size: 0;
+	}
+
+	[data-item-git-status='modified'] > [data-item-section='git'] > span {
+		width: 6px;
+		height: 6px;
+		border-radius: 999px;
+		background: currentColor;
+	}
+
+	[data-item-contains-git-change='true'] > [data-item-section='git'] {
+		color: var(--color-warning-600);
+		opacity: 0.75;
+	}
+
 	[data-type='item'][data-item-selected='true'][data-item-type='folder'] {
 		background-color: var(--color-bg-hover);
 		color: var(--color-text-secondary);
@@ -99,6 +124,7 @@ export function FileTree({
 	isPanelFocused = false,
 	onSelectItem,
 	openDirectories,
+	reviewPaths,
 	onOpenDirectoriesChange,
 	onCreateCommit,
 	onCreateCancel,
@@ -133,6 +159,17 @@ export function FileTree({
 	const openDirectoryTreePathsKey = useMemo(
 		() => [...openDirectoryTreePaths].sort().join("\0"),
 		[openDirectoryTreePaths],
+	);
+	const reviewGitStatusEntries = useMemo(
+		() => buildReviewGitStatusEntries(reviewPaths, treeInput),
+		[reviewPaths, treeInput],
+	);
+	const reviewGitStatusKey = useMemo(
+		() =>
+			reviewGitStatusEntries
+				.map((entry) => `${entry.path}:${entry.status}`)
+				.join("\0"),
+		[reviewGitStatusEntries],
 	);
 	const selectedTreePath = selectedPath
 		? appPathToTreePath(selectedPath, selectedPath.endsWith("/"))
@@ -277,6 +314,7 @@ export function FileTree({
 		dragAndDrop: false,
 		flattenEmptyDirectories: false,
 		icons: { set: "minimal", colored: false },
+		gitStatus: reviewGitStatusEntries,
 		initialExpansion: "closed",
 		itemHeight: 28,
 		onSelectionChange: (paths) => handleSelectionChangeRef.current(paths),
@@ -296,6 +334,10 @@ export function FileTree({
 			initialExpandedPaths: [...openDirectoryTreePaths],
 		});
 	}, [model, treeInput.paths, treePathsKey]);
+
+	useEffect(() => {
+		model.setGitStatus(reviewGitStatusEntries);
+	}, [model, reviewGitStatusEntries, reviewGitStatusKey]);
 
 	useEffect(() => {
 		for (const directoryTreePath of treeInput.directoryTreePaths) {
@@ -466,6 +508,23 @@ function buildTreeInput(
 	};
 }
 
+function buildReviewGitStatusEntries(
+	reviewPaths: ReadonlySet<string> | undefined,
+	treeInput: TreeInput,
+): GitStatusEntry[] {
+	if (!reviewPaths || reviewPaths.size === 0) return [];
+	const entries: GitStatusEntry[] = [];
+	for (const appPath of reviewPaths) {
+		const treePath = appPathToTreePath(appPath, false);
+		const info = treeInput.pathInfoByTreePath.get(treePath);
+		if (!info || info.kind !== "file" || info.createRequestId != null) {
+			continue;
+		}
+		entries.push({ path: treePath, status: "modified" });
+	}
+	return entries.sort((left, right) => left.path.localeCompare(right.path));
+}
+
 function uniqueCreatePlaceholderPath(
 	request: FileTreeCreateRequest,
 	pathInfoByTreePath: ReadonlyMap<string, TreePathInfo>,
@@ -549,6 +608,7 @@ function treeHostStyle(isPanelFocused: boolean) {
 		"--trees-focus-ring-color-override": "var(--color-ring-focus-visible)",
 		"--trees-font-family-override": "inherit",
 		"--trees-font-size-override": "12px",
+		"--trees-git-modified-color-override": "var(--color-warning-600)",
 		"--trees-icon-width-override": "13px",
 		"--trees-input-bg-override": "transparent",
 		"--trees-item-margin-x-override": "0px",

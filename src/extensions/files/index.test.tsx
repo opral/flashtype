@@ -6,6 +6,10 @@ import { openLix } from "@/test-utils/node-lix-sdk";
 import { FilesView } from "./index";
 import type { ExtensionContext } from "../../extension-runtime/types";
 import { qb } from "@/lib/lix-kysely";
+import {
+	appendAgentTurnCommitRange,
+	type AgentTurnCommitRange,
+} from "@/shell/agent-turn-review-range";
 
 const createViewContext = (
 	lix: Awaited<ReturnType<typeof openLix>>,
@@ -794,6 +798,64 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
+	test("marks files with pending external write reviews", async () => {
+		const lix = await openLix();
+		try {
+			await qb(lix)
+				.insertInto("lix_directory")
+				.values({ path: "/docs/" } as any)
+				.execute();
+			await writeReviewFile(lix, "file_review", "/docs/review.md", "before");
+			await writeReviewFile(lix, "file_clean", "/docs/clean.md", "same");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeReviewFile(lix, "file_review", "/docs/review.md", "after");
+			await writeReviewFile(lix, "file_clean", "/docs/clean.md", "same");
+			const afterCommitId = await activeCommitId(lix);
+			await appendAgentTurnCommitRange(
+				lix,
+				agentRange({
+					id: "range-files-tree-review",
+					beforeCommitId,
+					afterCommitId,
+				}),
+			);
+
+			let utils: ReturnType<typeof render>;
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView context={createViewContext(lix)} />
+						</Suspense>
+					</LixProvider>,
+				);
+			});
+
+			await findTreeItemByLabel(utils!, "docs");
+			await act(async () => {
+				fireEvent.click(await findTreeItemByLabel(utils!, "docs"));
+			});
+
+			await waitFor(() => {
+				expect(queryTreeItemByLabel(utils!, "review.md")).toHaveAttribute(
+					"data-item-git-status",
+					"modified",
+				);
+			});
+			expect(queryTreeItemByLabel(utils!, "clean.md")).not.toHaveAttribute(
+				"data-item-git-status",
+			);
+			expect(queryTreeItemByLabel(utils!, "docs")).toHaveAttribute(
+				"data-item-contains-git-change",
+				"true",
+			);
+
+			utils!.unmount();
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("watches transient directories on demand and delegates watched-only file opens", async () => {
 		const lix = await openLix();
 		const originalDesktop = window.flashtypeDesktop;
@@ -1474,3 +1536,50 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 });
+
+async function writeReviewFile(
+	lix: Awaited<ReturnType<typeof openLix>>,
+	id: string,
+	path: string,
+	text: string,
+): Promise<void> {
+	await qb(lix)
+		.insertInto("lix_file")
+		.values({ id, path, data: new TextEncoder().encode(text) })
+		.onConflict((oc) =>
+			oc.column("id").doUpdateSet({
+				path,
+				data: new TextEncoder().encode(text),
+			}),
+		)
+		.execute();
+}
+
+async function activeCommitId(
+	lix: Awaited<ReturnType<typeof openLix>>,
+): Promise<string> {
+	const result = await lix.execute(
+		"SELECT lix_active_branch_commit_id() AS commit_id",
+	);
+	const commitId = result.rows[0]?.get("commit_id");
+	if (typeof commitId !== "string") {
+		throw new Error("Missing active commit id");
+	}
+	return commitId;
+}
+
+function agentRange(
+	overrides: Pick<
+		AgentTurnCommitRange,
+		"id" | "beforeCommitId" | "afterCommitId"
+	>,
+): AgentTurnCommitRange {
+	return {
+		agent: "codex",
+		sessionId: "session-1",
+		turnId: "turn-1",
+		startedAt: 1,
+		completedAt: 2,
+		...overrides,
+	};
+}

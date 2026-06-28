@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Files, FileUp, FilePlus, Github } from "lucide-react";
-import { LixProvider, useLix, useQuery } from "@/lib/lix-react";
+import {
+	LixProvider,
+	useLix,
+	useQuery,
+	useQueryTakeFirst,
+} from "@/lib/lix-react";
 import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
 import { selectFilesystemEntries } from "@/queries";
-import { buildFilesystemTree } from "@/extensions/files/build-filesystem-tree";
+import {
+	buildFilesystemTree,
+	type FilesystemTreeNode,
+} from "@/extensions/files/build-filesystem-tree";
 import type { ExtensionContext } from "../../extension-runtime/types";
 import {
 	FileTree,
@@ -15,6 +23,14 @@ import { qb } from "@/lib/lix-kysely";
 import { FILES_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
 import type { Lix } from "@/lib/lix-types";
+import {
+	AGENT_TURN_COMMIT_RANGE_KEY,
+	isAgentTurnCommitRangeStore,
+} from "@/shell/agent-turn-review-range";
+import {
+	getPendingExternalWriteReviewPaths,
+	type ExternalWriteReviewFile,
+} from "@/shell/external-write-review-history";
 
 type FilesViewProps = {
 	readonly context?: ExtensionContext;
@@ -72,6 +88,7 @@ function FilesViewContent({
 		() => buildFilesystemTree(combinedEntries),
 		[combinedEntries],
 	);
+	const pendingReviewPaths = usePendingExternalWriteReviewPaths(lix, nodes);
 	const creatingRef = useRef(false);
 	const renamingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
@@ -784,6 +801,7 @@ function FilesViewContent({
 				<FileTree
 					nodes={nodes}
 					openFileView={handleOpenFile}
+					reviewPaths={pendingReviewPaths}
 					onSelectItem={handleSelectItem}
 					selectedPath={selectedPath ?? undefined}
 					isPanelFocused={isPanelFocused}
@@ -797,6 +815,89 @@ function FilesViewContent({
 			</div>
 		</div>
 	);
+}
+
+function usePendingExternalWriteReviewPaths(
+	lix: Lix,
+	nodes: readonly FilesystemTreeNode[],
+): ReadonlySet<string> {
+	const rangeRow = useQueryTakeFirst<{ value: unknown }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select("value")
+			.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
+			.where("lixcol_branch_id", "=", "global")
+			.limit(1),
+	);
+	const ranges = useMemo(
+		() =>
+			isAgentTurnCommitRangeStore(rangeRow?.value) ? rangeRow.value.ranges : [],
+		[rangeRow?.value],
+	);
+	const reviewableFiles = useMemo(
+		() => collectReviewableTreeFiles(nodes),
+		[nodes],
+	);
+	const [pendingPaths, setPendingPaths] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
+
+	useEffect(() => {
+		let cancelled = false;
+		if (ranges.length === 0 || reviewableFiles.length === 0) {
+			setPendingPaths((prev) => (prev.size === 0 ? prev : new Set()));
+			return;
+		}
+		void getPendingExternalWriteReviewPaths(lix, reviewableFiles, ranges)
+			.then((nextPaths) => {
+				if (cancelled) return;
+				setPendingPaths((prev) =>
+					sameStringSet(prev, nextPaths) ? prev : nextPaths,
+				);
+			})
+			.catch((error: unknown) => {
+				if (cancelled) return;
+				console.warn("Failed to resolve pending file reviews", error);
+				setPendingPaths((prev) => (prev.size === 0 ? prev : new Set()));
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [lix, ranges, reviewableFiles]);
+
+	return pendingPaths;
+}
+
+function collectReviewableTreeFiles(
+	nodes: readonly FilesystemTreeNode[],
+): ExternalWriteReviewFile[] {
+	const files: ExternalWriteReviewFile[] = [];
+	const visit = (node: FilesystemTreeNode) => {
+		if (node.type === "file") {
+			if (node.source !== "watched") {
+				files.push({ fileId: node.id, path: node.path });
+			}
+			return;
+		}
+		for (const child of node.children) {
+			visit(child);
+		}
+	};
+	for (const node of nodes) {
+		visit(node);
+	}
+	return files;
+}
+
+function sameStringSet(
+	left: ReadonlySet<string>,
+	right: ReadonlySet<string>,
+): boolean {
+	if (left.size !== right.size) return false;
+	for (const value of left) {
+		if (!right.has(value)) return false;
+	}
+	return true;
 }
 
 /**

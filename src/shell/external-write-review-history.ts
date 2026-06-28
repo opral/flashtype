@@ -19,6 +19,11 @@ type FileHistoryRow = {
 	readonly data: unknown;
 };
 
+export type ExternalWriteReviewFile = {
+	readonly fileId: string;
+	readonly path: string;
+};
+
 export async function getExternalWriteReview(
 	lix: Lix,
 	fileId: string,
@@ -26,6 +31,32 @@ export async function getExternalWriteReview(
 ): Promise<ExternalWriteReview | null> {
 	const ranges = await readAgentTurnCommitRanges(lix);
 	return getAgentTurnExternalWriteReview(lix, fileId, path, ranges);
+}
+
+export async function getPendingExternalWriteReviewPaths(
+	lix: Lix,
+	files: readonly ExternalWriteReviewFile[],
+	ranges?: readonly AgentTurnCommitRange[],
+): Promise<Set<string>> {
+	const pendingPaths = new Set<string>();
+	const resolvedRanges = ranges ?? (await readAgentTurnCommitRanges(lix));
+	if (files.length === 0 || resolvedRanges.length === 0) {
+		return pendingPaths;
+	}
+	await Promise.all(
+		files.map(async (file) => {
+			const review = await getAgentTurnExternalWriteReview(
+				lix,
+				file.fileId,
+				file.path,
+				resolvedRanges,
+			);
+			if (review) {
+				pendingPaths.add(file.path);
+			}
+		}),
+	);
+	return pendingPaths;
 }
 
 export function useExternalWriteReview(args: {

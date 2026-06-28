@@ -325,6 +325,75 @@ describe("FileTree", () => {
 			"var(--color-bg-hover)",
 		);
 	});
+
+	test("marks pending review files with the tree status lane", async () => {
+		const nodes: FilesystemTreeNode[] = [
+			{
+				type: "directory",
+				id: "dir-docs",
+				name: "docs",
+				path: "/docs/",
+				children: [
+					{
+						type: "file",
+						id: "file-review",
+						name: "review.md",
+						path: "/docs/review.md",
+					},
+					{
+						type: "file",
+						id: "file-clean",
+						name: "clean.md",
+						path: "/docs/clean.md",
+					},
+				],
+			},
+		];
+
+		const { container, rerender } = render(
+			<FileTree
+				nodes={nodes}
+				openDirectories={new Set(["/docs/"])}
+				reviewPaths={new Set()}
+			/>,
+		);
+
+		expect(getTreeItem(container, "docs/review.md")).not.toHaveAttribute(
+			"data-item-git-status",
+		);
+
+		rerender(
+			<FileTree
+				nodes={nodes}
+				openDirectories={new Set(["/docs/"])}
+				reviewPaths={new Set(["/docs/review.md"])}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(getTreeItem(container, "docs/review.md")).toHaveAttribute(
+				"data-item-git-status",
+				"modified",
+			);
+		});
+		expect(getTreeItem(container, "docs/")).toHaveAttribute(
+			"data-item-contains-git-change",
+			"true",
+		);
+		expect(getTreeItem(container, "docs/clean.md")).not.toHaveAttribute(
+			"data-item-git-status",
+		);
+		expect(
+			getTreeItem(container, "docs/review.md").querySelector(
+				"[data-item-section='git']",
+			),
+		).toHaveTextContent("M");
+		expect(
+			getTreeHost(container).style.getPropertyValue(
+				"--trees-git-modified-color-override",
+			),
+		).toBe("var(--color-warning-600)");
+	});
 });
 
 function getTreeHost(container: HTMLElement): HTMLElement {
