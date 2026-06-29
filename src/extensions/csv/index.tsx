@@ -47,6 +47,15 @@ const COLUMN_MAX_WIDTH = 520;
 const COLUMN_SAMPLE_ROW_LIMIT = 100;
 const ROW_HEIGHT = 48;
 const HEADER_HEIGHT = 40;
+// Airtable-style wrapping: rows grow to fit their wrapped content.
+const GRID_FONT_SIZE = 13;
+const GRID_FONT_FAMILY =
+	'"Inter", "Roboto", -apple-system, BlinkMacSystemFont, "avenir next", avenir, "segoe ui", "helvetica neue", helvetica, Ubuntu, noto, arial, sans-serif';
+// Glide draws text cells with 8px of horizontal padding on each side.
+const CELL_HORIZONTAL_PADDING = 16;
+const WRAP_LINE_HEIGHT = 20;
+const ROW_VERTICAL_PADDING = 16;
+const MAX_ROW_HEIGHT = 240;
 const CSV_GRID_THEME = {
 	accentColor: "rgb(194, 65, 12)",
 	accentFg: "rgb(255, 255, 255)",
@@ -60,6 +69,8 @@ const CSV_GRID_THEME = {
 	linkColor: "rgb(194, 65, 12)",
 	resizeIndicatorColor: "rgb(234, 88, 12)",
 	textHeaderSelected: "rgb(124, 45, 18)",
+	fontFamily: GRID_FONT_FAMILY,
+	baseFontStyle: `${GRID_FONT_SIZE}px`,
 };
 
 type CsvFileRow = {
@@ -277,6 +288,7 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 				data: value,
 				displayData: value,
 				allowOverlay: false,
+				allowWrapping: true,
 				readonly: true,
 				copyData: value,
 			};
@@ -292,6 +304,39 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 		},
 		[],
 	);
+	const getRowHeight = useMemo(() => {
+		const cache = new Map<number, number>();
+		const ctx = getTextMeasureContext();
+		const columnWidths = columns.map(
+			(column) => column.width ?? COLUMN_MIN_WIDTH,
+		);
+		return (rowIndex: number): number => {
+			const cached = cache.get(rowIndex);
+			if (cached !== undefined) return cached;
+			const cells = parsed.rows[rowIndex]?.cells;
+			let maxLines = 1;
+			if (cells) {
+				for (let columnIndex = 0; columnIndex < cells.length; columnIndex++) {
+					const value = cells[columnIndex] ?? "";
+					if (value.length === 0) continue;
+					// Links render on a single line, so they never grow the row.
+					if (toExternalLinkUrl(value)) continue;
+					const usableWidth =
+						(columnWidths[columnIndex] ?? COLUMN_MIN_WIDTH) -
+						CELL_HORIZONTAL_PADDING;
+					const lines = countWrappedLines(value, usableWidth, ctx);
+					if (lines > maxLines) maxLines = lines;
+				}
+			}
+			const height = clamp(
+				maxLines * WRAP_LINE_HEIGHT + ROW_VERTICAL_PADDING,
+				ROW_HEIGHT,
+				MAX_ROW_HEIGHT,
+			);
+			cache.set(rowIndex, height);
+			return height;
+		};
+	}, [columns, parsed]);
 
 	return (
 		<div className="ph-mask ph-no-capture h-full min-h-0 flex-1 bg-background">
@@ -303,7 +348,7 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 				getCellsForSelection={true}
 				width="100%"
 				height="100%"
-				rowHeight={ROW_HEIGHT}
+				rowHeight={getRowHeight}
 				headerHeight={HEADER_HEIGHT}
 				minColumnWidth={COLUMN_MIN_WIDTH}
 				maxColumnWidth={COLUMN_MAX_WIDTH}
@@ -391,6 +436,74 @@ function textWidthEstimate(value: string, isHeader: boolean): number {
 		}
 	}
 	return width;
+}
+
+let textMeasureContext: CanvasRenderingContext2D | null | undefined;
+
+function getTextMeasureContext(): CanvasRenderingContext2D | null {
+	if (textMeasureContext !== undefined) return textMeasureContext;
+	if (typeof document === "undefined") {
+		textMeasureContext = null;
+		return null;
+	}
+	const ctx = document.createElement("canvas").getContext("2d");
+	if (ctx) {
+		ctx.font = `${GRID_FONT_SIZE}px ${GRID_FONT_FAMILY}`;
+	}
+	textMeasureContext = ctx;
+	return ctx;
+}
+
+function countWrappedLines(
+	value: string,
+	maxWidth: number,
+	ctx: CanvasRenderingContext2D | null,
+): number {
+	if (maxWidth <= 0) return 1;
+	let total = 0;
+	for (const paragraph of value.split("\n")) {
+		total += countParagraphLines(paragraph, maxWidth, ctx);
+	}
+	return Math.max(1, total);
+}
+
+function countParagraphLines(
+	paragraph: string,
+	maxWidth: number,
+	ctx: CanvasRenderingContext2D | null,
+): number {
+	const words = paragraph.split(/\s+/).filter((word) => word.length > 0);
+	if (words.length === 0) return 1;
+	const measure = (text: string): number =>
+		ctx ? ctx.measureText(text).width : textWidthEstimate(text, false);
+	const spaceWidth = measure(" ");
+	let lines = 1;
+	let lineWidth = 0;
+	for (const word of words) {
+		const wordWidth = measure(word);
+		if (wordWidth > maxWidth) {
+			// A single token longer than the column wraps character by character.
+			for (const char of word) {
+				const charWidth = measure(char);
+				if (lineWidth > 0 && lineWidth + charWidth > maxWidth) {
+					lines++;
+					lineWidth = charWidth;
+				} else {
+					lineWidth += charWidth;
+				}
+			}
+			continue;
+		}
+		if (lineWidth === 0) {
+			lineWidth = wordWidth;
+		} else if (lineWidth + spaceWidth + wordWidth <= maxWidth) {
+			lineWidth += spaceWidth + wordWidth;
+		} else {
+			lines++;
+			lineWidth = wordWidth;
+		}
+	}
+	return lines;
 }
 
 function toExternalLinkUrl(value: string): string | null {

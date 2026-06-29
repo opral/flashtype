@@ -50,13 +50,14 @@
 	height: 48px;
 	border-right: 1px solid var(--color-border-table-grid);
 	border-bottom: 1px solid var(--color-border-table-grid);
-	padding: 0 1rem;
+	padding: 0.5rem 1rem;
 	color: var(--color-text-primary);
 	font-size: 14px;
 	font-weight: 400;
-	line-height: 1.2;
+	line-height: 1.4;
 	white-space: normal;
 	word-break: break-word;
+	vertical-align: top;
 }
 
 .csv-review-table [data-diff-status="added"] {
