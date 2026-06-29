@@ -94,7 +94,11 @@ import {
 	appendAgentTurnCommitRange,
 	type AgentTurnCommitRange,
 } from "./agent-turn-review-range";
-import { getFileDataAtCommit } from "./external-write-review-history";
+import {
+	getExternalWriteReview,
+	getFileDataAtCommit,
+	getPendingExternalWriteReviewPaths,
+} from "./external-write-review-history";
 
 type NewFileDraftHandlerRegistration = {
 	readonly panelSide: PanelSide;
@@ -725,6 +729,9 @@ function LayoutShellLoadedContent({
 		| null
 	>(null);
 	const activeAgentTurnsRef = useRef(new Map<string, ActiveAgentTurn>());
+	const autoOpenFirstAgentReviewFileRef = useRef(
+		async (_range: AgentTurnCommitRange) => {},
+	);
 	const workspaceIdRef = useRef<string | undefined>(undefined);
 	const panelStatesRef = useRef({
 		left: leftPanel,
@@ -893,6 +900,14 @@ function LayoutShellLoadedContent({
 						completedAt: Date.now(),
 					};
 					await appendAgentTurnCommitRange(lix, range);
+					try {
+						await autoOpenFirstAgentReviewFileRef.current(range);
+					} catch (error: unknown) {
+						console.warn(
+							"[agent-turn-review] failed to open first edited review file",
+							error,
+						);
+					}
 				}
 			} catch (error: unknown) {
 				activeAgentTurnsRef.current.delete(key);
@@ -1401,6 +1416,68 @@ function LayoutShellLoadedContent({
 		},
 		[handleOpenView, extensionMap, captureWorkspaceTelemetry],
 	);
+
+	const autoOpenFirstAgentReviewFile = useCallback(
+		async (range: AgentTurnCommitRange) => {
+			const centralPanelState = panelStatesRef.current.central;
+			const activeInstance =
+				centralPanelState.activeInstance ??
+				centralPanelState.views[0]?.instance ??
+				null;
+			const activeEntry = activeInstance
+				? centralPanelState.views.find(
+						(entry) => entry.instance === activeInstance,
+					)
+				: null;
+			const activeFileId =
+				typeof activeEntry?.state?.fileId === "string"
+					? activeEntry.state.fileId
+					: null;
+			const activeFilePath =
+				typeof activeEntry?.state?.filePath === "string"
+					? activeEntry.state.filePath
+					: null;
+			if (activeFileId && activeFilePath) {
+				const activeReview = await getExternalWriteReview(
+					lix,
+					activeFileId,
+					activeFilePath,
+				);
+				if (activeReview) {
+					return;
+				}
+			}
+
+			const files = await qb(lix)
+				.selectFrom("lix_file")
+				.select(["id", "path"])
+				.orderBy("path", "asc")
+				.execute();
+			const reviewableFiles = files.map((file) => ({
+				fileId: file.id as string,
+				path: file.path as string,
+			}));
+			const pendingPaths = await getPendingExternalWriteReviewPaths(
+				lix,
+				reviewableFiles,
+				[range],
+			);
+			const firstReviewFile = reviewableFiles.find((file) =>
+				pendingPaths.has(file.path),
+			);
+			if (!firstReviewFile) {
+				return;
+			}
+			openResolvedFileView({
+				panel: "central",
+				fileId: firstReviewFile.fileId,
+				filePath: firstReviewFile.path,
+				focus: true,
+			});
+		},
+		[lix, openResolvedFileView],
+	);
+	autoOpenFirstAgentReviewFileRef.current = autoOpenFirstAgentReviewFile;
 
 	const handleOpenFile = useCallback(
 		async ({

@@ -6,7 +6,11 @@ import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
 import { KEY_VALUE_DEFINITIONS } from "@/hooks/key-value/schema";
 import { openLix } from "@/test-utils/node-lix-sdk";
 import { qb } from "@/lib/lix-kysely";
-import { FILES_EXTENSION_KIND } from "@/extension-runtime/extension-instance-helpers";
+import {
+	FILE_EXTENSION_KIND,
+	FILES_EXTENSION_KIND,
+	fileExtensionInstanceForKind,
+} from "@/extension-runtime/extension-instance-helpers";
 import { resolveLixFileForOpen, V2LayoutShell } from "./layout-shell";
 import type { FlashtypeUiState } from "./ui-state";
 import type { Lix } from "@/lib/lix-types";
@@ -14,6 +18,23 @@ import type { Lix } from "@/lib/lix-types";
 type DesktopMock = {
 	readonly emitNewFile: () => Promise<void>;
 	readonly onNewFile: ReturnType<typeof vi.fn>;
+};
+
+type AgentHooksDesktopMock = {
+	readonly emitTurnEvent: (event: AgentHookTurnEventInput) => Promise<void>;
+	readonly onTurnEvent: ReturnType<typeof vi.fn>;
+	readonly setActiveFilePath: ReturnType<typeof vi.fn>;
+};
+
+type AgentHookTurnEventInput = {
+	readonly id: string;
+	readonly instanceId?: string;
+	readonly agent: "claude" | "codex";
+	readonly phase: "turn-start" | "turn-stop";
+	readonly sessionId?: string;
+	readonly turnId?: string;
+	readonly cwd?: string;
+	readonly createdAt: number;
 };
 
 const originalDesktop = window.flashtypeDesktop;
@@ -336,6 +357,96 @@ describe("V2LayoutShell native New File", () => {
 	});
 });
 
+describe("V2LayoutShell agent review auto-open", () => {
+	test("leaves the current file open when it already has a pending review", async () => {
+		const desktop = installAgentHooksDesktopMock();
+		const lix = await openLix({
+			keyValues: [
+				uiStateKeyValue(openFileState("file_current", "/current.md")),
+			],
+		});
+		vi.spyOn(lix, "syncDiskToLix").mockResolvedValue();
+		await writeReviewFile(lix, "file_a", "/a.md", "# A before");
+		await writeReviewFile(
+			lix,
+			"file_current",
+			"/current.md",
+			"# Current before",
+		);
+
+		const utils = await renderShell(lix);
+		await waitFor(() => expect(desktop.onTurnEvent).toHaveBeenCalled());
+		await waitFor(() =>
+			expect(desktop.setActiveFilePath).toHaveBeenCalledWith({
+				filePath: "/current.md",
+			}),
+		);
+
+		await act(async () => {
+			await desktop.emitTurnEvent(agentTurnEvent("turn-start"));
+			await writeReviewFile(lix, "file_a", "/a.md", "# A after");
+			await writeReviewFile(
+				lix,
+				"file_current",
+				"/current.md",
+				"# Current after",
+			);
+			await desktop.emitTurnEvent(agentTurnEvent("turn-stop"));
+		});
+
+		expect(
+			await screen.findByRole("button", { name: /keep/i }),
+		).toHaveAttribute("data-attr", "diff-accept");
+		expect(desktop.setActiveFilePath).not.toHaveBeenCalledWith({
+			filePath: "/a.md",
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("opens the first edited review file when the current file has no pending review", async () => {
+		const desktop = installAgentHooksDesktopMock();
+		const lix = await openLix({
+			keyValues: [
+				uiStateKeyValue(openFileState("file_current", "/current.md")),
+			],
+		});
+		vi.spyOn(lix, "syncDiskToLix").mockResolvedValue();
+		await writeReviewFile(lix, "file_current", "/current.md", "# Current");
+		await writeReviewFile(lix, "file_b", "/b.md", "# B before");
+		await writeReviewFile(lix, "file_a", "/a.md", "# A before");
+
+		const utils = await renderShell(lix);
+		await waitFor(() => expect(desktop.onTurnEvent).toHaveBeenCalled());
+		await waitFor(() =>
+			expect(desktop.setActiveFilePath).toHaveBeenCalledWith({
+				filePath: "/current.md",
+			}),
+		);
+
+		await act(async () => {
+			await desktop.emitTurnEvent(agentTurnEvent("turn-start"));
+			await writeReviewFile(lix, "file_b", "/b.md", "# B after");
+			await writeReviewFile(lix, "file_a", "/a.md", "# A after");
+			await desktop.emitTurnEvent(agentTurnEvent("turn-stop"));
+		});
+
+		await waitFor(() =>
+			expect(desktop.setActiveFilePath).toHaveBeenCalledWith({
+				filePath: "/a.md",
+			}),
+		);
+		expect(
+			await screen.findByRole("button", { name: /keep/i }),
+		).toHaveAttribute("data-attr", "diff-accept");
+		await waitForPersistedActiveState(lix, "file_a", "/a.md");
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+});
+
 async function renderShell(lix: Lix) {
 	let result: ReturnType<typeof render> | undefined;
 	await act(async () => {
@@ -358,6 +469,13 @@ async function expectNewFileCreatedAndOpened(lix: Lix) {
 	});
 	await screen.findByTestId("tiptap-editor");
 	await act(async () => {
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	});
+}
+
+async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
+	await act(async () => {
+		utils.unmount();
 		await new Promise((resolve) => setTimeout(resolve, 0));
 	});
 }
@@ -387,6 +505,54 @@ function installDesktopMock(): DesktopMock {
 			await listener();
 		},
 		onNewFile,
+	};
+}
+
+function installAgentHooksDesktopMock(): AgentHooksDesktopMock {
+	let listener: ((event: unknown) => void | Promise<void>) | null = null;
+	const onTurnEvent = vi.fn(
+		(nextListener: (event: unknown) => void | Promise<void>) => {
+			listener = nextListener;
+			return () => {
+				if (listener === nextListener) {
+					listener = null;
+				}
+			};
+		},
+	);
+	const setActiveFilePath = vi.fn();
+	window.flashtypeDesktop = {
+		workspace: {
+			setActiveFilePath,
+			setOpenFilePaths: vi.fn(),
+		},
+		agentHooks: {
+			onTurnEvent,
+		},
+	} as unknown as Window["flashtypeDesktop"];
+	return {
+		emitTurnEvent: async (event) => {
+			if (!listener) {
+				throw new Error("agent hook listener was not registered");
+			}
+			await listener(event);
+		},
+		onTurnEvent,
+		setActiveFilePath,
+	};
+}
+
+function agentTurnEvent(
+	phase: AgentHookTurnEventInput["phase"],
+): AgentHookTurnEventInput {
+	return {
+		id: `event-${phase}`,
+		instanceId: "test-instance",
+		agent: "codex",
+		phase,
+		sessionId: "test-session",
+		turnId: "test-turn",
+		createdAt: phase === "turn-start" ? 1 : 2,
 	};
 }
 
@@ -445,6 +611,34 @@ function collapsedFilesViewState(): FlashtypeUiState {
 	};
 }
 
+function openFileState(fileId: string, filePath: string): FlashtypeUiState {
+	const instance = fileExtensionInstanceForKind(FILE_EXTENSION_KIND, fileId);
+	return {
+		focusedPanel: "central",
+		panels: {
+			left: { views: [], activeInstance: null },
+			central: {
+				views: [
+					{
+						instance,
+						kind: FILE_EXTENSION_KIND,
+						state: {
+							fileId,
+							filePath,
+							flashtype: {
+								label: filePath.split("/").filter(Boolean).pop() ?? filePath,
+							},
+						},
+					},
+				],
+				activeInstance: instance,
+			},
+			right: { views: [], activeInstance: null },
+		},
+		layout: { sizes: { left: 20, central: 50, right: 30 } },
+	};
+}
+
 async function findFilePath(
 	lix: Lix,
 	path: string,
@@ -456,6 +650,56 @@ async function findFilePath(
 			.where("path", "=", path)
 			.executeTakeFirst()
 	)?.path;
+}
+
+async function writeReviewFile(
+	lix: Lix,
+	id: string,
+	path: string,
+	text: string,
+): Promise<void> {
+	await qb(lix)
+		.insertInto("lix_file")
+		.values({ id, path, data: new TextEncoder().encode(text) })
+		.onConflict((oc) =>
+			oc.column("id").doUpdateSet({
+				path,
+				data: new TextEncoder().encode(text),
+			}),
+		)
+		.execute();
+}
+
+async function waitForPersistedActiveState(
+	lix: Lix,
+	fileId: string,
+	filePath: string,
+): Promise<void> {
+	await waitFor(async () => {
+		const activeFileRow = await qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select("value")
+			.where("key", "=", "flashtype_active_file_id")
+			.where("lixcol_branch_id", "=", "global")
+			.executeTakeFirst();
+		expect(activeFileRow?.value).toBe(fileId);
+
+		const uiStateRow = await qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select("value")
+			.where("key", "=", "flashtype_ui_state")
+			.where("lixcol_branch_id", "=", "global")
+			.executeTakeFirst();
+		const uiState = uiStateRow?.value as FlashtypeUiState | undefined;
+		const activeInstance = uiState?.panels.central.activeInstance;
+		const activeEntry = uiState?.panels.central.views.find(
+			(entry) => entry.instance === activeInstance,
+		);
+		expect(activeEntry?.state?.filePath).toBe(filePath);
+	});
+	await act(async () => {
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	});
 }
 
 function ephemeralWorkspace() {
