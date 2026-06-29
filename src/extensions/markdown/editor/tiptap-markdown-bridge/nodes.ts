@@ -360,12 +360,24 @@ export function markdownWcNodes(
 		}),
 		Mark.create({
 			name: "link",
+			// Don't extend the link when typing at its edges — matches how links
+			// behave in other editors (you type *out* of a link, not into it).
+			inclusive: false,
 			addAttributes() {
 				return {
-					href: { default: null },
-					title: { default: null },
+					href: {
+						default: null,
+						parseHTML: (el: any) => el.getAttribute("href"),
+					},
+					title: {
+						default: null,
+						parseHTML: (el: any) => el.getAttribute("title"),
+					},
 					data: { default: null },
 				};
+			},
+			parseHTML() {
+				return [{ tag: "a[href]" }];
 			},
 			renderHTML({ mark }) {
 				const attrs: any = {};
