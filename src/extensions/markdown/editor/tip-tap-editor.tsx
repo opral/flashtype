@@ -402,7 +402,7 @@ function TipTapEditorLoadedContent({
 
 	// Observe markdown file rows and refresh on external changes.
 	useEffect(() => {
-		if (!activeFileId || !editor) return;
+		if (!activeFileId || !editor || !isActiveView) return;
 		const events = lix.observe(
 			`
 				SELECT
@@ -465,6 +465,7 @@ function TipTapEditorLoadedContent({
 		editor,
 		activeFileId,
 		activeBranchId,
+		isActiveView,
 		initialMarkdown,
 		defaultBlock,
 	]);

@@ -63,7 +63,7 @@ type OptimisticSlot = {
 	notifyScheduled?: boolean;
 };
 
-const OPTIMISTIC_SLOTS = new Map<string, OptimisticSlot>();
+const OPTIMISTIC_SLOTS = new WeakMap<object, Map<string, OptimisticSlot>>();
 
 function notifyOptimisticListeners(slot: OptimisticSlot): void {
 	if (slot.notifyScheduled) {
@@ -79,28 +79,41 @@ function notifyOptimisticListeners(slot: OptimisticSlot): void {
 	});
 }
 
-function getOptimisticSlot(key: string): OptimisticSlot {
-	let slot = OPTIMISTIC_SLOTS.get(key);
+function getOptimisticSlots(lix: Lix): Map<string, OptimisticSlot> {
+	let slots = OPTIMISTIC_SLOTS.get(lix as object);
+	if (!slots) {
+		slots = new Map<string, OptimisticSlot>();
+		OPTIMISTIC_SLOTS.set(lix as object, slots);
+	}
+	return slots;
+}
+
+function getOptimisticSlot(lix: Lix, key: string): OptimisticSlot {
+	const slots = getOptimisticSlots(lix);
+	let slot = slots.get(key);
 	if (!slot) {
 		slot = { hasValue: false, value: undefined, listeners: new Set() };
-		OPTIMISTIC_SLOTS.set(key, slot);
+		slots.set(key, slot);
 	}
 	return slot;
 }
 
-function readOptimisticSnapshot(key: string): {
+function readOptimisticSnapshot(
+	lix: Lix,
+	key: string,
+): {
 	hasValue: boolean;
 	value: unknown;
 } {
-	const slot = OPTIMISTIC_SLOTS.get(key);
+	const slot = OPTIMISTIC_SLOTS.get(lix as object)?.get(key);
 	if (!slot) {
 		return { hasValue: false, value: undefined };
 	}
 	return { hasValue: slot.hasValue, value: slot.value };
 }
 
-function setOptimisticValue(key: string, value: unknown): void {
-	const slot = getOptimisticSlot(key);
+function setOptimisticValue(lix: Lix, key: string, value: unknown): void {
+	const slot = getOptimisticSlot(lix, key);
 	if (slot.hasValue && valuesEqual(slot.value, value)) {
 		return;
 	}
@@ -109,25 +122,30 @@ function setOptimisticValue(key: string, value: unknown): void {
 	notifyOptimisticListeners(slot);
 }
 
-function clearOptimisticValue(key: string): void {
-	const slot = OPTIMISTIC_SLOTS.get(key);
+function clearOptimisticValue(lix: Lix, key: string): void {
+	const slots = OPTIMISTIC_SLOTS.get(lix as object);
+	const slot = slots?.get(key);
 	if (!slot) return;
 	if (!slot.hasValue) return;
 	slot.hasValue = false;
 	slot.value = undefined;
 	notifyOptimisticListeners(slot);
 	if (slot.listeners.size === 0) {
-		OPTIMISTIC_SLOTS.delete(key);
+		slots?.delete(key);
 	}
 }
 
-function subscribeOptimistic(key: string, listener: () => void): () => void {
-	const slot = getOptimisticSlot(key);
+function subscribeOptimistic(
+	lix: Lix,
+	key: string,
+	listener: () => void,
+): () => void {
+	const slot = getOptimisticSlot(lix, key);
 	slot.listeners.add(listener);
 	return () => {
 		slot.listeners.delete(listener);
 		if (!slot.hasValue && slot.listeners.size === 0) {
-			OPTIMISTIC_SLOTS.delete(key);
+			OPTIMISTIC_SLOTS.get(lix as object)?.delete(key);
 		}
 	};
 }
@@ -186,7 +204,7 @@ export function useKeyValue<K extends string>(
 		hasValue: boolean;
 		value: ValueOf<K> | null;
 	}>(() => {
-		const snapshot = readOptimisticSnapshot(key as string);
+		const snapshot = readOptimisticSnapshot(lix, key as string);
 		return {
 			hasValue: snapshot.hasValue,
 			value: (snapshot.value ?? null) as ValueOf<K> | null,
@@ -194,7 +212,7 @@ export function useKeyValue<K extends string>(
 	});
 
 	useEffect(() => {
-		const snapshot = readOptimisticSnapshot(key as string);
+		const snapshot = readOptimisticSnapshot(lix, key as string);
 		const next = {
 			hasValue: snapshot.hasValue,
 			value: (snapshot.value ?? null) as ValueOf<K> | null,
@@ -204,11 +222,11 @@ export function useKeyValue<K extends string>(
 				? prev
 				: next,
 		);
-	}, [key]);
+	}, [lix, key]);
 
 	useEffect(() => {
 		const handle = () => {
-			const snapshot = readOptimisticSnapshot(key as string);
+			const snapshot = readOptimisticSnapshot(lix, key as string);
 			const next = {
 				hasValue: snapshot.hasValue,
 				value: (snapshot.value ?? null) as ValueOf<K> | null,
@@ -219,9 +237,10 @@ export function useKeyValue<K extends string>(
 					: next,
 			);
 		};
-		return subscribeOptimistic(key as string, handle);
-	}, [key]);
+		return subscribeOptimistic(lix, key as string, handle);
+	}, [lix, key]);
 
+	const latestLixRef = useRef(lix);
 	const latestKeyRef = useRef(key as string);
 	const latestQueryValueRef = useRef<ValueOf<K> | null>(null);
 	const latestOptimisticRef = useRef(optimistic);
@@ -237,7 +256,7 @@ export function useKeyValue<K extends string>(
 			const clearKey = `${latestKeyRef.current}:${JSON.stringify(latestOptimistic.value)}`;
 			if (lastOptimisticClearRef.current === clearKey) return;
 			lastOptimisticClearRef.current = clearKey;
-			clearOptimisticValue(latestKeyRef.current);
+			clearOptimisticValue(latestLixRef.current, latestKeyRef.current);
 		} else {
 			lastOptimisticClearRef.current = null;
 		}
@@ -245,7 +264,7 @@ export function useKeyValue<K extends string>(
 
 	const setValue = useCallback(
 		async (newValue: ValueOf<K>) => {
-			setOptimisticValue(key as string, newValue as ValueOf<K> | null);
+			setOptimisticValue(lix, key as string, newValue as ValueOf<K> | null);
 			await upsertValue(lix, key as string, newValue as unknown, {
 				defaultBranchId: String(defaultBranchId),
 				untracked,
@@ -269,6 +288,7 @@ export function useKeyValue<K extends string>(
 	const resolvedValue = optimistic.hasValue ? optimistic.value : value;
 
 	latestKeyRef.current = key as string;
+	latestLixRef.current = lix;
 	latestQueryValueRef.current = value;
 	latestOptimisticRef.current = optimistic;
 

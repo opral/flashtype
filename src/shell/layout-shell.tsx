@@ -209,6 +209,15 @@ const activeFilePathFromPanel = (panel: PanelState): string | null => {
 	return typeof rawPath === "string" && rawPath.length > 0 ? rawPath : null;
 };
 
+const collapsePanelToActiveView = (panel: PanelState): PanelState => {
+	const activeEntry = activeEntryFromPanel(panel);
+	if (!activeEntry) return { views: [], activeInstance: null };
+	return {
+		views: [activeEntry],
+		activeInstance: activeEntry.instance,
+	};
+};
+
 const newFileDraftHandlerKey = (
 	registration: NewFileDraftHandlerRegistration,
 ): string => `${registration.panelSide}:${registration.viewInstance}`;
@@ -686,10 +695,13 @@ function LayoutShellLoadedContent({
 	);
 
 	const initialLayoutSizes = normalizeLayoutSizes(uiState.layout?.sizes);
-	const sanitizedPersistedPanels = useMemo(
-		() => sanitizePanels(uiState.panels),
-		[uiState],
-	);
+	const sanitizedPersistedPanels = useMemo(() => {
+		const panels = sanitizePanels(uiState.panels);
+		return {
+			...panels,
+			central: collapsePanelToActiveView(panels.central),
+		};
+	}, [uiState]);
 
 	const [leftPanel, setLeftPanel] = useState<PanelState>(() =>
 		hydratePanel(sanitizedPersistedPanels.left, extensionMap, {
@@ -697,9 +709,11 @@ function LayoutShellLoadedContent({
 		}),
 	);
 	const [centralPanel, setCentralPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.central, extensionMap, {
-			preserveUnknownKinds: true,
-		}),
+		collapsePanelToActiveView(
+			hydratePanel(sanitizedPersistedPanels.central, extensionMap, {
+				preserveUnknownKinds: true,
+			}),
+		),
 	);
 	const [rightPanel, setRightPanel] = useState<PanelState>(() =>
 		hydratePanel(sanitizedPersistedPanels.right, extensionMap, {
@@ -1047,11 +1061,7 @@ function LayoutShellLoadedContent({
 	}, [lix, replaceInstalledExtensions, clearInstalledExtensions]);
 
 	const lastPersistedRef = useRef<string>(
-		JSON.stringify({
-			focusedPanel: uiState.focusedPanel,
-			panels: sanitizedPersistedPanels,
-			layout: { sizes: initialLayoutSizes },
-		} satisfies FlashtypeUiState),
+		JSON.stringify(uiStateKV ?? DEFAULT_FLASHTYPE_UI_STATE),
 	);
 	const pendingPersistRef = useRef<string | null>(null);
 	const hydratingRef = useRef(false);
@@ -1100,10 +1110,12 @@ function LayoutShellLoadedContent({
 		setCentralPanel((prev) =>
 			prev === sanitizedPersistedPanels.central
 				? prev
-				: hydratePanel(
-						sanitizedPersistedPanels.central,
-						extensionMap,
-						hydrateOptions,
+				: collapsePanelToActiveView(
+						hydratePanel(
+							sanitizedPersistedPanels.central,
+							extensionMap,
+							hydrateOptions,
+						),
 					),
 		);
 		setRightPanel((prev) =>
@@ -1152,7 +1164,9 @@ function LayoutShellLoadedContent({
 			hydratePanel(current, extensionMap, hydrateOptions),
 		);
 		setCentralPanel((current) =>
-			hydratePanel(current, extensionMap, hydrateOptions),
+			collapsePanelToActiveView(
+				hydratePanel(current, extensionMap, hydrateOptions),
+			),
 		);
 		setRightPanel((current) =>
 			hydratePanel(current, extensionMap, hydrateOptions),
@@ -1202,8 +1216,8 @@ function LayoutShellLoadedContent({
 			reducer: (state: PanelState) => PanelState,
 			options: { focus?: boolean } = {},
 		) => {
-			const applyReducer = (prev: PanelState) =>
-				hydratePanel(
+			const applyReducer = (prev: PanelState) => {
+				const next = hydratePanel(
 					reducer(
 						hydratePanel(prev, extensionMap, {
 							preserveUnknownKinds: !hasLoadedInstalledExtensions,
@@ -1212,6 +1226,8 @@ function LayoutShellLoadedContent({
 					extensionMap,
 					{ preserveUnknownKinds: !hasLoadedInstalledExtensions },
 				);
+				return side === "central" ? collapsePanelToActiveView(next) : next;
+			};
 			if (side === "left") {
 				setLeftPanel(applyReducer);
 			} else if (side === "central") {

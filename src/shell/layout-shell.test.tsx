@@ -19,6 +19,8 @@ import type { Lix } from "@/lib/lix-types";
 type DesktopMock = {
 	readonly emitNewFile: () => Promise<void>;
 	readonly onNewFile: ReturnType<typeof vi.fn>;
+	readonly setActiveFilePath: ReturnType<typeof vi.fn>;
+	readonly setOpenFilePaths: ReturnType<typeof vi.fn>;
 };
 
 type AgentHooksDesktopMock = {
@@ -456,6 +458,65 @@ describe("V2LayoutShell active file sidebar highlight", () => {
 	});
 });
 
+describe("V2LayoutShell central file views", () => {
+	test("collapses stale persisted central files to the active view", async () => {
+		const desktop = installDesktopMock();
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(multipleCentralFilesState())],
+		});
+		await writeReviewFile(lix, "file_stale", "/stale.md", "# Stale");
+		await writeReviewFile(lix, "file_active", "/active.md", "# Active");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() =>
+			expect(desktop.setOpenFilePaths).toHaveBeenCalledWith({
+				filePaths: ["active.md"],
+			}),
+		);
+		await waitFor(async () => {
+			expect(centralFilePaths(await readPersistedUiState(lix))).toEqual([
+				"/active.md",
+			]);
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("opening multiple startup files leaves only the selected file open", async () => {
+		const desktop = installDesktopMock();
+		const handledFilePaths: string[] = [];
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_a", "/a.md", "# A");
+		await writeReviewFile(lix, "file_b", "/b.md", "# B");
+
+		const utils = await renderShell(lix, {
+			pendingOpenFilePaths: ["a.md", "b.md"],
+			onPendingOpenFileHandled: (filePath) => {
+				handledFilePaths.push(filePath);
+			},
+		});
+
+		await waitFor(() => expect(handledFilePaths).toEqual(["a.md", "b.md"]));
+		await waitFor(() =>
+			expect(desktop.setOpenFilePaths).toHaveBeenCalledWith({
+				filePaths: ["a.md"],
+			}),
+		);
+		await waitFor(async () => {
+			expect(centralFilePaths(await readPersistedUiState(lix))).toEqual([
+				"/a.md",
+			]);
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+});
+
 describe("V2LayoutShell agent review auto-open", () => {
 	test("returns current active file context from turn-start hooks", async () => {
 		const desktop = installAgentHooksDesktopMock();
@@ -574,7 +635,11 @@ describe("V2LayoutShell agent review auto-open", () => {
 
 async function renderShell(
 	lix: Lix,
-	options: { readonly workspace?: WorkspaceContext } = {},
+	options: {
+		readonly workspace?: WorkspaceContext;
+		readonly pendingOpenFilePaths?: readonly string[];
+		readonly onPendingOpenFileHandled?: (filePath: string) => void;
+	} = {},
 ) {
 	let result: ReturnType<typeof render> | undefined;
 	await act(async () => {
@@ -585,6 +650,8 @@ async function renderShell(
 						<V2LayoutShell
 							workspace={options.workspace}
 							workspaceName="Workspace"
+							pendingOpenFilePaths={options.pendingOpenFilePaths}
+							onPendingOpenFileHandled={options.onPendingOpenFileHandled}
 						/>
 					</Suspense>
 				</KeyValueProvider>
@@ -613,6 +680,8 @@ async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
 
 function installDesktopMock(): DesktopMock {
 	let listener: (() => void | Promise<void>) | null = null;
+	const setActiveFilePath = vi.fn();
+	const setOpenFilePaths = vi.fn();
 	const onNewFile = vi.fn((nextListener: () => void | Promise<void>) => {
 		listener = nextListener;
 		return () => {
@@ -624,8 +693,8 @@ function installDesktopMock(): DesktopMock {
 	window.flashtypeDesktop = {
 		workspace: {
 			onNewFile,
-			setActiveFilePath: vi.fn(),
-			setOpenFilePaths: vi.fn(),
+			setActiveFilePath,
+			setOpenFilePaths,
 		},
 	} as unknown as Window["flashtypeDesktop"];
 	return {
@@ -636,6 +705,8 @@ function installDesktopMock(): DesktopMock {
 			await listener();
 		},
 		onNewFile,
+		setActiveFilePath,
+		setOpenFilePaths,
 	};
 }
 
@@ -785,6 +856,59 @@ function openFileState(fileId: string, filePath: string): FlashtypeUiState {
 		},
 		layout: { sizes: { left: 20, central: 50, right: 30 } },
 	};
+}
+
+function multipleCentralFilesState(): FlashtypeUiState {
+	const active = openFileState("file_active", "/active.md");
+	const staleInstance = fileExtensionInstanceForKind(
+		FILE_EXTENSION_KIND,
+		"file_stale",
+	);
+	return {
+		...active,
+		panels: {
+			...active.panels,
+			central: {
+				views: [
+					{
+						instance: staleInstance,
+						kind: FILE_EXTENSION_KIND,
+						state: {
+							fileId: "file_stale",
+							filePath: "/stale.md",
+							flashtype: { label: "stale.md" },
+						},
+					},
+					...active.panels.central.views,
+				],
+				activeInstance: fileExtensionInstanceForKind(
+					FILE_EXTENSION_KIND,
+					"file_active",
+				),
+			},
+		},
+	};
+}
+
+async function readPersistedUiState(
+	lix: Lix,
+): Promise<FlashtypeUiState | undefined> {
+	const row = await qb(lix)
+		.selectFrom("lix_key_value_by_branch")
+		.select("value")
+		.where("key", "=", "flashtype_ui_state")
+		.where("lixcol_branch_id", "=", "global")
+		.executeTakeFirst();
+	return row?.value as FlashtypeUiState | undefined;
+}
+
+function centralFilePaths(uiState: FlashtypeUiState | undefined): string[] {
+	return (
+		uiState?.panels.central.views
+			.map((entry) => entry.state?.filePath)
+			.filter((filePath): filePath is string => typeof filePath === "string") ??
+		[]
+	);
 }
 
 async function findFilePath(
