@@ -26,9 +26,11 @@ describe("normalizeUrl", () => {
 		expect(normalizeUrl("hi@example.com")).toBe("mailto:hi@example.com");
 	});
 
-	test("keeps anchors and root-relative paths", () => {
+	test("keeps anchors and relative paths", () => {
 		expect(normalizeUrl("#section")).toBe("#section");
 		expect(normalizeUrl("/docs/intro")).toBe("/docs/intro");
+		expect(normalizeUrl("./intro.md")).toBe("./intro.md");
+		expect(normalizeUrl("../page")).toBe("../page");
 	});
 
 	test("trims surrounding whitespace", () => {

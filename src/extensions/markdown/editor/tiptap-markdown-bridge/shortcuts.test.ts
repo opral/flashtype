@@ -147,6 +147,20 @@ describe("Markdown typing shortcuts (input rules)", () => {
 		expect(md).toContain("[docs](https://example.com/a)");
 	});
 
+	test("[label](./path) → link keeps dot-relative href", () => {
+		const editor = createEditor();
+		typeText(editor, "[intro](./intro.md)");
+		const md = buildMarkdownFromEditor(editor);
+		expect(md).toContain("[intro](./intro.md)");
+	});
+
+	test("[label](../path) → link keeps parent-relative href", () => {
+		const editor = createEditor();
+		typeText(editor, "[page](../page)");
+		const md = buildMarkdownFromEditor(editor);
+		expect(md).toContain("[page](../page)");
+	});
+
 	test("link mark does not extend to text typed after the closing paren", () => {
 		const editor = createEditor();
 		typeText(editor, "[site](example.com) tail");

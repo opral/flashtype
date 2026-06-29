@@ -3,7 +3,8 @@
  *
  * - Values that already carry a scheme (`https://…`, `mailto:`, `tel:`, …) are
  *   returned untouched.
- * - Anchors (`#section`) and root-relative paths (`/docs`) pass through as-is.
+ * - Anchors (`#section`) and relative paths (`/docs`, `./intro.md`,
+ *   `../page`) pass through as-is.
  * - Bare email addresses become `mailto:` links.
  * - Everything else is treated as an external link and gets an `https://` prefix.
  *
@@ -13,6 +14,7 @@
  * normalizeUrl("superset.sh")        // "https://superset.sh"
  * normalizeUrl("hi@example.com")     // "mailto:hi@example.com"
  * normalizeUrl("/docs")              // "/docs"
+ * normalizeUrl("./intro.md")         // "./intro.md"
  * normalizeUrl("")                   // null
  */
 export function normalizeUrl(input: string): string | null {
@@ -24,7 +26,14 @@ export function normalizeUrl(input: string): string | null {
 	// Schemes without an authority component
 	if (/^(mailto|tel|sms|ftp):/i.test(value)) return value;
 	// Anchor or relative path — leave the author in control
-	if (value.startsWith("#") || value.startsWith("/")) return value;
+	if (
+		value.startsWith("#") ||
+		value.startsWith("/") ||
+		value.startsWith("./") ||
+		value.startsWith("../")
+	) {
+		return value;
+	}
 	// Looks like a bare email address
 	if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return `mailto:${value}`;
 
