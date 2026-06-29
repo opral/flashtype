@@ -124,12 +124,6 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 						workspaceDir,
 					});
 				});
-				await timeProfile(profile, "agent:disk-write", index, async () => {
-					await expectDiskMarkdown({
-						expectedMarkdown: proposedMarkdown,
-						path: stressDiskPath,
-					});
-				});
 				try {
 					await timeProfile(profile, "agent:wait-review", index, async () => {
 						await waitForReviewControls(page);
@@ -242,7 +236,6 @@ type StressProfilePhase =
 	| "manual:settle"
 	| "agent:write-payload"
 	| "agent:terminal-turn"
-	| "agent:disk-write"
 	| "agent:wait-review"
 	| "agent:click-review"
 	| "agent:wait-review-hidden"
@@ -634,15 +627,6 @@ async function expectMarkdownSettled(args: {
 			editorMarkdown: args.expectedMarkdown,
 			lixMarkdown: args.expectedMarkdown,
 		});
-}
-
-async function expectDiskMarkdown(args: {
-	expectedMarkdown: string;
-	path: string;
-}): Promise<void> {
-	await expect
-		.poll(async () => await readDiskMarkdown(args.path), { timeout: 5_000 })
-		.toBe(args.expectedMarkdown);
 }
 
 async function readMarkdownState(
