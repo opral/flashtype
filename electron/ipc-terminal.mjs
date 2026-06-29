@@ -14,6 +14,7 @@ import {
 	createAgentHookEnvironment,
 	disposeAgentHookEnvironment,
 } from "./agent-hooks.mjs";
+import { checkAgentVersionPreflight } from "./agent-version-preflight.mjs";
 
 const terminals = new Map();
 const ownerHooks = new Set();
@@ -53,12 +54,27 @@ export function registerTerminalIpc() {
 					env.PATH ?? process.env.PATH,
 				);
 			}
+			const terminalEnv = buildTerminalEnv(process.env, process.platform, env);
+			const agentVersionError = await checkAgentVersionPreflight({
+				cwd,
+				env: terminalEnv,
+				pathWrapper: payload?.pathWrapper,
+				shell,
+				shellArgs,
+			});
+			if (agentVersionError) {
+				disposeAgentHookEnvironment(id);
+				if (pathWrapper) {
+					await disposeTerminalPathWrapper(pathWrapper);
+				}
+				return agentVersionError;
+			}
 			terminal = pty.spawn(shell, shellArgs, {
 				name: "xterm-256color",
 				cwd,
 				cols,
 				rows,
-				env: buildTerminalEnv(process.env, process.platform, env),
+				env: terminalEnv,
 			});
 		} catch (error) {
 			disposeAgentHookEnvironment(id);
@@ -95,6 +111,7 @@ export function registerTerminalIpc() {
 		});
 
 		return {
+			status: "created",
 			id,
 		};
 	});

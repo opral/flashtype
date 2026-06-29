@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
-import { TerminalSquare } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, RotateCcw, TerminalSquare } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { Button } from "@/components/ui/button";
 import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
 import { TERMINAL_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import {
@@ -46,7 +47,18 @@ function buildTerminalTheme() {
 	};
 }
 
-function TerminalView({
+type TerminalCreateResult = Awaited<
+	ReturnType<NonNullable<Window["flashtypeDesktop"]>["terminal"]["create"]>
+>;
+type AgentVersionErrorResult = Extract<
+	TerminalCreateResult,
+	{ status: "agentVersionError" }
+>;
+type TerminalStartupError =
+	| { kind: "agentVersion"; error: AgentVersionErrorResult }
+	| { kind: "unexpected"; error: unknown };
+
+export function TerminalView({
 	launchConfig,
 }: {
 	/** One-shot terminal startup command and private PATH wrapper, if needed. */
@@ -55,6 +67,10 @@ function TerminalView({
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const terminalRef = useRef<Terminal | null>(null);
 	const launchConfigRef = useRef(launchConfig);
+	const [startupError, setStartupError] = useState<TerminalStartupError | null>(
+		null,
+	);
+	const [retryKey, setRetryKey] = useState(0);
 
 	useEffect(() => {
 		const desktop = window.flashtypeDesktop;
@@ -66,8 +82,10 @@ function TerminalView({
 		}
 
 		let disposed = false;
+		let cleanedUp = false;
 		let terminalId: string | null = null;
 
+		setStartupError(null);
 		const terminal = new Terminal({
 			cursorBlink: true,
 			fontSize: 13,
@@ -121,6 +139,27 @@ function TerminalView({
 			void terminalApi.write({ id: terminalId, data });
 		});
 
+		const cleanupLocalTerminal = (options: { kill?: boolean } = {}) => {
+			if (cleanedUp) return;
+			cleanedUp = true;
+			disposed = true;
+			resizeObserver.disconnect();
+			stopData();
+			stopExit();
+			inputDisposable.dispose();
+			if (terminalId && options.kill !== false) {
+				void terminalApi.kill({ id: terminalId });
+			}
+			terminalRef.current = null;
+			terminal.dispose();
+		};
+
+		const showStartupError = (error: TerminalStartupError) => {
+			if (disposed) return;
+			setStartupError(error);
+			cleanupLocalTerminal();
+		};
+
 		void (async () => {
 			try {
 				const cwd = await desktop.lix.workspaceDir();
@@ -133,6 +172,10 @@ function TerminalView({
 					rows: terminal.rows,
 					pathWrapper: launchConfigRef.current.pathWrapper,
 				});
+				if (created.status === "agentVersionError") {
+					showStartupError({ kind: "agentVersion", error: created });
+					return;
+				}
 				if (disposed) {
 					await terminalApi.kill({ id: created.id });
 					return;
@@ -145,31 +188,32 @@ function TerminalView({
 					await terminalApi.write({ id: created.id, data: `${command}\r` });
 				}
 			} catch (error) {
-				if (disposed) return;
-				terminal.writeln("Failed to start terminal session.");
-				terminal.writeln(String(error));
+				showStartupError({ kind: "unexpected", error });
 			}
 		})();
 
 		return () => {
-			disposed = true;
-			resizeObserver.disconnect();
-			stopData();
-			stopExit();
-			inputDisposable.dispose();
-			if (terminalId) {
-				void terminalApi.kill({ id: terminalId });
-			}
-			terminalRef.current = null;
-			terminal.dispose();
+			cleanupLocalTerminal();
 		};
-	}, []);
+	}, [retryKey]);
 
 	if (!window.flashtypeDesktop?.terminal) {
 		return (
 			<div className="flex h-full min-h-0 items-center justify-center px-4 text-sm text-[var(--color-text-secondary)]">
 				Terminal is only available in the desktop app.
 			</div>
+		);
+	}
+
+	if (startupError) {
+		return (
+			<TerminalStartupErrorView
+				error={startupError}
+				onRetry={() => {
+					setStartupError(null);
+					setRetryKey((value) => value + 1);
+				}}
+			/>
 		);
 	}
 
@@ -181,6 +225,87 @@ function TerminalView({
 			<div ref={containerRef} className="h-full w-full p-2" />
 		</div>
 	);
+}
+
+function TerminalStartupErrorView({
+	error,
+	onRetry,
+}: {
+	readonly error: TerminalStartupError;
+	readonly onRetry: () => void;
+}) {
+	const formatted = formatTerminalStartupError(error);
+	return (
+		<div
+			className="flex h-full min-h-0 items-center justify-center bg-[var(--color-bg-panel)] px-6 py-8"
+			role="alert"
+			aria-live="assertive"
+		>
+			<div className="max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-bg-app)] p-4 text-sm shadow-sm">
+				<div className="flex items-start gap-3">
+					<AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--color-error-600)]" />
+					<div className="min-w-0">
+						<h2 className="text-[13px] font-semibold text-[var(--color-text-primary)]">
+							{formatted.title}
+						</h2>
+						<p className="mt-1 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+							{formatted.message}
+						</p>
+						<Button type="button" size="sm" className="mt-4" onClick={onRetry}>
+							<RotateCcw className="size-3.5" />
+							Retry
+						</Button>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function formatTerminalStartupError(error: TerminalStartupError): {
+	title: string;
+	message: string;
+} {
+	if (error.kind !== "agentVersion") {
+		return {
+			title: "Failed to start terminal",
+			message:
+				error.error instanceof Error
+					? error.error.message
+					: String(error.error),
+		};
+	}
+
+	const agent = error.error.agent === "claude" ? "Claude Code" : "Codex";
+	const command = error.error.agent;
+	const required = error.error.requiredVersion;
+	switch (error.error.reason) {
+		case "missing":
+			return {
+				title: `${agent} not found`,
+				message: `Flashtype could not find ${command} in this terminal environment. Install ${agent} ${required} or newer, then try again.`,
+			};
+		case "unsupported":
+			return {
+				title: `${agent} update required`,
+				message: `Flashtype needs ${agent} ${required} or newer for hooks. Detected ${error.error.detectedVersion ?? "an older version"}.`,
+			};
+		case "unparseable":
+			return {
+				title: `Could not read ${agent} version`,
+				message: `Flashtype ran ${command} --version but could not find a semantic version in the output. Update ${agent} to ${required} or newer, then try again.`,
+			};
+		case "timeout":
+			return {
+				title: `${agent} version check timed out`,
+				message: `Flashtype ran ${command} --version, but it did not finish. Check your ${agent} installation and try again.`,
+			};
+		case "failed":
+			return {
+				title: `${agent} version check failed`,
+				message: `Flashtype ran ${command} --version, but the command failed. Install ${agent} ${required} or newer, then try again.`,
+			};
+	}
 }
 
 export const extension = createReactExtensionDefinition({
