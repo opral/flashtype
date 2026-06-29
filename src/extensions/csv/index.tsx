@@ -164,7 +164,7 @@ function CsvViewLoaded({
 				</div>
 			) : null}
 			<div className="relative min-h-0 flex-1 overflow-hidden">
-				<CsvTable parsed={parsed} />
+				<CsvTable parsed={parsed} isActiveView={isActiveView} />
 				{externalWriteReview ? (
 					<CsvReviewOverlay
 						fileId={fileRow.id}
@@ -232,7 +232,13 @@ function CsvReviewOverlay({
 	);
 }
 
-function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
+function CsvTable({
+	parsed,
+	isActiveView,
+}: {
+	readonly parsed: CsvParseResult;
+	readonly isActiveView: boolean;
+}) {
 	const initialColumnWidths = useMemo(
 		() =>
 			parsed.columns.map((header, index) =>
@@ -246,6 +252,13 @@ function CsvTable({ parsed }: { readonly parsed: CsvParseResult }) {
 	useEffect(() => {
 		setColumnWidthOverrides({});
 	}, [parsed]);
+	useEffect(() => {
+		if (!isActiveView) return;
+		const frame = window.requestAnimationFrame(() => {
+			window.dispatchEvent(new Event("resize"));
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, [isActiveView]);
 	const columns = useMemo<GridColumn[]>(() => {
 		return parsed.columns.map((title, index) => ({
 			id: String(index),

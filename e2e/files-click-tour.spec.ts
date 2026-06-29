@@ -49,8 +49,15 @@ test("left files panel survives a seeded random file click tour", async ({
 
 			const fileIndex = Math.floor(rng() * fileCount);
 			const delayMs = Math.floor(rng() * 1001);
-			const file = fileItems.nth(fileIndex);
-			const treePath = await file.getAttribute("data-item-path");
+			const treePath = await fileItems
+				.nth(fileIndex)
+				.getAttribute("data-item-path");
+			if (!treePath) {
+				throw new Error(
+					`File item ${fileIndex} did not expose a data-item-path`,
+				);
+			}
+			const file = fileTreeFile(page, `/${treePath}`);
 
 			await test.step(`click ${index + 1}/${clickCount}: file index ${fileIndex}, delay ${delayMs}ms`, async () => {
 				await file.click();
