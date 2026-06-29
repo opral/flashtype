@@ -8,6 +8,7 @@ import type { ExternalWriteReview } from "@/extension-runtime/external-write-rev
 import {
 	getExternalWriteReview,
 	getExternalWriteReviewData,
+	getFirstPendingExternalWriteReviewFile,
 	useExternalWriteReview,
 } from "./external-write-review-history";
 import {
@@ -63,6 +64,173 @@ describe("getExternalWriteReview", () => {
 			expect(review?.beforeCommitId).toBe(beforeCommitId);
 			expect(review?.afterCommitId).toBe(afterCommitId);
 			await expectReviewData(lix, review, "turn before", "turn after");
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("finds the first file with a pending review for an agent range", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "changed-file", "/docs/changed.md", "before");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "changed-file", "/docs/changed.md", "after");
+			const afterCommitId = await activeCommitId(lix);
+
+			const file = await getFirstPendingExternalWriteReviewFile(
+				lix,
+				agentRange({
+					id: "range-first-review-file",
+					beforeCommitId,
+					afterCommitId,
+				}),
+			);
+
+			expect(file).toEqual({
+				fileId: "changed-file",
+				path: "/docs/changed.md",
+			});
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("returns no first pending review file for a no-op range", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "noop-first-file", "/docs/noop-first.md", "before");
+			const commitId = await activeCommitId(lix);
+			await writeFile(lix, "noop-first-file", "/docs/noop-first.md", "after");
+
+			const file = await getFirstPendingExternalWriteReviewFile(
+				lix,
+				agentRange({
+					id: "range-noop-first-file",
+					beforeCommitId: commitId,
+					afterCommitId: commitId,
+				}),
+			);
+
+			expect(file).toBeNull();
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("skips cleared files when finding the first pending review file", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "cleared-first-file", "/docs/a-cleared.md", "a0");
+			await writeFile(lix, "open-first-file", "/docs/b-open.md", "b0");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "cleared-first-file", "/docs/a-cleared.md", "a1");
+			await writeFile(lix, "open-first-file", "/docs/b-open.md", "b1");
+			const afterCommitId = await activeCommitId(lix);
+
+			const file = await getFirstPendingExternalWriteReviewFile(lix, {
+				...agentRange({
+					id: "range-cleared-first-file",
+					beforeCommitId,
+					afterCommitId,
+				}),
+				clearedFileIds: ["cleared-first-file"],
+			});
+
+			expect(file).toEqual({
+				fileId: "open-first-file",
+				path: "/docs/b-open.md",
+			});
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("uses deterministic path order when multiple files changed", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "z-file", "/docs/z-later.md", "z0");
+			await writeFile(lix, "a-file", "/docs/a-first.md", "a0");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "z-file", "/docs/z-later.md", "z1");
+			await writeFile(lix, "a-file", "/docs/a-first.md", "a1");
+			const afterCommitId = await activeCommitId(lix);
+
+			const file = await getFirstPendingExternalWriteReviewFile(
+				lix,
+				agentRange({
+					id: "range-multiple-first-file",
+					beforeCommitId,
+					afterCommitId,
+				}),
+			);
+
+			expect(file).toEqual({
+				fileId: "a-file",
+				path: "/docs/a-first.md",
+			});
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("skips files whose aggregate review cancels out", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "a-file", "/docs/a-first.md", "a0");
+			await writeFile(lix, "b-file", "/docs/b-next.md", "b0");
+			const firstBeforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "a-file", "/docs/a-first.md", "a1");
+			const firstAfterCommitId = await activeCommitId(lix);
+			const firstRange = agentRange({
+				id: "range-aggregate-first",
+				beforeCommitId: firstBeforeCommitId,
+				afterCommitId: firstAfterCommitId,
+			});
+			const secondRange = agentRange({
+				id: "range-aggregate-second",
+				beforeCommitId: firstAfterCommitId,
+				afterCommitId: firstAfterCommitId,
+			});
+			await writeFile(lix, "a-file", "/docs/a-first.md", "a0");
+			await writeFile(lix, "b-file", "/docs/b-next.md", "b1");
+			const secondAfterCommitId = await activeCommitId(lix);
+			const range = {
+				...secondRange,
+				afterCommitId: secondAfterCommitId,
+			};
+
+			const file = await getFirstPendingExternalWriteReviewFile(lix, range, [
+				firstRange,
+				range,
+			]);
+
+			expect(file).toEqual({
+				fileId: "b-file",
+				path: "/docs/b-next.md",
+			});
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("returns no first pending review file when no file is reviewable", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "same-file", "/docs/same.md", "same");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "same-file", "/docs/same.md", "same");
+			const afterCommitId = await activeCommitId(lix);
+
+			const file = await getFirstPendingExternalWriteReviewFile(
+				lix,
+				agentRange({
+					id: "range-no-reviewable-file",
+					beforeCommitId,
+					afterCommitId,
+				}),
+			);
+
+			expect(file).toBeNull();
 		} finally {
 			await lix.close();
 		}

@@ -6,6 +6,7 @@ import { openLix } from "@/test-utils/node-lix-sdk";
 import { FilesView } from "./index";
 import type { ExtensionContext } from "../../extension-runtime/types";
 import { qb } from "@/lib/lix-kysely";
+import { ACTIVE_FILE_ID_KEY } from "@/hooks/key-value/schema";
 import {
 	appendAgentTurnCommitRange,
 	type AgentTurnCommitRange,
@@ -141,6 +142,43 @@ async function startTreeRenameByLabel(
 		});
 	});
 	return findTreeRenameInput(utils);
+}
+
+async function writeActiveFileId(
+	lix: Awaited<ReturnType<typeof openLix>>,
+	fileId: string,
+): Promise<void> {
+	await qb(lix)
+		.insertInto("lix_key_value_by_branch")
+		.values({
+			key: ACTIVE_FILE_ID_KEY,
+			value: fileId,
+			lixcol_branch_id: "global",
+			lixcol_global: true,
+			lixcol_untracked: true,
+		})
+		.onConflict((oc) =>
+			oc.columns(["key", "lixcol_branch_id"]).doUpdateSet({ value: fileId }),
+		)
+		.execute();
+}
+
+async function clearActiveFileId(
+	lix: Awaited<ReturnType<typeof openLix>>,
+): Promise<void> {
+	await qb(lix)
+		.insertInto("lix_key_value_by_branch")
+		.values({
+			key: ACTIVE_FILE_ID_KEY,
+			value: null,
+			lixcol_branch_id: "global",
+			lixcol_global: true,
+			lixcol_untracked: true,
+		})
+		.onConflict((oc) =>
+			oc.columns(["key", "lixcol_branch_id"]).doUpdateSet({ value: null }),
+		)
+		.execute();
 }
 
 describe("FilesView", () => {
@@ -281,6 +319,109 @@ describe("FilesView", () => {
 			window.flashtypeDesktop = originalDesktop;
 			await lix.close();
 		}
+	});
+
+	test("updates the selected row when the active file changes outside the tree", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{ id: "file_one", path: "/one.md", data: new Uint8Array() },
+				{ id: "file_two", path: "/two.md", data: new Uint8Array() },
+			])
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView context={createViewContext(lix)} />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+		await waitForFilesViewReady(utils!);
+		const one = await findTreeItemByLabel(utils!, "one.md");
+		const two = await findTreeItemByLabel(utils!, "two.md");
+
+		await act(async () => {
+			await writeActiveFileId(lix, "file_two");
+		});
+		await waitFor(() => {
+			expect(two).toHaveAttribute("data-item-selected", "true");
+			expect(one).not.toHaveAttribute("data-item-selected", "true");
+		});
+
+		await act(async () => {
+			await clearActiveFileId(lix);
+		});
+		await waitFor(() => {
+			expect(two).not.toHaveAttribute("data-item-selected", "true");
+			expect(one).not.toHaveAttribute("data-item-selected", "true");
+		});
+
+		utils!.unmount();
+		await lix.close();
+	});
+
+	test("does not overwrite an intentional tree selection on entry refresh", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{ id: "file_one", path: "/one.md", data: new Uint8Array() },
+				{ id: "file_two", path: "/two.md", data: new Uint8Array() },
+			])
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView context={createViewContext(lix)} />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+		await waitForFilesViewReady(utils!);
+
+		await act(async () => {
+			await writeActiveFileId(lix, "file_two");
+		});
+		const one = await findTreeItemByLabel(utils!, "one.md");
+		const two = await findTreeItemByLabel(utils!, "two.md");
+		await waitFor(() => {
+			expect(two).toHaveAttribute("data-item-selected", "true");
+		});
+
+		await act(async () => {
+			fireEvent.click(one);
+		});
+		await waitFor(() => {
+			expect(one).toHaveAttribute("data-item-selected", "true");
+			expect(two).not.toHaveAttribute("data-item-selected", "true");
+		});
+
+		await act(async () => {
+			await qb(lix)
+				.insertInto("lix_file")
+				.values({
+					id: "file_three",
+					path: "/three.md",
+					data: new Uint8Array(),
+				})
+				.execute();
+		});
+		await findTreeItemByLabel(utils!, "three.md");
+		await waitFor(() => {
+			expect(one).toHaveAttribute("data-item-selected", "true");
+			expect(two).not.toHaveAttribute("data-item-selected", "true");
+		});
+
+		utils!.unmount();
+		await lix.close();
 	});
 
 	test("focuses the inline draft without forcing the left panel", async () => {

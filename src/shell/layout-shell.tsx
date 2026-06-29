@@ -21,9 +21,10 @@ import {
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
-import { useLix } from "@/lib/lix-react";
+import { useLix, useQueryTakeFirst } from "@/lib/lix-react";
 import type { Lix } from "@/lib/lix-types";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
+import { ACTIVE_FILE_ID_KEY } from "@/hooks/key-value/schema";
 import { SidePanel } from "./side-panel";
 import { CentralPanel } from "./central-panel";
 import { TopBar } from "./top-bar";
@@ -90,11 +91,18 @@ import {
 } from "./panel-utils";
 import { buildAgentLaunchArgsWithActiveFile } from "./agent-launch";
 import {
+	AGENT_TURN_COMMIT_RANGE_KEY,
 	clearAgentTurnCommitRangeFile,
 	appendAgentTurnCommitRange,
+	isAgentTurnCommitRangeStore,
+	readAgentTurnCommitRanges,
 	type AgentTurnCommitRange,
 } from "./agent-turn-review-range";
-import { getFileDataAtCommit } from "./external-write-review-history";
+import {
+	getFileDataAtCommit,
+	getFirstPendingExternalWriteReviewFile,
+	getPendingExternalWriteReviewForFile,
+} from "./external-write-review-history";
 
 type NewFileDraftHandlerRegistration = {
 	readonly panelSide: PanelSide;
@@ -119,6 +127,17 @@ type ActiveAgentTurn = {
 	readonly key: string;
 	readonly event: AgentHookTurnEvent;
 	readonly beforeCommitIdPromise: Promise<string | null>;
+};
+
+type ResolvedFileViewOpenResult = {
+	readonly kind: ExtensionKind;
+	readonly instance: string;
+};
+
+type AgentDiffReturnTarget = {
+	readonly openedInstance: string;
+	readonly previousActiveFileId: string | null;
+	readonly previousActiveInstance: string | null;
 };
 
 const stripLaunchArgs = (view: ExtensionInstance): ExtensionInstance => {
@@ -625,9 +644,7 @@ function LayoutShellActiveFileLoader(
 		readonly setUiStateKV: (newValue: FlashtypeUiState) => Promise<void>;
 	},
 ) {
-	const [activeFileId, setActiveFileId] = useKeyValue(
-		"flashtype_active_file_id",
-	);
+	const [activeFileId, setActiveFileId] = useKeyValue(ACTIVE_FILE_ID_KEY);
 	return (
 		<LayoutShellLoadedContent
 			{...props}
@@ -717,6 +734,12 @@ function LayoutShellLoadedContent({
 	const openDiffReviewByFileIdRef = useRef(
 		new Map<string, ExternalWriteReview>(),
 	);
+	const agentDiffReturnTargetsRef = useRef(
+		new Map<string, AgentDiffReturnTarget>(),
+	);
+	const agentDiffReturnTargetsByFileIdRef = useRef(
+		new Map<string, AgentDiffReturnTarget>(),
+	);
 	const resolveDiffReviewTelemetryRef = useRef<
 		| ((
 				review: ExternalWriteReview,
@@ -725,6 +748,11 @@ function LayoutShellLoadedContent({
 		| null
 	>(null);
 	const activeAgentTurnsRef = useRef(new Map<string, ActiveAgentTurn>());
+	const openFirstAgentDiffForRangeRef = useRef<
+		((range: AgentTurnCommitRange) => Promise<void>) | null
+	>(null);
+	const autoOpenedAgentRangeIdsRef = useRef(new Set<string>());
+	const hasSeededAutoOpenedAgentRangesRef = useRef(false);
 	const workspaceIdRef = useRef<string | undefined>(undefined);
 	const panelStatesRef = useRef({
 		left: leftPanel,
@@ -756,6 +784,22 @@ function LayoutShellLoadedContent({
 	useEffect(() => {
 		workspaceIdRef.current = undefined;
 	}, [lix]);
+
+	const agentTurnCommitRangeRow = useQueryTakeFirst<{ value: unknown }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select("value")
+			.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
+			.where("lixcol_branch_id", "=", "global")
+			.limit(1),
+	);
+	const agentTurnCommitRanges = useMemo(
+		() =>
+			isAgentTurnCommitRangeStore(agentTurnCommitRangeRow?.value)
+				? agentTurnCommitRangeRow.value.ranges
+				: [],
+		[agentTurnCommitRangeRow?.value],
+	);
 
 	useEffect(() => {
 		panelStatesRef.current = {
@@ -893,6 +937,15 @@ function LayoutShellLoadedContent({
 						completedAt: Date.now(),
 					};
 					await appendAgentTurnCommitRange(lix, range);
+					autoOpenedAgentRangeIdsRef.current.add(range.id);
+					try {
+						await openFirstAgentDiffForRangeRef.current?.(range);
+					} catch (error: unknown) {
+						console.warn(
+							"[agent-turn-review] failed to open changed file review",
+							error,
+						);
+					}
 				}
 			} catch (error: unknown) {
 				activeAgentTurnsRef.current.delete(key);
@@ -1366,10 +1419,11 @@ function LayoutShellLoadedContent({
 			trackTelemetry?: boolean;
 			trackDocumentOpenAttempt?: boolean;
 			trackDocumentViewed?: boolean;
-		}) => {
+		}): ResolvedFileViewOpenResult => {
 			const handler =
 				findFileHandlerExtension(extensionMap.values(), filePath) ?? undefined;
 			const kind = handler?.kind ?? FILE_EXTENSION_KIND;
+			const instance = fileExtensionInstanceForKind(kind, fileId);
 			if (trackDocumentOpenAttempt) {
 				captureWorkspaceTelemetry("document_open_attempted", {
 					...documentOpenAttemptTelemetryProperties({ filePath, handler }),
@@ -1389,7 +1443,7 @@ function LayoutShellLoadedContent({
 			handleOpenView({
 				panel,
 				kind,
-				instance: fileExtensionInstanceForKind(kind, fileId),
+				instance,
 				state: {
 					...buildFileExtensionProps({ fileId, filePath }),
 					...(state ?? {}),
@@ -1398,9 +1452,83 @@ function LayoutShellLoadedContent({
 				focus,
 				pending,
 			});
+			return { kind, instance };
 		},
 		[handleOpenView, extensionMap, captureWorkspaceTelemetry],
 	);
+
+	const openFirstAgentDiffForRange = useCallback(
+		async (range: AgentTurnCommitRange) => {
+			const storedRanges = await readAgentTurnCommitRanges(lix);
+			const ranges = storedRanges.some((candidate) => candidate.id === range.id)
+				? storedRanges
+				: [...storedRanges, range];
+			const file = await getFirstPendingExternalWriteReviewFile(
+				lix,
+				range,
+				ranges,
+			);
+			if (!file) return;
+			const review = await getPendingExternalWriteReviewForFile(
+				lix,
+				file,
+				ranges,
+			);
+			if (!review) return;
+			const currentCentralPanel = panelStatesRef.current.central;
+			const previousActiveInstance =
+				currentCentralPanel.activeInstance ??
+				currentCentralPanel.views[0]?.instance ??
+				null;
+			const previousActiveEntry = previousActiveInstance
+				? (currentCentralPanel.views.find(
+						(entry) => entry.instance === previousActiveInstance,
+					) ?? null)
+				: null;
+			const previousActiveFileId =
+				activeMarkdownFileIdFromExtensionInstance(previousActiveEntry);
+			const openedView = openResolvedFileView({
+				panel: "central",
+				fileId: file.fileId,
+				filePath: file.path,
+				focus: true,
+				trackDocumentOpenAttempt: true,
+				trackDocumentViewed: true,
+			});
+			const target =
+				agentDiffReturnTargetsByFileIdRef.current.get(file.fileId) ??
+				({
+					openedInstance: openedView.instance,
+					previousActiveFileId,
+					previousActiveInstance,
+				} satisfies AgentDiffReturnTarget);
+			agentDiffReturnTargetsByFileIdRef.current.set(file.fileId, target);
+			agentDiffReturnTargetsRef.current.set(review.reviewId, target);
+			void setActiveFileId(file.fileId);
+		},
+		[lix, openResolvedFileView, setActiveFileId],
+	);
+	openFirstAgentDiffForRangeRef.current = openFirstAgentDiffForRange;
+
+	useEffect(() => {
+		if (!hasSeededAutoOpenedAgentRangesRef.current) {
+			for (const range of agentTurnCommitRanges) {
+				autoOpenedAgentRangeIdsRef.current.add(range.id);
+			}
+			hasSeededAutoOpenedAgentRangesRef.current = true;
+			return;
+		}
+		for (const range of agentTurnCommitRanges) {
+			if (autoOpenedAgentRangeIdsRef.current.has(range.id)) continue;
+			autoOpenedAgentRangeIdsRef.current.add(range.id);
+			void openFirstAgentDiffForRange(range).catch((error: unknown) => {
+				console.warn(
+					"[agent-turn-review] failed to open changed file review",
+					error,
+				);
+			});
+		}
+	}, [agentTurnCommitRanges, openFirstAgentDiffForRange]);
 
 	const handleOpenFile = useCallback(
 		async ({
@@ -1544,6 +1672,57 @@ function LayoutShellLoadedContent({
 		[],
 	);
 
+	const restoreAgentDiffReturnTarget = useCallback(
+		(review: ExternalWriteReview) => {
+			const target = agentDiffReturnTargetsRef.current.get(review.reviewId);
+			if (!target) return;
+			for (const [
+				reviewId,
+				storedTarget,
+			] of agentDiffReturnTargetsRef.current) {
+				if (storedTarget === target) {
+					agentDiffReturnTargetsRef.current.delete(reviewId);
+				}
+			}
+			agentDiffReturnTargetsByFileIdRef.current.delete(review.fileId);
+			setPanelState(
+				"central",
+				(current) => {
+					const views =
+						target.previousActiveInstance === null
+							? current.views.filter(
+									(entry) => entry.instance !== target.openedInstance,
+								)
+							: current.views;
+					const previousViewExists =
+						target.previousActiveInstance !== null &&
+						views.some(
+							(entry) => entry.instance === target.previousActiveInstance,
+						);
+					const activeInstance = previousViewExists
+						? target.previousActiveInstance
+						: null;
+					return { views, activeInstance };
+				},
+				{ focus: true },
+			);
+			void setActiveFileId(target.previousActiveFileId);
+		},
+		[setActiveFileId, setPanelState],
+	);
+
+	const resolveExternalWriteReview = useCallback(
+		(
+			review: ExternalWriteReview,
+			outcome: "accepted" | "abandoned" | "rejected",
+		) => {
+			const resolved = resolveDiffReviewTelemetry(review, outcome);
+			restoreAgentDiffReturnTarget(review);
+			return resolved;
+		},
+		[resolveDiffReviewTelemetry, restoreAgentDiffReturnTarget],
+	);
+
 	const isExternalWriteReviewCurrent = useCallback(
 		async (review: ExternalWriteReview): Promise<boolean> => {
 			const [current, afterData] = await Promise.all([
@@ -1583,13 +1762,13 @@ function LayoutShellLoadedContent({
 			const outcome = (await isExternalWriteReviewCurrent(review))
 				? "accepted"
 				: "abandoned";
-			resolveDiffReviewTelemetry(review, outcome);
+			resolveExternalWriteReview(review, outcome);
 		},
 		[
 			lix,
 			getExternalWriteReviewForFile,
 			isExternalWriteReviewCurrent,
-			resolveDiffReviewTelemetry,
+			resolveExternalWriteReview,
 		],
 	);
 
@@ -1610,7 +1789,7 @@ function LayoutShellLoadedContent({
 					reviewId: review.reviewId,
 					agentTurnRangeIds: review.agentTurnRangeIds,
 				});
-				resolveDiffReviewTelemetry(review, "abandoned");
+				resolveExternalWriteReview(review, "abandoned");
 				return;
 			}
 			const beforeData = await getFileDataAtCommit(
@@ -1624,7 +1803,7 @@ function LayoutShellLoadedContent({
 					reviewId: review.reviewId,
 					agentTurnRangeIds: review.agentTurnRangeIds,
 				});
-				resolveDiffReviewTelemetry(review, "abandoned");
+				resolveExternalWriteReview(review, "abandoned");
 				return;
 			}
 			const { fileId } = args;
@@ -1639,16 +1818,16 @@ function LayoutShellLoadedContent({
 				agentTurnRangeIds: review.agentTurnRangeIds,
 			});
 			if (Number(result.numUpdatedRows) > 0) {
-				resolveDiffReviewTelemetry(review, "rejected");
+				resolveExternalWriteReview(review, "rejected");
 			} else {
-				resolveDiffReviewTelemetry(review, "abandoned");
+				resolveExternalWriteReview(review, "abandoned");
 			}
 		},
 		[
 			lix,
 			getExternalWriteReviewForFile,
 			isExternalWriteReviewCurrent,
-			resolveDiffReviewTelemetry,
+			resolveExternalWriteReview,
 		],
 	);
 
@@ -1706,13 +1885,13 @@ function LayoutShellLoadedContent({
 						review &&
 						!diffResolvedReviewIdsRef.current.has(review.reviewId)
 					) {
-						resolveDiffReviewTelemetry(review, "abandoned");
+						resolveExternalWriteReview(review, "abandoned");
 					}
 					break;
 				}
 			}
 		},
-		[setPanelState, resolveDiffReviewTelemetry],
+		[setPanelState, resolveExternalWriteReview],
 	);
 
 	const handleCloseFileViews = useCallback(
@@ -1750,11 +1929,11 @@ function LayoutShellLoadedContent({
 					removedReview &&
 					!diffResolvedReviewIdsRef.current.has(removedReview.reviewId)
 				) {
-					resolveDiffReviewTelemetry(removedReview, "abandoned");
+					resolveExternalWriteReview(removedReview, "abandoned");
 				}
 			}
 		},
-		[setPanelState, resolveDiffReviewTelemetry],
+		[setPanelState, resolveExternalWriteReview],
 	);
 
 	const activeCentralEntry = useMemo(() => {
@@ -2051,7 +2230,6 @@ function LayoutShellLoadedContent({
 		activeMarkdownFileIdFromExtensionInstance(activeCentralEntry);
 
 	useEffect(() => {
-		if (!activeCentralFileId) return;
 		if (activeFileId === activeCentralFileId) return;
 		void setActiveFileId(activeCentralFileId);
 	}, [activeCentralFileId, activeFileId, setActiveFileId]);

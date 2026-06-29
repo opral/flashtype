@@ -11,10 +11,12 @@ export type KeyDef<V> = {
 	defaultValue?: V | null;
 };
 
+export const ACTIVE_FILE_ID_KEY = "flashtype_active_file_id" as const;
+
 // Flashtype keys + per-key defaults
 export const KEY_VALUE_DEFINITIONS = {
 	// Cross-branch UI state, not change-controlled
-	flashtype_active_file_id: {
+	[ACTIVE_FILE_ID_KEY]: {
 		defaultBranchId: "global",
 		untracked: true,
 	} as KeyDef<string | null>,

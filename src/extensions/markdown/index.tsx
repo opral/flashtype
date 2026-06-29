@@ -57,6 +57,7 @@ type MarkdownViewProps = {
 };
 
 type HistoricalMarkdownBlockRow = {
+	readonly commit_id: string;
 	readonly snapshot_content: unknown;
 };
 
@@ -298,47 +299,37 @@ function MarkdownReviewOverlay({
 	}) => Promise<void>;
 }) {
 	const workspaceDirState = useDesktopWorkspaceDir();
-	const beforeBlocks = useMarkdownBlocksAtCommit(fileId, beforeCommitId);
-	const afterBlocks = useMarkdownBlocksAtCommit(fileId, afterCommitId);
-	const resolveImageSrc = useMemo(() => {
-		const workspaceApi = desktopWorkspaceApi();
-		const workspacePath = workspaceDirState.workspaceDir;
-		if (
-			!sourceFilePath ||
-			!workspacePath ||
-			!workspaceApi?.resolveMarkdownImageSrc
-		) {
-			return undefined;
-		}
-		return (src: string) =>
-			workspaceApi.resolveMarkdownImageSrc({
-				src,
-				sourceFilePath,
-				workspacePath,
-			});
-	}, [sourceFilePath, workspaceDirState.workspaceDir]);
-	const enrichedReviewDiff = useMemo<MarkdownReviewDiff>(() => {
-		const beforeSnapshotsAvailable =
-			beforeBlocks !== undefined &&
-			(beforeBlocks.length > 0 ||
-				reviewDiff.beforeMarkdown.trim().length === 0);
-		const afterSnapshotsAvailable =
-			afterBlocks !== undefined &&
-			(afterBlocks.length > 0 || reviewDiff.afterMarkdown.trim().length === 0);
-		if (!beforeSnapshotsAvailable || !afterSnapshotsAvailable) {
-			return reviewDiff;
-		}
-		return {
-			...reviewDiff,
-			beforeBlocks: beforeBlocks ?? [],
-			afterBlocks: afterBlocks ?? [],
-		};
-	}, [afterBlocks, beforeBlocks, reviewDiff]);
-	const diffHtml = useMemo(() => {
-		return renderMarkdownReviewDiffHtml(enrichedReviewDiff, {
-			resolveImageSrc,
-		});
-	}, [enrichedReviewDiff, resolveImageSrc]);
+	const { beforeBlocks, afterBlocks } = useMarkdownBlocksAtCommits(
+		fileId,
+		beforeCommitId,
+		afterCommitId,
+	);
+	const workspaceApi = desktopWorkspaceApi();
+	const workspacePath = workspaceDirState.workspaceDir;
+	const resolveImageSrc =
+		sourceFilePath && workspacePath && workspaceApi?.resolveMarkdownImageSrc
+			? (src: string) =>
+					workspaceApi.resolveMarkdownImageSrc({
+						src,
+						sourceFilePath,
+						workspacePath,
+					})
+			: undefined;
+	const beforeSnapshotsAvailable =
+		beforeBlocks.length > 0 || reviewDiff.beforeMarkdown.trim().length === 0;
+	const afterSnapshotsAvailable =
+		afterBlocks.length > 0 || reviewDiff.afterMarkdown.trim().length === 0;
+	const enrichedReviewDiff: MarkdownReviewDiff =
+		beforeSnapshotsAvailable && afterSnapshotsAvailable
+			? {
+					...reviewDiff,
+					beforeBlocks,
+					afterBlocks,
+				}
+			: reviewDiff;
+	const diffHtml = renderMarkdownReviewDiffHtml(enrichedReviewDiff, {
+		resolveImageSrc,
+	});
 	const rejectReview = () => void onReject?.({ fileId, reviewId, review });
 
 	if (!workspaceDirState.loaded) {
@@ -377,56 +368,64 @@ function MarkdownReviewOverlayFallback() {
 	);
 }
 
-function useMarkdownBlocksAtCommit(
+function useMarkdownBlocksAtCommits(
 	fileId: string,
-	commitId: string | undefined,
-): MarkdownBlockSnapshot[] | undefined {
+	beforeCommitId: string,
+	afterCommitId: string,
+): {
+	readonly beforeBlocks: MarkdownBlockSnapshot[];
+	readonly afterBlocks: MarkdownBlockSnapshot[];
+} {
 	const rows = useQuery<HistoricalMarkdownBlockRow>(
 		(lix) =>
-			commitId
-				? historicalMarkdownBlocksQuery(lix, commitId, fileId)
-				: emptyMarkdownBlocksQuery(),
+			historicalMarkdownBlocksQuery(lix, beforeCommitId, afterCommitId, fileId),
 		{ subscribe: false },
 	);
-	return useMemo(() => {
-		if (!commitId) return undefined;
-		return rows
-			.map((row) => parseHistoricalMarkdownBlock(row.snapshot_content))
-			.filter((block): block is MarkdownBlockSnapshot => block !== null)
-			.sort(
-				(left, right) =>
-					left.orderKey.localeCompare(right.orderKey) ||
-					left.id.localeCompare(right.id),
-			);
-	}, [commitId, rows]);
+	const beforeBlocks: MarkdownBlockSnapshot[] = [];
+	const afterBlocks: MarkdownBlockSnapshot[] = [];
+	for (const row of rows) {
+		const block = parseHistoricalMarkdownBlock(row.snapshot_content);
+		if (!block) continue;
+		if (row.commit_id === beforeCommitId) {
+			beforeBlocks.push(block);
+		}
+		if (row.commit_id === afterCommitId) {
+			afterBlocks.push(block);
+		}
+	}
+	beforeBlocks.sort(compareMarkdownBlocks);
+	afterBlocks.sort(compareMarkdownBlocks);
+	return { beforeBlocks, afterBlocks };
 }
 
 function historicalMarkdownBlocksQuery(
 	lix: ReturnType<typeof useLix>,
-	commitId: string,
+	beforeCommitId: string,
+	afterCommitId: string,
 	fileId: string,
 ) {
 	const sql = `
 		WITH ranked AS (
 			SELECT
+				start_commit_id AS commit_id,
 				entity_pk,
 				snapshot_content,
 				depth,
 				ROW_NUMBER() OVER (
-					PARTITION BY entity_pk
+					PARTITION BY start_commit_id, entity_pk
 					ORDER BY depth ASC
 				) AS rn
 			FROM lix_state_history
-			WHERE start_commit_id = ?
+			WHERE start_commit_id IN (?, ?)
 				AND file_id = ?
 				AND schema_key = 'markdown_block'
 		)
-		SELECT snapshot_content
+		SELECT commit_id, snapshot_content
 		FROM ranked
 		WHERE rn = 1
 			AND snapshot_content IS NOT NULL
 	`;
-	const parameters = [commitId, fileId] as const;
+	const parameters = [beforeCommitId, afterCommitId, fileId] as const;
 	return {
 		compile: () => ({ sql, parameters }),
 		execute: async () => {
@@ -438,11 +437,14 @@ function historicalMarkdownBlocksQuery(
 	};
 }
 
-function emptyMarkdownBlocksQuery() {
-	return {
-		compile: () => ({ sql: "SELECT 1 WHERE 0", parameters: [] }),
-		execute: async () => [] as HistoricalMarkdownBlockRow[],
-	};
+function compareMarkdownBlocks(
+	left: MarkdownBlockSnapshot,
+	right: MarkdownBlockSnapshot,
+): number {
+	return (
+		left.orderKey.localeCompare(right.orderKey) ||
+		left.id.localeCompare(right.id)
+	);
 }
 
 function parseHistoricalMarkdownBlock(

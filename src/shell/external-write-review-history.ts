@@ -59,6 +59,49 @@ export async function getPendingExternalWriteReviewPaths(
 	return pendingPaths;
 }
 
+export async function getFirstPendingExternalWriteReviewFile(
+	lix: Lix,
+	range: AgentTurnCommitRange,
+	ranges: readonly AgentTurnCommitRange[] = [range],
+): Promise<ExternalWriteReviewFile | null> {
+	if (range.beforeCommitId === range.afterCommitId) {
+		return null;
+	}
+	const files = await qb(lix)
+		.selectFrom("lix_file")
+		.select(["id", "path"])
+		.orderBy("path", "asc")
+		.execute();
+	for (const file of files) {
+		const fileId = file.id as string;
+		if (range.clearedFileIds?.includes(fileId)) continue;
+		const path = file.path as string;
+		const rangeReview = await getAgentTurnExternalWriteReview(
+			lix,
+			fileId,
+			path,
+			[range],
+		);
+		if (!rangeReview) continue;
+		const review =
+			ranges.length === 1 && ranges[0]?.id === range.id
+				? rangeReview
+				: await getAgentTurnExternalWriteReview(lix, fileId, path, ranges);
+		if (review) {
+			return { fileId, path };
+		}
+	}
+	return null;
+}
+
+export async function getPendingExternalWriteReviewForFile(
+	lix: Lix,
+	file: ExternalWriteReviewFile,
+	ranges: readonly AgentTurnCommitRange[],
+): Promise<ExternalWriteReview | null> {
+	return getAgentTurnExternalWriteReview(lix, file.fileId, file.path, ranges);
+}
+
 export function useExternalWriteReview(args: {
 	readonly fileId?: string | null;
 	readonly path?: string | null;

@@ -20,6 +20,7 @@ import {
 } from "./file-tree";
 import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
 import { qb } from "@/lib/lix-kysely";
+import { ACTIVE_FILE_ID_KEY } from "@/hooks/key-value/schema";
 import { FILES_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
 import type { Lix } from "@/lib/lix-types";
@@ -48,16 +49,81 @@ export function FilesView({ context }: FilesViewProps) {
 	const entries = useQuery<FilesystemEntryRow>((lix) =>
 		selectFilesystemEntries(lix),
 	);
-	return <FilesViewContent context={context} lix={lix} entries={entries} />;
+	return (
+		<FilesViewAgentTurnRangeLoader
+			context={context}
+			lix={lix}
+			entries={entries}
+		/>
+	);
 }
 
-function FilesViewContent({
+function FilesViewAgentTurnRangeLoader({
 	context,
 	lix,
 	entries,
 }: FilesViewProps & {
 	readonly lix: Lix;
 	readonly entries: FilesystemEntryRow[];
+}) {
+	const rangeRow = useQueryTakeFirst<{ value: unknown }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select("value")
+			.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
+			.where("lixcol_branch_id", "=", "global")
+			.limit(1),
+	);
+	return (
+		<FilesViewActiveFileLoader
+			context={context}
+			lix={lix}
+			entries={entries}
+			agentTurnCommitRangeValue={rangeRow?.value}
+		/>
+	);
+}
+
+function FilesViewActiveFileLoader({
+	context,
+	lix,
+	entries,
+	agentTurnCommitRangeValue,
+}: FilesViewProps & {
+	readonly lix: Lix;
+	readonly entries: FilesystemEntryRow[];
+	readonly agentTurnCommitRangeValue: unknown;
+}) {
+	const activeFile = useQueryTakeFirst<{ value: unknown }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value_by_branch")
+			.select("value")
+			.where("key", "=", ACTIVE_FILE_ID_KEY)
+			.where("lixcol_branch_id", "=", "global")
+			.limit(1),
+	);
+	return (
+		<FilesViewContent
+			context={context}
+			lix={lix}
+			entries={entries}
+			activeFileValue={activeFile?.value}
+			agentTurnCommitRangeValue={agentTurnCommitRangeValue}
+		/>
+	);
+}
+
+function FilesViewContent({
+	context,
+	lix,
+	entries,
+	activeFileValue,
+	agentTurnCommitRangeValue,
+}: FilesViewProps & {
+	readonly lix: Lix;
+	readonly entries: FilesystemEntryRow[];
+	readonly activeFileValue: unknown;
+	readonly agentTurnCommitRangeValue: unknown;
 }) {
 	const ownerIdRef = useRef(
 		`files-view:${context?.viewInstance ?? Math.random().toString(36).slice(2)}`,
@@ -88,7 +154,13 @@ function FilesViewContent({
 		() => buildFilesystemTree(combinedEntries),
 		[combinedEntries],
 	);
-	const pendingReviewPaths = usePendingExternalWriteReviewPaths(lix, nodes);
+	const activeFileId =
+		typeof activeFileValue === "string" ? activeFileValue : null;
+	const pendingReviewPaths = usePendingExternalWriteReviewPaths(
+		lix,
+		nodes,
+		agentTurnCommitRangeValue,
+	);
 	const creatingRef = useRef(false);
 	const renamingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
@@ -103,6 +175,10 @@ function FilesViewContent({
 	const [selectedKind, setSelectedKind] = useState<"file" | "directory" | null>(
 		null,
 	);
+	const lastSyncedActiveFileRef = useRef<{
+		fileId: string | null;
+		path: string | null;
+	}>({ fileId: null, path: null });
 	const [isDraggingOver, setIsDraggingOver] = useState(false);
 	const dragCounterRef = useRef(0);
 	const entryPathSet = useMemo(() => {
@@ -119,6 +195,35 @@ function FilesViewContent({
 				.map((entry) => entry.path),
 		);
 	}, [combinedEntries]);
+	useEffect(() => {
+		if (!activeFileId) {
+			if (activeFileValue === null) {
+				lastSyncedActiveFileRef.current = { fileId: null, path: null };
+				setSelectedPath(null);
+				setSelectedFileId(null);
+				setSelectedKind(null);
+			}
+			return;
+		}
+		const activeEntry = combinedEntries.find(
+			(entry) => entry.kind === "file" && entry.id === activeFileId,
+		);
+		if (!activeEntry) return;
+		const lastSynced = lastSyncedActiveFileRef.current;
+		if (
+			lastSynced.fileId === activeFileId &&
+			lastSynced.path === activeEntry.path
+		) {
+			return;
+		}
+		lastSyncedActiveFileRef.current = {
+			fileId: activeFileId,
+			path: activeEntry.path,
+		};
+		setSelectedPath(activeEntry.path);
+		setSelectedFileId(activeEntry.id);
+		setSelectedKind("file");
+	}, [activeFileId, activeFileValue, combinedEntries]);
 	const existingFilePaths = useMemo(() => {
 		const combined = new Set(entryPathSet);
 		for (const path of pendingPaths) {
@@ -820,19 +925,14 @@ function FilesViewContent({
 function usePendingExternalWriteReviewPaths(
 	lix: Lix,
 	nodes: readonly FilesystemTreeNode[],
+	agentTurnCommitRangeValue: unknown,
 ): ReadonlySet<string> {
-	const rangeRow = useQueryTakeFirst<{ value: unknown }>((lix) =>
-		qb(lix)
-			.selectFrom("lix_key_value_by_branch")
-			.select("value")
-			.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
-			.where("lixcol_branch_id", "=", "global")
-			.limit(1),
-	);
 	const ranges = useMemo(
 		() =>
-			isAgentTurnCommitRangeStore(rangeRow?.value) ? rangeRow.value.ranges : [],
-		[rangeRow?.value],
+			isAgentTurnCommitRangeStore(agentTurnCommitRangeValue)
+				? agentTurnCommitRangeValue.ranges
+				: [],
+		[agentTurnCommitRangeValue],
 	);
 	const reviewableFiles = useMemo(
 		() => collectReviewableTreeFiles(nodes),
