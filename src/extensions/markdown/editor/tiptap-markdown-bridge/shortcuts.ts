@@ -5,6 +5,7 @@ import {
 	wrappingInputRule,
 } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
+import { normalizeUrl } from "../normalize-url";
 
 // Markdown-like typing shortcuts and editor keybindings
 // - "# ": Convert to heading (level by number of #)
@@ -143,6 +144,35 @@ export const MarkdownWcShortcuts = Extension.create({
 					}),
 				);
 			}
+		}
+
+		// Inline link: typing "[label](url)" converts to linked text.
+		if ((schema.marks as any).link) {
+			rules.push(
+				new InputRule({
+					find: /\[([^\]]+)\]\(([^()\s]+)\)$/,
+					// @ts-expect-error - typings are outdated
+					handler: ({ state, range, match, commands }) => {
+						const linkType = (state.schema.marks as any).link;
+						if (!linkType) return null;
+						const label = String((match && match[1]) || "");
+						const href = normalizeUrl(String((match && match[2]) || ""));
+						if (!label || !href) return null;
+						return commands.command(({ tr, dispatch }: any) => {
+							tr.insertText(label, range.from, range.to);
+							tr.addMark(
+								range.from,
+								range.from + label.length,
+								linkType.create({ href }),
+							);
+							// Don't carry the link mark into whatever is typed next.
+							tr.removeStoredMark(linkType);
+							if (dispatch) dispatch(tr);
+							return true;
+						});
+					},
+				}),
+			);
 		}
 
 		return rules;

@@ -2,12 +2,15 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
+	type KeyboardEvent,
 	type MouseEvent,
 } from "react";
 import { Toolbar } from "@base-ui-components/react/toolbar";
 import { Select } from "@base-ui-components/react/select";
 import { Tooltip } from "@base-ui-components/react/tooltip";
+import { Popover } from "@base-ui-components/react/popover";
 import clsx from "clsx";
 import {
 	Bold,
@@ -16,13 +19,17 @@ import {
 	Code2,
 	Copy,
 	Italic,
+	Link as LinkIcon,
 	List,
 	ListChecks,
 	ListOrdered,
+	Unlink,
+	X,
 } from "lucide-react";
 import type { Editor } from "@tiptap/core";
 import { useEditorCtx } from "../editor/editor-context";
 import { buildMarkdownFromEditor } from "../editor/build-markdown-from-editor";
+import { normalizeUrl } from "../editor/normalize-url";
 import {
 	TOOLBAR_BLOCK_OPTIONS,
 	type ToolbarBlockType,
@@ -33,6 +40,7 @@ type FormatState = {
 	isBold: boolean;
 	isItalic: boolean;
 	isCode: boolean;
+	isLink: boolean;
 	isBulletList: boolean;
 	isOrderedList: boolean;
 	isTaskList: boolean;
@@ -55,6 +63,7 @@ const initialFormatState: FormatState = {
 	isBold: false,
 	isItalic: false,
 	isCode: false,
+	isLink: false,
 	isBulletList: false,
 	isOrderedList: false,
 	isTaskList: false,
@@ -74,6 +83,10 @@ export function FormattingToolbar({ className }: { className?: string }) {
 		"idle",
 	);
 	const [blockMenuOpen, setBlockMenuOpen] = useState(false);
+	const [linkOpen, setLinkOpen] = useState(false);
+	const [linkValue, setLinkValue] = useState("");
+	const [linkEditing, setLinkEditing] = useState(false);
+	const linkInputRef = useRef<HTMLInputElement>(null);
 
 	const suppressMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
 		event.preventDefault();
@@ -97,6 +110,7 @@ export function FormattingToolbar({ className }: { className?: string }) {
 				isBold: editor.isActive("bold"),
 				isItalic: editor.isActive("italic"),
 				isCode: editor.isActive("code"),
+				isLink: editor.isActive("link"),
 				isBulletList: editor.isActive("bulletList") && !isTaskList,
 				isOrderedList: editor.isActive("orderedList"),
 				isTaskList,
@@ -149,6 +163,63 @@ export function FormattingToolbar({ className }: { className?: string }) {
 		if (!editor) return;
 		editor.chain().focus().toggleMark("code").run();
 	}, [editor]);
+
+	const handleLinkOpenChange = useCallback(
+		(next: boolean) => {
+			if (next && editor) {
+				const active = editor.isActive("link");
+				setLinkEditing(active);
+				setLinkValue(
+					active ? String(editor.getAttributes("link")?.href ?? "") : "",
+				);
+			}
+			setLinkOpen(next);
+		},
+		[editor],
+	);
+
+	const handleApplyLink = useCallback(() => {
+		if (!editor) return;
+		const href = normalizeUrl(linkValue);
+		if (!href) {
+			setLinkOpen(false);
+			return;
+		}
+		const chain = editor.chain().focus();
+		if (editor.isActive("link")) {
+			// Caret inside an existing link — update the whole mark range.
+			chain.extendMarkRange("link").setMark("link", { href }).run();
+		} else if (!editor.state.selection.empty) {
+			// Apply to the current selection.
+			chain.setMark("link", { href }).run();
+		} else {
+			// No selection — insert the URL itself as the linked text.
+			chain
+				.insertContent({
+					type: "text",
+					text: linkValue.trim() || href,
+					marks: [{ type: "link", attrs: { href } }],
+				})
+				.run();
+		}
+		setLinkOpen(false);
+	}, [editor, linkValue]);
+
+	const handleRemoveLink = useCallback(() => {
+		if (!editor) return;
+		editor.chain().focus().extendMarkRange("link").unsetMark("link").run();
+		setLinkOpen(false);
+	}, [editor]);
+
+	const handleLinkKeyDown = useCallback(
+		(event: KeyboardEvent<HTMLInputElement>) => {
+			if (event.key === "Enter") {
+				event.preventDefault();
+				handleApplyLink();
+			}
+		},
+		[handleApplyLink],
+	);
 
 	const handleToggleBulletList = useCallback(() => {
 		if (!editor) return;
@@ -338,6 +409,83 @@ export function FormattingToolbar({ className }: { className?: string }) {
 				>
 					<Code2 className="size-3.5" aria-hidden />
 				</Toolbar.Button>
+
+				<Popover.Root
+					open={linkOpen}
+					onOpenChange={handleLinkOpenChange}
+					openOnHover={false}
+				>
+					<Toolbar.Button
+						render={<Popover.Trigger />}
+						nativeButton={false}
+						className={clsx(
+							iconButtonClass,
+							(linkOpen || formatState.isLink) && iconButtonActiveClass,
+						)}
+						onMouseDown={suppressMouseDown}
+						aria-label="Link"
+						data-attr="markdown-format-link"
+					>
+						<LinkIcon className="size-3.5" aria-hidden />
+					</Toolbar.Button>
+					<Popover.Portal>
+						<Popover.Positioner
+							className="z-50 outline-none"
+							side="bottom"
+							align="start"
+							sideOffset={6}
+						>
+							<Popover.Popup
+								initialFocus={linkInputRef}
+								className="w-[19rem] origin-[var(--transform-origin)] rounded-[8px] border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)] p-1.5 shadow-lg transition-[transform,opacity] duration-150 data-[starting-style]:scale-95 data-[starting-style]:opacity-0"
+								data-attr="markdown-link-popover"
+							>
+								<div className="flex h-8 items-center gap-1.5 rounded-[7px] border border-[var(--color-border-subtle)] bg-[var(--color-bg-panel-muted)] px-2 text-[var(--color-text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition-[background-color,border-color,box-shadow] duration-100 focus-within:border-[var(--color-border-brand-soft)] focus-within:bg-[var(--color-bg-panel)] focus-within:shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_0_0_2px_var(--color-bg-brand-soft)]">
+									<LinkIcon
+										className="size-3.5 shrink-0 text-[var(--color-icon-tertiary)]"
+										aria-hidden
+									/>
+									<input
+										ref={linkInputRef}
+										value={linkValue}
+										onChange={(event) => setLinkValue(event.target.value)}
+										onKeyDown={handleLinkKeyDown}
+										aria-label="Link URL"
+										placeholder="Paste a link..."
+										className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[12.5px] font-medium text-[var(--color-text-primary)] outline-none placeholder:font-normal placeholder:text-[var(--color-text-tertiary)]"
+										data-attr="markdown-link-input"
+									/>
+								</div>
+								<div className="mt-1.5 flex items-center gap-1">
+									{linkEditing && (
+										<button
+											type="button"
+											onClick={handleRemoveLink}
+											className="inline-flex h-7 items-center gap-1 rounded-[7px] px-2 text-[12.5px] font-medium text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-status-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
+											data-attr="markdown-link-remove"
+										>
+											<Unlink className="size-3.5" aria-hidden />
+											Remove
+										</button>
+									)}
+									<Popover.Close className="ml-auto inline-flex h-7 items-center gap-1 rounded-[7px] px-2.5 text-[12.5px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]">
+										<X className="size-3.5" aria-hidden />
+										Cancel
+									</Popover.Close>
+									<button
+										type="button"
+										onClick={handleApplyLink}
+										className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-[var(--color-bg-action-primary)] px-3 text-[12.5px] font-semibold text-[var(--color-text-on-action-primary)] shadow-[0_1px_2px_rgba(194,65,12,0.18)] transition-colors hover:bg-[var(--color-bg-action-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-bg-panel)]"
+										data-attr="markdown-link-apply"
+									>
+										<Check className="size-3.5" aria-hidden />
+										{linkEditing ? "Update" : "Add link"}
+									</button>
+								</div>
+							</Popover.Popup>
+						</Popover.Positioner>
+					</Popover.Portal>
+				</Popover.Root>
 
 				<ToolbarSeparator />
 

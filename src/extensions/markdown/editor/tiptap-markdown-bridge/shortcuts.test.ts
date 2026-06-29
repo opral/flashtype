@@ -133,6 +133,51 @@ describe("Markdown typing shortcuts (input rules)", () => {
 		expect(node.type.name).toBe("blockquote");
 	});
 
+	test("[label](url) → link mark with normalized href", () => {
+		const editor = createEditor();
+		typeText(editor, "[Flashtype](flashtype.dev)");
+		const md = buildMarkdownFromEditor(editor);
+		expect(md).toContain("[Flashtype](https://flashtype.dev)");
+	});
+
+	test("[label](https://...) → link keeps explicit scheme", () => {
+		const editor = createEditor();
+		typeText(editor, "[docs](https://example.com/a)");
+		const md = buildMarkdownFromEditor(editor);
+		expect(md).toContain("[docs](https://example.com/a)");
+	});
+
+	test("[label](./path) → link keeps dot-relative href", () => {
+		const editor = createEditor();
+		typeText(editor, "[intro](./intro.md)");
+		const md = buildMarkdownFromEditor(editor);
+		expect(md).toContain("[intro](./intro.md)");
+	});
+
+	test("[label](../path) → link keeps parent-relative href", () => {
+		const editor = createEditor();
+		typeText(editor, "[page](../page)");
+		const md = buildMarkdownFromEditor(editor);
+		expect(md).toContain("[page](../page)");
+	});
+
+	test("link mark does not extend to text typed after the closing paren", () => {
+		const editor = createEditor();
+		typeText(editor, "[site](example.com) tail");
+		// Walk the paragraph's inline content; the trailing text must be unlinked.
+		const paragraph = editor.state.doc.child(0);
+		let linkedText = "";
+		let plainText = "";
+		paragraph.descendants((node: any) => {
+			if (!node.isText) return;
+			const hasLink = node.marks.some((m: any) => m.type.name === "link");
+			if (hasLink) linkedText += node.text;
+			else plainText += node.text;
+		});
+		expect(linkedText).toBe("site");
+		expect(plainText).toContain("tail");
+	});
+
 	test.each([
 		["[] ", false],
 		["[ ] ", false],
