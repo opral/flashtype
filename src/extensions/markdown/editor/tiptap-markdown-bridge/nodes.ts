@@ -1,4 +1,5 @@
 import { Node, Mark, type Extensions, type CommandProps } from "@tiptap/core";
+import { createCodeBlockNodeView } from "./mermaid-code-block-node-view";
 
 export type MarkdownImageSrcResolver = (src: string) => string;
 
@@ -239,6 +240,16 @@ export function markdownWcNodes(
 				const codeAttrs: any = diffAttrs(node);
 				if (lang) codeAttrs.class = `language-${lang}`;
 				return ["pre", ["code", codeAttrs, 0]];
+			},
+			addNodeView() {
+				return ({ node, editor, getPos }) =>
+					createCodeBlockNodeView({
+						node,
+						editor,
+						view: editor.view,
+						getPos,
+						diffAttrs: diffAttrs(node),
+					});
 			},
 		}),
 		// horizontal rule

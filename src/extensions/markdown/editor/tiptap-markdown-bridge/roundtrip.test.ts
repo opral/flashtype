@@ -683,6 +683,21 @@ describe("blocks", () => {
 		const output = roundtrip(input);
 		expect(canonicalAst(output)).toEqual(canonicalAst(input));
 	});
+
+	test("mermaid code block", () => {
+		const input: Ast = {
+			type: "root",
+			children: [
+				{
+					type: "code",
+					lang: "mermaid",
+					value: "graph TD\n  A --> B",
+				},
+			],
+		};
+		const output = roundtrip(input);
+		expect(canonicalAst(output)).toEqual(canonicalAst(input));
+	});
 });
 
 describe("inline", () => {
