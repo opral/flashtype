@@ -98,9 +98,19 @@ export type DesktopTerminalCreatePayload = {
 	};
 };
 
-export type DesktopTerminalCreateResult = {
-	id: string;
-};
+export type DesktopTerminalCreateResult =
+	| {
+			status: "created";
+			id: string;
+	  }
+	| {
+			status: "agentVersionError";
+			agent: "claude" | "codex";
+			requiredVersion: string;
+			detectedVersion?: string;
+			reason: "missing" | "unsupported" | "unparseable" | "failed" | "timeout";
+			output?: string;
+	  };
 
 export type DesktopTerminalDataEvent = {
 	id: string;
