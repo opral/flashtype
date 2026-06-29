@@ -146,6 +146,90 @@ async function createEditorFromFile(args: {
 	return editor;
 }
 
+test("clicking a rendered markdown link opens it externally", async () => {
+	const lix = await openLix();
+	const originalDesktop = window.flashtypeDesktop;
+	const openedUrls: string[] = [];
+	window.flashtypeDesktop = {
+		app: {
+			openExternal: async ({ url }: { url: string }) => {
+				openedUrls.push(url);
+				return { status: "opened" };
+			},
+		},
+	} as unknown as Window["flashtypeDesktop"];
+	const editor = createEditor({
+		lix,
+		initialMarkdown: "Read the [docs](https://example.com/docs).",
+		persistState: false,
+	});
+	const editorDom = editor.view.dom;
+	document.body.appendChild(editorDom);
+
+	try {
+		const link = editor.view.dom.querySelector("a");
+		expect(link).toBeInstanceOf(HTMLAnchorElement);
+
+		const clickEvent = new MouseEvent("click", {
+			bubbles: true,
+			cancelable: true,
+			button: 0,
+		});
+		clickEvent.preventDefault();
+		link?.dispatchEvent(clickEvent);
+
+		expect(clickEvent.defaultPrevented).toBe(true);
+		expect(openedUrls).toEqual(["https://example.com/docs"]);
+	} finally {
+		editor.destroy();
+		editorDom.remove();
+		window.flashtypeDesktop = originalDesktop;
+	}
+});
+
+test("clicking a relative or fragment markdown link does not open externally", async () => {
+	const lix = await openLix();
+	const originalDesktop = window.flashtypeDesktop;
+	const openedUrls: string[] = [];
+	window.flashtypeDesktop = {
+		app: {
+			openExternal: async ({ url }: { url: string }) => {
+				openedUrls.push(url);
+				return { status: "opened" };
+			},
+		},
+	} as unknown as Window["flashtypeDesktop"];
+	const editor = createEditor({
+		lix,
+		initialMarkdown:
+			"Read the [guide](./guide.md) or jump to [intro](#intro).",
+		persistState: false,
+	});
+	const editorDom = editor.view.dom;
+	document.body.appendChild(editorDom);
+
+	try {
+		const links = Array.from(editor.view.dom.querySelectorAll("a"));
+		expect(links).toHaveLength(2);
+
+		for (const link of links) {
+			const clickEvent = new MouseEvent("click", {
+				bubbles: true,
+				cancelable: true,
+				button: 0,
+			});
+			link.dispatchEvent(clickEvent);
+			expect(clickEvent.defaultPrevented).toBe(false);
+		}
+
+		expect(openedUrls).toEqual([]);
+	} finally {
+		editor.destroy();
+		editorDom.remove();
+		window.flashtypeDesktop = originalDesktop;
+	}
+});
+
 // TipTap + Lix persistence paste tests (no React)
 test("paste at start inserts before existing content (TipTap + Lix)", async () => {
 	const lix = await openLix({

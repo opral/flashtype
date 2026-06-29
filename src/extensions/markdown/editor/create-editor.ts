@@ -62,6 +62,49 @@ function isSelectionNavigationKey(event: KeyboardEvent): boolean {
 	);
 }
 
+function externalLinkUrlFromClick(event: MouseEvent): string | null {
+	if (event.button !== 0) {
+		return null;
+	}
+	const target =
+		event.target instanceof Element
+			? event.target.closest("a[href]")
+			: null;
+	if (!(target instanceof HTMLAnchorElement)) {
+		return null;
+	}
+	const href = target.getAttribute("href")?.trim();
+	if (!href) {
+		return null;
+	}
+	const protocolMatch = href.match(/^([a-zA-Z][a-zA-Z\d+.-]*):/);
+	const protocol = protocolMatch?.[1]?.toLowerCase();
+	if (protocol === "http" || protocol === "https" || protocol === "mailto") {
+		return target.href;
+	}
+	return null;
+}
+
+function openExternalLink(url: string): void {
+	const openExternal = window.flashtypeDesktop?.app?.openExternal;
+	if (openExternal) {
+		void openExternal({ url });
+		return;
+	}
+	window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function handleExternalLinkClick(event: MouseEvent): void {
+	const url = externalLinkUrlFromClick(event);
+	if (!url) {
+		return;
+	}
+	event.preventDefault();
+	event.stopPropagation();
+	event.stopImmediatePropagation();
+	openExternalLink(url);
+}
+
 function ensureTopLevelIds(children: any[]): void {
 	const seen = new Set<string>();
 	for (const node of children) {
@@ -110,6 +153,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 	let destroyed = false;
 	let editorInstance: Editor | null = null;
 	let currentEditor: Editor | null = null;
+	let cleanupExternalLinkClick: (() => void) | null = null;
 	let lastPersistedMarkdown = normalizePersistedMarkdown(
 		initialMarkdown ?? serializeAst(ast as any),
 	);
@@ -207,6 +251,8 @@ export function createEditor(args: CreateEditorArgs): Editor {
 			scheduleRun();
 		},
 		onDestroy: () => {
+			cleanupExternalLinkClick?.();
+			cleanupExternalLinkClick = null;
 			persistQueued = false;
 			if (persistStateTimer) {
 				clearTimeout(persistStateTimer);
@@ -249,6 +295,15 @@ export function createEditor(args: CreateEditorArgs): Editor {
 			},
 		},
 	});
+	const editorDom = editorInstance.view.dom;
+	editorDom.addEventListener("click", handleExternalLinkClick, {
+		capture: true,
+	});
+	cleanupExternalLinkClick = () => {
+		editorDom.removeEventListener("click", handleExternalLinkClick, {
+			capture: true,
+		});
+	};
 	currentEditor = editorInstance;
 	return editorInstance;
 }
