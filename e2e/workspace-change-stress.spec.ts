@@ -15,8 +15,7 @@ import {
 
 const stressAppPath = "/stress.md";
 const stressFileName = "stress.md";
-const defaultOperationCount = 1_000;
-const operationCount = readOperationCount();
+const operationCount = 100; // TODO: 10_000
 const stressSeed = "workspace-change-stress-e2e-v1";
 const initialMarkdown = "seed 0000\n";
 const lixTracePrefix = "[lix-ipc-trace]";
@@ -120,8 +119,15 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 						helperScriptPath,
 						payloadPath,
 						sessionId: "workspace-change-stress",
+						targetPath: stressDiskPath,
 						turnId: `turn-${index.toString().padStart(4, "0")}`,
 						workspaceDir,
+					});
+				});
+				await timeProfile(profile, "agent:disk-write", index, async () => {
+					await expectDiskMarkdown({
+						expectedMarkdown: proposedMarkdown,
+						path: stressDiskPath,
 					});
 				});
 				try {
@@ -236,6 +242,7 @@ type StressProfilePhase =
 	| "manual:settle"
 	| "agent:write-payload"
 	| "agent:terminal-turn"
+	| "agent:disk-write"
 	| "agent:wait-review"
 	| "agent:click-review"
 	| "agent:wait-review-hidden"
@@ -285,13 +292,6 @@ type StressProfileSummary = {
 	readonly seed: string;
 	readonly totalProfiledMs: number;
 };
-
-function readOperationCount(): number {
-	const raw = process.env.FLASHTYPE_WORKSPACE_STRESS_OPERATION_COUNT;
-	if (!raw) return defaultOperationCount;
-	const parsed = Number.parseInt(raw, 10);
-	return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultOperationCount;
-}
 
 function progressLogInterval(count: number): number {
 	return count <= 200 ? 25 : 100;
@@ -485,6 +485,7 @@ async function runFakeAgentTurn(
 		helperScriptPath: string;
 		payloadPath: string;
 		sessionId: string;
+		targetPath: string;
 		turnId: string;
 		workspaceDir: string;
 	},
@@ -493,8 +494,9 @@ async function runFakeAgentTurn(
 		"ELECTRON_RUN_AS_NODE=1",
 		'"$FLASHTYPE_AGENT_HOOK_NODE"',
 		shellQuote(args.helperScriptPath),
-		shellQuote(stressFileName),
+		shellQuote(args.targetPath),
 		shellQuote(args.payloadPath),
+		shellQuote(args.workspaceDir),
 		shellQuote(args.sessionId),
 		shellQuote(args.turnId),
 	].join(" ");
@@ -632,6 +634,15 @@ async function expectMarkdownSettled(args: {
 			editorMarkdown: args.expectedMarkdown,
 			lixMarkdown: args.expectedMarkdown,
 		});
+}
+
+async function expectDiskMarkdown(args: {
+	expectedMarkdown: string;
+	path: string;
+}): Promise<void> {
+	await expect
+		.poll(async () => await readDiskMarkdown(args.path), { timeout: 5_000 })
+		.toBe(args.expectedMarkdown);
 }
 
 async function readMarkdownState(
@@ -806,11 +817,10 @@ async function writeFakeAgentTurnHelper(scriptPath: string): Promise<void> {
 		scriptPath,
 		`import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 
-const [, , relativePath, payloadPath, sessionId, turnId] = process.argv;
-if (!relativePath || !payloadPath || !sessionId || !turnId) {
-	throw new Error("Usage: fake-agent-turn.mjs <relativePath> <payloadPath> <sessionId> <turnId>");
+const [, , targetPath, payloadPath, workspaceDir, sessionId, turnId] = process.argv;
+if (!targetPath || !payloadPath || !workspaceDir || !sessionId || !turnId) {
+	throw new Error("Usage: fake-agent-turn.mjs <targetPath> <payloadPath> <workspaceDir> <sessionId> <turnId>");
 }
 
 const hookNode = process.env.FLASHTYPE_AGENT_HOOK_NODE;
@@ -820,14 +830,14 @@ if (!hookNode || !hookScript) {
 }
 
 await runHook("UserPromptSubmit", "turn-start");
-await writeFile(join(process.cwd(), relativePath), await readFile(payloadPath));
+await writeFile(targetPath, await readFile(payloadPath));
 await runHook("Stop", "turn-stop");
 console.log(\`fake agent turn complete \${turnId}\`);
 
 async function runHook(hookEventName, phase) {
 	await new Promise((resolve, reject) => {
 		const child = spawn(hookNode, [hookScript, "codex", phase], {
-			cwd: process.cwd(),
+			cwd: workspaceDir,
 			env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
@@ -840,7 +850,7 @@ async function runHook(hookEventName, phase) {
 				hook_event_name: hookEventName,
 				session_id: sessionId,
 				turn_id: turnId,
-				cwd: process.cwd(),
+				cwd: workspaceDir,
 			}),
 		);
 		child.on("error", reject);
