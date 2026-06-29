@@ -17,7 +17,9 @@ import type { FlashtypeUiState } from "./ui-state";
 import type { Lix } from "@/lib/lix-types";
 
 type DesktopMock = {
+	readonly emitCloseFile: () => Promise<void>;
 	readonly emitNewFile: () => Promise<void>;
+	readonly onCloseFile: ReturnType<typeof vi.fn>;
 	readonly onNewFile: ReturnType<typeof vi.fn>;
 	readonly setActiveFilePath: ReturnType<typeof vi.fn>;
 	readonly setOpenFilePaths: ReturnType<typeof vi.fn>;
@@ -430,6 +432,37 @@ describe("V2LayoutShell native New File", () => {
 	});
 });
 
+describe("V2LayoutShell native Close File", () => {
+	test("closes the active central document", async () => {
+		const desktop = installDesktopMock();
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(openFileState("file_active", "/active.md"))],
+		});
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_active",
+				path: "/active.md",
+				data: new TextEncoder().encode("# Active"),
+			})
+			.execute();
+
+		const utils = await renderShell(lix);
+		await screen.findByTestId("tiptap-editor");
+		await waitFor(() => expect(desktop.onCloseFile).toHaveBeenCalled());
+
+		await act(async () => {
+			await desktop.emitCloseFile();
+		});
+
+		await screen.findByTestId("central-panel-empty-state");
+		expect(screen.queryByTestId("tiptap-editor")).toBeNull();
+
+		utils.unmount();
+		await lix.close();
+	});
+});
+
 describe("V2LayoutShell active file sidebar highlight", () => {
 	test("highlights the active central file in the Files view", async () => {
 		const lix = await openLix({
@@ -679,31 +712,50 @@ async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
 }
 
 function installDesktopMock(): DesktopMock {
-	let listener: (() => void | Promise<void>) | null = null;
+	let newFileListener: (() => void | Promise<void>) | null = null;
+	let closeFileListener: (() => void | Promise<void>) | null = null;
 	const setActiveFilePath = vi.fn();
 	const setOpenFilePaths = vi.fn();
 	const onNewFile = vi.fn((nextListener: () => void | Promise<void>) => {
-		listener = nextListener;
+		newFileListener = nextListener;
 		return () => {
-			if (listener === nextListener) {
-				listener = null;
+			if (newFileListener === nextListener) {
+				newFileListener = null;
 			}
 		};
 	});
+	const onCloseFile = vi.fn(
+		(nextListener: () => void | Promise<void>) => {
+			closeFileListener = nextListener;
+			return () => {
+				if (closeFileListener === nextListener) {
+					closeFileListener = null;
+				}
+			};
+		},
+	);
 	window.flashtypeDesktop = {
 		workspace: {
+			onCloseFile,
 			onNewFile,
 			setActiveFilePath,
 			setOpenFilePaths,
 		},
 	} as unknown as Window["flashtypeDesktop"];
 	return {
+		emitCloseFile: async () => {
+			if (!closeFileListener) {
+				throw new Error("native Close File listener was not registered");
+			}
+			await closeFileListener();
+		},
 		emitNewFile: async () => {
-			if (!listener) {
+			if (!newFileListener) {
 				throw new Error("native New File listener was not registered");
 			}
-			await listener();
+			await newFileListener();
 		},
+		onCloseFile,
 		onNewFile,
 		setActiveFilePath,
 		setOpenFilePaths,

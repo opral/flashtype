@@ -227,6 +227,8 @@ export type DesktopWorkspaceApi = {
 	profile(): Promise<DesktopWorkspaceProfile | null>;
 	/** Fired when the native menu asks the workspace UI to start a new file. */
 	onNewFile(listener: () => void): () => void;
+	/** Fired when the native menu asks the workspace UI to close the active file. */
+	onCloseFile(listener: () => void): () => void;
 	/**
 	 * Opens a workspace. With a path (e.g. from a dropped folder) it adopts it
 	 * directly; without one it shows the native directory picker. Resolves to

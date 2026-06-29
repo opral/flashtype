@@ -2156,6 +2156,24 @@ function LayoutShellLoadedContent({
 		};
 	}, [handleNativeNewFile]);
 
+	const handleNativeCloseFile = useCallback(() => {
+		if (!activeCentralEntry?.instance) return;
+		if (typeof activeCentralEntry.state?.filePath !== "string") return;
+		handleCloseView({
+			panel: "central",
+			instance: activeCentralEntry.instance,
+			focus: true,
+		});
+	}, [activeCentralEntry, handleCloseView]);
+
+	useEffect(() => {
+		const unsubscribe =
+			window.flashtypeDesktop?.workspace.onCloseFile?.(handleNativeCloseFile);
+		return () => {
+			unsubscribe?.();
+		};
+	}, [handleNativeCloseFile]);
+
 	const activeCentralFileId =
 		activeMarkdownFileIdFromExtensionInstance(activeCentralEntry);
 

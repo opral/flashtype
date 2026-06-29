@@ -47,6 +47,13 @@ const workspace = {
 			ipcRenderer.off("workspace:newFile", wrapped);
 		};
 	},
+	onCloseFile: (listener) => {
+		const wrapped = () => listener();
+		ipcRenderer.on("workspace:closeFile", wrapped);
+		return () => {
+			ipcRenderer.off("workspace:closeFile", wrapped);
+		};
+	},
 	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
 	openInNewWindow: (payload) =>
 		ipcRenderer.invoke("workspace:openInNewWindow", payload),

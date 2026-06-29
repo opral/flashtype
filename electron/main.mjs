@@ -496,6 +496,24 @@ function requestNewFileFromApplicationMenu() {
 	window.webContents.send("workspace:newFile");
 }
 
+function requestCloseFileFromApplicationMenu() {
+	if (!canOpenWorkspaceWindows()) {
+		return;
+	}
+	const window = getWorkspaceWindowForFileAction();
+	if (!window || window.webContents.isDestroyed()) {
+		return;
+	}
+	if (!isHeadless) {
+		if (window.isMinimized()) {
+			window.restore();
+		}
+		window.show();
+		window.focus();
+	}
+	window.webContents.send("workspace:closeFile");
+}
+
 async function toggleTrackChangesFromApplicationMenu(trackChanges) {
 	const window = getWorkspaceWindowForFileAction();
 	if (!window || window.isDestroyed() || !getWorkspace(window)) {
@@ -1135,6 +1153,7 @@ function registerAppIpc() {
 		}
 		applyDockWindowChrome(window);
 		updateDockMenu();
+		installApplicationMenu();
 	});
 	ipcMain.handle("workspace:setOpenFilePaths", (event, payload) => {
 		const window = BrowserWindow.fromWebContents(event.sender);
@@ -1810,6 +1829,9 @@ function buildFileMenu() {
 	const trackingWorkspace = trackingWindow
 		? getWorkspace(trackingWindow)
 		: null;
+	const hasActiveDocument = trackingWindow
+		? activeFilePathsByWindowId.has(trackingWindow.id)
+		: false;
 	return {
 		label: "File",
 		submenu: [
@@ -1835,6 +1857,14 @@ function buildFileMenu() {
 				enabled: Boolean(getWorkspaceWindowForFileAction()),
 				click: () => {
 					requestNewFileFromApplicationMenu();
+				},
+			},
+			{
+				id: "close-file",
+				label: "Close File",
+				enabled: hasActiveDocument,
+				click: () => {
+					requestCloseFileFromApplicationMenu();
 				},
 			},
 			{
