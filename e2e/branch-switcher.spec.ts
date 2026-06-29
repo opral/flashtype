@@ -111,30 +111,12 @@ async function createBranchFromUi(
 	branchName: string,
 ): Promise<void> {
 	await openBranchMenu(page);
-	await page.evaluate((nextBranchName) => {
-		(window as any).__flashtypeBranchPromptCalls = [];
-		window.prompt = (message?: string, defaultValue?: string) => {
-			(window as any).__flashtypeBranchPromptCalls.push({
-				message,
-				defaultValue,
-			});
-			return nextBranchName;
-		};
-	}, branchName);
 	await page.getByRole("menuitem", { name: "Create branch" }).click();
-	await expect
-		.poll(
-			async () =>
-				await page.evaluate(
-					() => (window as any).__flashtypeBranchPromptCalls?.length ?? 0,
-				),
-		)
-		.toBe(1);
-	await expect(
-		page.evaluate(() => (window as any).__flashtypeBranchPromptCalls),
-	).resolves.toEqual([
-		{ message: "Name the new branch", defaultValue: "draft-2" },
-	]);
+	const input = page.getByRole("textbox", { name: "Branch name" });
+	await expect(input).toBeVisible();
+	await expect(input).toHaveValue("draft-2");
+	await input.fill(branchName);
+	await input.press("Enter");
 }
 
 async function switchBranchFromUi(

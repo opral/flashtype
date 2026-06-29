@@ -126,8 +126,6 @@ describe("BranchSwitcher", () => {
 
 	test("creates a branch from the menu and switches to it", async () => {
 		const branchName = `feature-${Math.random().toString(36).slice(2, 7)}`;
-		const promptSpy = vi.fn().mockReturnValue(` ${branchName} `);
-		vi.stubGlobal("prompt", promptSpy);
 
 		await renderWithProviders();
 		await openBranchMenu();
@@ -139,7 +137,13 @@ describe("BranchSwitcher", () => {
 			fireEvent.click(createItem);
 		});
 
-		expect(promptSpy).toHaveBeenCalledWith("Name the new branch", "draft-2");
+		const input = await screen.findByRole("textbox", { name: "Branch name" });
+		expect(input).toHaveValue("draft-2");
+		await act(async () => {
+			fireEvent.input(input, { target: { value: ` ${branchName} ` } });
+			fireEvent.keyDown(input, { key: "Enter" });
+		});
+
 		await waitFor(() => {
 			expect(
 				screen.getByRole("button", { name: "Select branch" }),
@@ -162,9 +166,6 @@ describe("BranchSwitcher", () => {
 	});
 
 	test("uses the suggested branch name when create prompt is blank", async () => {
-		const promptSpy = vi.fn().mockReturnValue("   ");
-		vi.stubGlobal("prompt", promptSpy);
-
 		await renderWithProviders();
 		await openBranchMenu();
 
@@ -175,7 +176,13 @@ describe("BranchSwitcher", () => {
 			fireEvent.click(createItem);
 		});
 
-		expect(promptSpy).toHaveBeenCalledWith("Name the new branch", "draft-2");
+		const input = await screen.findByRole("textbox", { name: "Branch name" });
+		expect(input).toHaveValue("draft-2");
+		await act(async () => {
+			fireEvent.input(input, { target: { value: "   " } });
+			fireEvent.keyDown(input, { key: "Enter" });
+		});
+
 		await waitFor(() => {
 			expect(
 				screen.getByRole("button", { name: "Select branch" }),
@@ -195,9 +202,7 @@ describe("BranchSwitcher", () => {
 		expect(active.value).toBe(created.id);
 	});
 
-	test("does not create a branch when create prompt is cancelled", async () => {
-		const promptSpy = vi.fn().mockReturnValue(null);
-		vi.stubGlobal("prompt", promptSpy);
+	test("does not create a branch when inline creation is cancelled", async () => {
 		const initialCount = await branchCount();
 
 		await renderWithProviders();
@@ -210,8 +215,15 @@ describe("BranchSwitcher", () => {
 			fireEvent.click(createItem);
 		});
 
-		expect(promptSpy).toHaveBeenCalledWith("Name the new branch", "draft-2");
+		const input = await screen.findByRole("textbox", { name: "Branch name" });
+		await act(async () => {
+			fireEvent.keyDown(input, { key: "Escape" });
+		});
+
 		expect(await branchCount()).toBe(initialCount);
+		expect(
+			screen.queryByRole("textbox", { name: "Branch name" }),
+		).not.toBeInTheDocument();
 		expect(
 			screen.getByRole("button", { name: "Select branch" }),
 		).toHaveTextContent("main");

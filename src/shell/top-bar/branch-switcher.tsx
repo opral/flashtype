@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { qb, sql } from "@/lib/lix-kysely";
 import { useLix, useQuery, useQueryTakeFirstOrThrow } from "@/lib/lix-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
 	PenLine,
 	Plus,
 	Trash2,
+	X,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -47,7 +48,10 @@ export function BranchSwitcher({ disabled = false }: BranchSwitcherProps = {}) {
 	if (disabled) {
 		return <DisabledBranchSwitcher />;
 	}
+	return <EnabledBranchSwitcher />;
+}
 
+function EnabledBranchSwitcher() {
 	const lix = useLix();
 	const branches = useQuery<BranchRow>((lix) =>
 		qb(lix)
@@ -122,6 +126,26 @@ function BranchSwitcherContent({
 
 	const [pendingAction, setPendingAction] = useState<string | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
+	const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
+	const [createBranchName, setCreateBranchName] = useState("");
+	const createInputRef = useRef<HTMLInputElement | null>(null);
+	const createSuggestion = `draft-${branches.length + 1}`;
+
+	useEffect(() => {
+		if (!isCreateFormOpen) return;
+		const frame = window.requestAnimationFrame(() => {
+			createInputRef.current?.focus();
+			createInputRef.current?.select();
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, [isCreateFormOpen]);
+
+	const handleMenuOpenChange = useCallback((open: boolean) => {
+		setMenuOpen(open);
+		if (!open) {
+			setIsCreateFormOpen(false);
+		}
+	}, []);
 
 	const handleSwitch = useCallback(
 		async (branchId: string) => {
@@ -138,24 +162,33 @@ function BranchSwitcherContent({
 		[lix, activeBranchRow.id],
 	);
 
+	const handleStartCreateBranch = useCallback(() => {
+		setCreateBranchName(createSuggestion);
+		setIsCreateFormOpen(true);
+	}, [createSuggestion]);
+
 	const handleCreateBranch = useCallback(async () => {
 		if (!lix) return;
-		const suggestion = `draft-${branches.length + 1}`;
-		const entered = window.prompt("Name the new branch", suggestion);
-		if (entered === null) return;
-		const trimmed = entered.trim();
+		const trimmed = createBranchName.trim();
 		setPendingAction("create");
 		try {
 			const created = await lix.createBranch({
-				name: trimmed.length > 0 ? trimmed : suggestion,
+				name: trimmed.length > 0 ? trimmed : createSuggestion,
 			});
 			await lix.switchBranch({ branchId: created.id });
+			setIsCreateFormOpen(false);
+			setMenuOpen(false);
 		} catch (error) {
 			console.error("Failed to create branch", error);
 		} finally {
 			setPendingAction(null);
 		}
-	}, [lix, branches.length]);
+	}, [lix, createBranchName, createSuggestion]);
+
+	const handleCancelCreateBranch = useCallback(() => {
+		setIsCreateFormOpen(false);
+		setCreateBranchName("");
+	}, []);
 
 	const handleRenameBranch = useCallback(
 		async (branchId: string, currentName: string) => {
@@ -214,7 +247,7 @@ function BranchSwitcherContent({
 	const isBusy = pendingAction !== null;
 
 	return (
-		<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+		<DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
 			<DropdownMenuTrigger asChild>
 				<Button
 					type="button"
@@ -336,13 +369,66 @@ function BranchSwitcherContent({
 					})
 				)}
 				<DropdownMenuSeparator />
-				<DropdownMenuItem
-					onSelect={handleCreateBranch}
-					className="flex items-center gap-2 px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
-				>
-					<Plus className="h-3 w-3" />
-					<span>Create branch</span>
-				</DropdownMenuItem>
+				{isCreateFormOpen ? (
+					<div
+						className="flex items-center gap-1 px-2 py-1.5"
+						onKeyDown={(event) => {
+							event.stopPropagation();
+						}}
+					>
+						<input
+							ref={createInputRef}
+							aria-label="Branch name"
+							className="h-6 min-w-0 flex-1 rounded border border-[var(--color-border-panel)] bg-transparent px-1.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-icon-brand)]"
+							value={createBranchName}
+							disabled={isBusy}
+							onChange={(event) => {
+								setCreateBranchName(event.currentTarget.value);
+							}}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") {
+									event.preventDefault();
+									void handleCreateBranch();
+								} else if (event.key === "Escape") {
+									event.preventDefault();
+									handleCancelCreateBranch();
+								}
+							}}
+						/>
+						<button
+							type="button"
+							aria-label="Create branch"
+							data-attr="branch-create-submit"
+							className="flex h-6 w-6 items-center justify-center rounded text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+							disabled={isBusy}
+							onClick={() => {
+								void handleCreateBranch();
+							}}
+						>
+							<Check className="h-3.5 w-3.5" />
+						</button>
+						<button
+							type="button"
+							aria-label="Cancel branch creation"
+							className="flex h-6 w-6 items-center justify-center rounded text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+							disabled={isBusy}
+							onClick={handleCancelCreateBranch}
+						>
+							<X className="h-3.5 w-3.5" />
+						</button>
+					</div>
+				) : (
+					<DropdownMenuItem
+						onSelect={(event) => {
+							event.preventDefault();
+							handleStartCreateBranch();
+						}}
+						className="flex items-center gap-2 px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
+					>
+						<Plus className="h-3 w-3" />
+						<span>Create branch</span>
+					</DropdownMenuItem>
+				)}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
