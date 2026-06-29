@@ -6,13 +6,38 @@ import { astToTiptapDoc } from "./mdwc-to-tiptap";
 import { parseMarkdown, serializeAst } from "../markdown";
 import { tiptapDocToAst } from "./tiptap-to-mdwc";
 
-vi.mock("./mermaid-render", () => ({
-	renderMermaidDiagram: vi.fn(async (_source: string, container: HTMLElement) => {
-		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-		container.replaceChildren(svg);
-	}),
-	resetMermaidForTests: vi.fn(),
-}));
+const mermaidMock = vi.hoisted(() => {
+	let theme: "dark" | "default" = "default";
+	const themeListeners = new Set<() => void>();
+
+	return {
+		renderMermaidDiagram: vi.fn(async (_source: string, container: HTMLElement) => {
+			const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+			container.replaceChildren(svg);
+		}),
+		resetMermaidForTests: vi.fn(),
+		getMermaidRenderTheme: vi.fn(() => theme),
+		onMermaidThemeChange: vi.fn((listener: () => void) => {
+			themeListeners.add(listener);
+			return () => {
+				themeListeners.delete(listener);
+			};
+		}),
+		setTheme(next: "dark" | "default") {
+			theme = next;
+			for (const listener of themeListeners) {
+				listener();
+			}
+		},
+		reset() {
+			theme = "default";
+			themeListeners.clear();
+			mermaidMock.renderMermaidDiagram.mockClear();
+		},
+	};
+});
+
+vi.mock("./mermaid-render", () => mermaidMock);
 
 const FLOWCHART = [
 	"graph TD",
@@ -46,6 +71,7 @@ describe("mermaid code blocks", () => {
 	});
 
 	test("shows a preview container when the editor is blurred", async () => {
+		mermaidMock.reset();
 		const ast = parseMarkdown(`\`\`\`mermaid\n${FLOWCHART}\n\`\`\``);
 		const editor = new Editor({
 			extensions: MarkdownWc(),
@@ -61,7 +87,63 @@ describe("mermaid code blocks", () => {
 		editor.commands.blur();
 		expect(block?.getAttribute("data-editing")).toBe("false");
 
-		await waitFor(() => {
+		await vi.waitFor(() => {
+			expect(
+				editor.view.dom.querySelector(".markdown-mermaid-preview svg"),
+			).not.toBeNull();
+		});
+
+		editor.destroy();
+	});
+
+	test("re-renders when the app theme changes", async () => {
+		mermaidMock.reset();
+		const ast = parseMarkdown(`\`\`\`mermaid\n${FLOWCHART}\n\`\`\``);
+		const editor = new Editor({
+			extensions: MarkdownWc(),
+			content: astToTiptapDoc(ast),
+		});
+
+		editor.commands.blur();
+		await vi.waitFor(() => {
+			expect(mermaidMock.renderMermaidDiagram).toHaveBeenCalledTimes(1);
+		});
+
+		mermaidMock.setTheme("dark");
+		await vi.waitFor(() => {
+			expect(mermaidMock.renderMermaidDiagram).toHaveBeenCalledTimes(2);
+		});
+
+		editor.destroy();
+	});
+
+	test("re-renders after a failed preview when the diagram source is unchanged", async () => {
+		mermaidMock.reset();
+		mermaidMock.renderMermaidDiagram
+			.mockRejectedValueOnce(new Error("parse error"))
+			.mockImplementation(async (_source: string, container: HTMLElement) => {
+				const svg = document.createElementNS(
+					"http://www.w3.org/2000/svg",
+					"svg",
+				);
+				container.replaceChildren(svg);
+			});
+
+		const ast = parseMarkdown(`\`\`\`mermaid\n${FLOWCHART}\n\`\`\``);
+		const editor = new Editor({
+			extensions: MarkdownWc(),
+			content: astToTiptapDoc(ast),
+		});
+
+		editor.commands.blur();
+		await vi.waitFor(() => {
+			expect(
+				editor.view.dom.querySelector(".markdown-mermaid-error")?.textContent,
+			).toContain("parse error");
+		});
+
+		mermaidMock.setTheme("dark");
+		await vi.waitFor(() => {
 			expect(
 				editor.view.dom.querySelector(".markdown-mermaid-preview svg"),
 			).not.toBeNull();
@@ -83,26 +165,3 @@ describe("mermaid code blocks", () => {
 		editor.destroy();
 	});
 });
-
-function waitFor(
-	assertion: () => void,
-	timeoutMs = 5000,
-	intervalMs = 25,
-): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const started = Date.now();
-		const tick = () => {
-			try {
-				assertion();
-				resolve();
-			} catch (error) {
-				if (Date.now() - started >= timeoutMs) {
-					reject(error);
-					return;
-				}
-				window.setTimeout(tick, intervalMs);
-			}
-		};
-		tick();
-	});
-}

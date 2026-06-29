@@ -1,9 +1,14 @@
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorView, NodeView } from "@tiptap/pm/view";
-import { renderMermaidDiagram } from "./mermaid-render";
+import {
+	getMermaidRenderTheme,
+	onMermaidThemeChange,
+	renderMermaidDiagram,
+} from "./mermaid-render";
 
 type DiffAttrs = Record<string, string>;
+type MermaidTheme = ReturnType<typeof getMermaidRenderTheme>;
 
 export function createCodeBlockNodeView(options: {
 	readonly node: ProseMirrorNode;
@@ -83,8 +88,10 @@ function createMermaidCodeBlockNodeView(options: {
 	dom.appendChild(pre);
 
 	let lastRenderedSource = "";
+	let lastRenderedTheme: MermaidTheme | null = null;
 	let renderDebounceTimer: number | null = null;
 	let renderInFlight = false;
+	let renderScheduledAfterFlight = false;
 	let destroyed = false;
 	let showingSource =
 		editor.isFocused && isNodeSelected(view, getPos, currentNode);
@@ -93,8 +100,20 @@ function createMermaidCodeBlockNodeView(options: {
 		return code.textContent || currentNode.textContent;
 	}
 
+	function previewIsCurrent(source: string): boolean {
+		return (
+			source === lastRenderedSource &&
+			lastRenderedTheme === getMermaidRenderTheme() &&
+			preview.querySelector("svg") !== null
+		);
+	}
+
 	function scheduleRenderPreview(): void {
 		if (showingSource) return;
+		if (renderInFlight) {
+			renderScheduledAfterFlight = true;
+			return;
+		}
 		if (renderDebounceTimer !== null) {
 			window.clearTimeout(renderDebounceTimer);
 		}
@@ -107,25 +126,29 @@ function createMermaidCodeBlockNodeView(options: {
 	function setViewMode(editing: boolean): void {
 		showingSource = editing;
 		dom.dataset.editing = editing ? "true" : "false";
-		preview.hidden = editing;
 		error.hidden = editing || error.textContent === "";
-		pre.hidden = !editing;
 		if (!editing) {
 			scheduleRenderPreview();
 		}
 	}
 
 	async function renderPreview(): Promise<void> {
-		if (destroyed || showingSource || renderInFlight) return;
+		if (destroyed || showingSource) return;
+		if (renderInFlight) {
+			renderScheduledAfterFlight = true;
+			return;
+		}
 
 		const source = getSourceText();
-		if (source === lastRenderedSource && preview.querySelector("svg")) {
+		if (previewIsCurrent(source)) {
 			return;
 		}
 		if (!source.trim()) {
 			preview.replaceChildren();
 			error.hidden = true;
 			error.textContent = "";
+			lastRenderedSource = "";
+			lastRenderedTheme = null;
 			return;
 		}
 
@@ -136,6 +159,7 @@ function createMermaidCodeBlockNodeView(options: {
 			error.hidden = true;
 			error.textContent = "";
 			lastRenderedSource = source;
+			lastRenderedTheme = getMermaidRenderTheme();
 		} catch (cause) {
 			if (destroyed || showingSource) return;
 			preview.replaceChildren();
@@ -143,6 +167,10 @@ function createMermaidCodeBlockNodeView(options: {
 			error.textContent = formatMermaidError(cause);
 		} finally {
 			renderInFlight = false;
+			if (renderScheduledAfterFlight) {
+				renderScheduledAfterFlight = false;
+				scheduleRenderPreview();
+			}
 		}
 	}
 
@@ -158,6 +186,11 @@ function createMermaidCodeBlockNodeView(options: {
 	editor.on("selectionUpdate", syncViewMode);
 	editor.on("blur", syncViewMode);
 
+	const unsubscribeThemeChange = onMermaidThemeChange(() => {
+		if (destroyed || showingSource) return;
+		scheduleRenderPreview();
+	});
+
 	return {
 		dom,
 		contentDOM: code,
@@ -166,7 +199,6 @@ function createMermaidCodeBlockNodeView(options: {
 			if (!(target instanceof Node)) {
 				return true;
 			}
-			// ProseMirror should only react to edits inside the source code element.
 			return !code.contains(target);
 		},
 		update(updatedNode) {
@@ -182,7 +214,7 @@ function createMermaidCodeBlockNodeView(options: {
 				setViewMode(selected);
 			} else if (
 				!selected &&
-				updatedNode.textContent !== lastRenderedSource
+				!previewIsCurrent(updatedNode.textContent)
 			) {
 				scheduleRenderPreview();
 			}
@@ -196,6 +228,7 @@ function createMermaidCodeBlockNodeView(options: {
 		},
 		destroy() {
 			destroyed = true;
+			unsubscribeThemeChange();
 			if (renderDebounceTimer !== null) {
 				window.clearTimeout(renderDebounceTimer);
 				renderDebounceTimer = null;
