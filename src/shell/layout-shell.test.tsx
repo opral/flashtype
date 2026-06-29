@@ -15,12 +15,15 @@ import type { WorkspaceContext } from "@/extension-runtime/types";
 import { resolveLixFileForOpen, V2LayoutShell } from "./layout-shell";
 import type { FlashtypeUiState } from "./ui-state";
 import type { Lix } from "@/lib/lix-types";
+import { readCheckpointCommitIds } from "./checkpoints";
 
 type DesktopMock = {
 	readonly emitCloseFile: () => Promise<void>;
 	readonly emitNewFile: () => Promise<void>;
+	readonly emitNewCheckpoint: () => Promise<void>;
 	readonly onCloseFile: ReturnType<typeof vi.fn>;
 	readonly onNewFile: ReturnType<typeof vi.fn>;
+	readonly onNewCheckpoint: ReturnType<typeof vi.fn>;
 	readonly setActiveFilePath: ReturnType<typeof vi.fn>;
 	readonly setOpenFilePaths: ReturnType<typeof vi.fn>;
 };
@@ -550,6 +553,29 @@ describe("V2LayoutShell central file views", () => {
 	});
 });
 
+describe("V2LayoutShell native New Checkpoint", () => {
+	test("appends the synced active commit id to branch-scoped checkpoints", async () => {
+		const desktop = installDesktopMock();
+		const lix = await openLix();
+		const syncDiskToLix = vi.spyOn(lix, "syncDiskToLix").mockResolvedValue();
+		const commitId = await activeCommitId(lix);
+
+		const utils = await renderShell(lix);
+		await waitFor(() => expect(desktop.onNewCheckpoint).toHaveBeenCalled());
+
+		await act(async () => {
+			await desktop.emitNewCheckpoint();
+			await desktop.emitNewCheckpoint();
+		});
+
+		expect(syncDiskToLix).toHaveBeenCalledTimes(2);
+		expect(await readCheckpointCommitIds(lix)).toEqual([commitId, commitId]);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+});
+
 describe("V2LayoutShell agent review auto-open", () => {
 	test("returns current active file context from turn-start hooks", async () => {
 		const desktop = installAgentHooksDesktopMock();
@@ -714,6 +740,7 @@ async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
 function installDesktopMock(): DesktopMock {
 	let newFileListener: (() => void | Promise<void>) | null = null;
 	let closeFileListener: (() => void | Promise<void>) | null = null;
+	let newCheckpointListener: (() => void | Promise<void>) | null = null;
 	const setActiveFilePath = vi.fn();
 	const setOpenFilePaths = vi.fn();
 	const onNewFile = vi.fn((nextListener: () => void | Promise<void>) => {
@@ -721,6 +748,14 @@ function installDesktopMock(): DesktopMock {
 		return () => {
 			if (newFileListener === nextListener) {
 				newFileListener = null;
+			}
+		};
+	});
+	const onNewCheckpoint = vi.fn((nextListener: () => void | Promise<void>) => {
+		newCheckpointListener = nextListener;
+		return () => {
+			if (newCheckpointListener === nextListener) {
+				newCheckpointListener = null;
 			}
 		};
 	});
@@ -738,6 +773,7 @@ function installDesktopMock(): DesktopMock {
 		workspace: {
 			onCloseFile,
 			onNewFile,
+			onNewCheckpoint,
 			setActiveFilePath,
 			setOpenFilePaths,
 		},
@@ -755,8 +791,15 @@ function installDesktopMock(): DesktopMock {
 			}
 			await newFileListener();
 		},
+		emitNewCheckpoint: async () => {
+			if (!newCheckpointListener) {
+				throw new Error("native New Checkpoint listener was not registered");
+			}
+			await newCheckpointListener();
+		},
 		onCloseFile,
 		onNewFile,
+		onNewCheckpoint,
 		setActiveFilePath,
 		setOpenFilePaths,
 	};
@@ -974,6 +1017,17 @@ async function findFilePath(
 			.where("path", "=", path)
 			.executeTakeFirst()
 	)?.path;
+}
+
+async function activeCommitId(lix: Lix): Promise<string> {
+	const result = await lix.execute(
+		"SELECT lix_active_branch_commit_id() AS commit_id",
+	);
+	const commitId = result.rows[0]?.get("commit_id");
+	if (typeof commitId !== "string") {
+		throw new Error("Missing active commit id");
+	}
+	return commitId;
 }
 
 async function writeReviewFile(

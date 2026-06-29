@@ -188,6 +188,44 @@ describe("getExternalWriteReview", () => {
 		}
 	});
 
+	test("stores agent turn ranges on the active branch", async () => {
+		const lix = await openLix();
+		try {
+			const mainBranchId = await lix.activeBranchId();
+			const draftBranch = await lix.createBranch({ name: "Draft" });
+			const mainRange = agentRange({
+				id: "range-main",
+				beforeCommitId: "commit-main-before",
+				afterCommitId: "commit-main-after",
+			});
+			const draftRange = agentRange({
+				id: "range-draft",
+				beforeCommitId: "commit-draft-before",
+				afterCommitId: "commit-draft-after",
+			});
+
+			await appendAgentTurnCommitRange(lix, mainRange);
+			expect(
+				(await readAgentTurnCommitRanges(lix)).map((range) => range.id),
+			).toEqual(["range-main"]);
+
+			await lix.switchBranch({ branchId: draftBranch.id });
+			expect(await readAgentTurnCommitRanges(lix)).toEqual([]);
+
+			await appendAgentTurnCommitRange(lix, draftRange);
+			expect(
+				(await readAgentTurnCommitRanges(lix)).map((range) => range.id),
+			).toEqual(["range-draft"]);
+
+			await lix.switchBranch({ branchId: mainBranchId });
+			expect(
+				(await readAgentTurnCommitRanges(lix)).map((range) => range.id),
+			).toEqual(["range-main"]);
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("persists cleared files in the agent turn range", async () => {
 		const lix = await openLix();
 		try {

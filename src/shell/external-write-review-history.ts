@@ -64,12 +64,20 @@ export function useExternalWriteReview(args: {
 	readonly path?: string | null;
 }): ExternalWriteReview | null {
 	const lix = useLix();
+	const activeBranch = useQueryTakeFirst<{ value: string }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value")
+			.where("key", "=", "lix_workspace_branch_id")
+			.select(["value"]),
+	);
+	const activeBranchId =
+		typeof activeBranch?.value === "string" ? activeBranch.value : "";
 	const rangeRow = useQueryTakeFirst<{ value: unknown }>((lix) =>
 		qb(lix)
 			.selectFrom("lix_key_value_by_branch")
 			.select("value")
 			.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
-			.where("lixcol_branch_id", "=", "global")
+			.where("lixcol_branch_id", "=", activeBranchId)
 			.limit(1),
 	);
 	const ranges = useMemo(

@@ -4,7 +4,6 @@ import { qb } from "@/lib/lix-kysely";
 export const AGENT_TURN_COMMIT_RANGE_KEY =
 	"flashtype_agent_turn_commit_range" as const;
 
-const GLOBAL_BRANCH_ID = "global";
 const agentTurnCommitRangeMutationQueues = new WeakMap<Lix, Promise<void>>();
 
 export type AgentTurnCommitRange = {
@@ -33,11 +32,12 @@ export function agentTurnReviewId(
 export async function readAgentTurnCommitRanges(
 	lix: Lix,
 ): Promise<readonly AgentTurnCommitRange[]> {
+	const branchId = await lix.activeBranchId();
 	const row = await qb(lix)
 		.selectFrom("lix_key_value_by_branch")
 		.select("value")
 		.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
-		.where("lixcol_branch_id", "=", GLOBAL_BRANCH_ID)
+		.where("lixcol_branch_id", "=", branchId)
 		.limit(1)
 		.executeTakeFirst();
 	return isAgentTurnCommitRangeStore(row?.value) ? row.value.ranges : [];
@@ -61,13 +61,14 @@ async function writeAgentTurnCommitRanges(
 	ranges: readonly AgentTurnCommitRange[],
 ): Promise<void> {
 	const value = serializeAgentTurnCommitRangeStore({ ranges });
+	const branchId = await lix.activeBranchId();
 	await qb(lix)
 		.insertInto("lix_key_value_by_branch")
 		.values({
 			key: AGENT_TURN_COMMIT_RANGE_KEY,
 			value,
-			lixcol_branch_id: GLOBAL_BRANCH_ID,
-			lixcol_global: true,
+			lixcol_branch_id: branchId,
+			lixcol_global: branchId === "global",
 			lixcol_untracked: true,
 		})
 		.onConflict((oc) =>
