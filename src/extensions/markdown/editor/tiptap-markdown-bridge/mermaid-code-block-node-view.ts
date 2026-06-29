@@ -71,7 +71,9 @@ function createMermaidCodeBlockNodeView(options: {
 
 	const preview = document.createElement("div");
 	preview.className = "markdown-mermaid-preview";
-	preview.setAttribute("aria-hidden", "true");
+
+	const srDescription = document.createElement("span");
+	srDescription.className = "markdown-mermaid-sr-description";
 
 	const error = document.createElement("div");
 	error.className = "markdown-mermaid-error";
@@ -84,6 +86,7 @@ function createMermaidCodeBlockNodeView(options: {
 	pre.appendChild(code);
 
 	dom.appendChild(preview);
+	dom.appendChild(srDescription);
 	dom.appendChild(error);
 	dom.appendChild(pre);
 
@@ -123,10 +126,17 @@ function createMermaidCodeBlockNodeView(options: {
 		}, 50);
 	}
 
+	function syncAccessibility(source: string): void {
+		preview.setAttribute("aria-hidden", showingSource ? "true" : "false");
+		srDescription.textContent = source;
+		srDescription.hidden = showingSource || !source.trim();
+	}
+
 	function setViewMode(editing: boolean): void {
 		showingSource = editing;
 		dom.dataset.editing = editing ? "true" : "false";
 		error.hidden = editing || error.textContent === "";
+		syncAccessibility(getSourceText());
 		if (!editing) {
 			scheduleRenderPreview();
 		}
@@ -149,17 +159,23 @@ function createMermaidCodeBlockNodeView(options: {
 			error.textContent = "";
 			lastRenderedSource = "";
 			lastRenderedTheme = null;
+			syncAccessibility(source);
 			return;
 		}
 
 		renderInFlight = true;
+		const renderTheme = getMermaidRenderTheme();
 		try {
 			await renderMermaidDiagram(source, preview);
 			if (destroyed || showingSource) return;
 			error.hidden = true;
 			error.textContent = "";
 			lastRenderedSource = source;
-			lastRenderedTheme = getMermaidRenderTheme();
+			lastRenderedTheme = renderTheme;
+			syncAccessibility(source);
+			if (renderTheme !== getMermaidRenderTheme()) {
+				renderScheduledAfterFlight = true;
+			}
 		} catch (cause) {
 			if (destroyed || showingSource) return;
 			preview.replaceChildren();
@@ -208,6 +224,7 @@ function createMermaidCodeBlockNodeView(options: {
 			}
 
 			currentNode = updatedNode;
+			syncAccessibility(updatedNode.textContent);
 			const selected =
 				editor.isFocused && isNodeSelected(view, getPos, updatedNode);
 			if (selected !== showingSource) {

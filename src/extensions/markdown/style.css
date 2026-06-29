@@ -329,6 +329,27 @@
 	display: none;
 }
 
+.markdown-view .ProseMirror .markdown-mermaid-block[data-editing="true"] .markdown-mermaid-preview,
+.markdown-view .ProseMirror .markdown-mermaid-block[data-editing="true"] .markdown-mermaid-error {
+	display: none;
+}
+
+.markdown-view .ProseMirror .markdown-mermaid-sr-description {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.markdown-view .ProseMirror .markdown-mermaid-block[data-editing="true"] .markdown-mermaid-sr-description {
+	display: none;
+}
+
 /* Task lists */
 .markdown-view .ProseMirror li[data-task] {
 	display: grid;
