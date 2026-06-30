@@ -18,7 +18,10 @@ import { createReactExtensionDefinition } from "../../extension-runtime/react-ex
 import { qb } from "@/lib/lix-kysely";
 import { FILES_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
-import type { CheckpointDiffFile } from "@/extension-runtime/checkpoint-diff";
+import type {
+	CheckpointDiffFile,
+	CheckpointDiffVisibleFile,
+} from "@/extension-runtime/checkpoint-diff";
 import type { Lix } from "@/lib/lix-types";
 import {
 	AGENT_TURN_COMMIT_RANGE_KEY,
@@ -78,17 +81,25 @@ function FilesViewContent({
 		});
 	}, [isEphemeralWorkspace, upgradedWatchedFilePaths, watchedEntries]);
 	const checkpointDiffEntries = useMemo(
-		() => checkpointDiffFilesystemEntries(context?.checkpointDiff?.files ?? []),
-		[context?.checkpointDiff?.files],
+		() =>
+			checkpointDiffFilesystemEntries(
+				context?.checkpointDiff?.visibleFiles ??
+					context?.checkpointDiff?.files ??
+					[],
+			),
+		[context?.checkpointDiff?.files, context?.checkpointDiff?.visibleFiles],
 	);
 	const combinedEntries = useMemo(
-		() =>
-			unionFilesystemEntries(
-				entries ?? [],
-				visibleWatchedEntries,
-				checkpointDiffEntries,
-			),
-		[entries, visibleWatchedEntries, checkpointDiffEntries],
+		() => {
+			if (context?.checkpointDiff) return checkpointDiffEntries;
+			return unionFilesystemEntries(entries ?? [], visibleWatchedEntries);
+		},
+		[
+			context?.checkpointDiff,
+			entries,
+			visibleWatchedEntries,
+			checkpointDiffEntries,
+		],
 	);
 	const nodes = useMemo(
 		() => buildFilesystemTree(combinedEntries),
@@ -591,23 +602,30 @@ function FilesViewContent({
 					normalizeFilePath(file.path) === normalizedPath ||
 					file.fileId === fileId,
 			);
-			setSelectedSource(checkpointDiffFile ? "checkpoint-diff" : "lix");
+			const checkpointVisibleFile = context?.checkpointDiff
+				? (context.checkpointDiff.visibleFiles ?? context.checkpointDiff.files).find(
+						(file) =>
+							normalizeFilePath(file.path) === normalizedPath ||
+							file.fileId === fileId,
+					)
+				: undefined;
+			setSelectedSource(checkpointVisibleFile ? "checkpoint-diff" : "lix");
 			void context?.openFile?.({
 				panel: "central",
 				fileId,
 				filePath: path,
-				state: checkpointDiffFile
+				state: checkpointVisibleFile
 					? {
-							beforeCommitId: checkpointDiffFile.beforeCommitId,
+							beforeCommitId: context?.checkpointDiff?.beforeCommitId,
 							afterCommitId: context?.checkpointDiff?.afterIsActiveHead
 								? null
-								: checkpointDiffFile.afterCommitId,
+								: context?.checkpointDiff?.afterCommitId,
 						}
 					: undefined,
 				focus: false,
-				trackTelemetry: checkpointDiffFile ? false : undefined,
-				trackDocumentOpenAttempt: checkpointDiffFile ? false : undefined,
-				trackDocumentViewed: checkpointDiffFile ? false : undefined,
+				trackTelemetry: checkpointVisibleFile ? false : undefined,
+				trackDocumentOpenAttempt: checkpointVisibleFile ? false : undefined,
+				trackDocumentViewed: checkpointVisibleFile ? false : undefined,
 			});
 		},
 		[context],
@@ -1304,16 +1322,8 @@ function appendUniquePath(paths: readonly string[], path: string): string[] {
 function unionFilesystemEntries(
 	lixEntries: readonly FilesystemEntryRow[],
 	watchedEntries: readonly FilesystemEntryRow[],
-	checkpointDiffEntries: readonly FilesystemEntryRow[] = [],
 ): FilesystemEntryRow[] {
 	const entriesByPath = new Map<string, FilesystemEntryRow>();
-	for (const entry of checkpointDiffEntries) {
-		entriesByPath.set(filesystemEntryPathKey(entry), {
-			...entry,
-			path: filesystemEntryPathKey(entry),
-			source: "checkpoint-diff",
-		});
-	}
 	for (const entry of watchedEntries) {
 		entriesByPath.set(filesystemEntryPathKey(entry), {
 			...entry,
@@ -1334,7 +1344,7 @@ function unionFilesystemEntries(
 }
 
 function checkpointDiffFilesystemEntries(
-	files: readonly CheckpointDiffFile[],
+	files: readonly (CheckpointDiffFile | CheckpointDiffVisibleFile)[],
 ): FilesystemEntryRow[] {
 	if (files.length === 0) return [];
 	const entriesByPath = new Map<string, FilesystemEntryRow>();

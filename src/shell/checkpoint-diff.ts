@@ -3,6 +3,7 @@ import type {
 	CheckpointDiffBranchRow,
 	CheckpointDiffFile,
 	CheckpointDiffFileStatus,
+	CheckpointDiffVisibleFile,
 } from "@/extension-runtime/checkpoint-diff";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import type { Lix } from "@/lib/lix-types";
@@ -52,6 +53,10 @@ export async function resolveCheckpointDiff(args: {
 		afterSnapshots,
 	});
 	if (files.length === 0) return null;
+	const visibleFiles = buildCheckpointDiffVisibleFiles({
+		beforeSnapshots,
+		afterSnapshots,
+	});
 	return {
 		branchId: afterBranch.id,
 		branchName: afterBranch.name,
@@ -59,6 +64,7 @@ export async function resolveCheckpointDiff(args: {
 		beforeBranchName: beforeBranch?.name ?? "Initial Commit",
 		beforeCommitId,
 		afterCommitId: afterBranch.commit_id,
+		visibleFiles,
 		files,
 	};
 }
@@ -186,6 +192,22 @@ function buildCheckpointDiffFiles(args: {
 	}
 
 	return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function buildCheckpointDiffVisibleFiles(args: {
+	readonly beforeSnapshots: readonly VisibleFileSnapshot[];
+	readonly afterSnapshots: readonly VisibleFileSnapshot[];
+}): CheckpointDiffVisibleFile[] {
+	const byPath = new Map<string, CheckpointDiffVisibleFile>();
+	for (const file of args.beforeSnapshots) {
+		byPath.set(file.path, { fileId: file.id, path: file.path });
+	}
+	for (const file of args.afterSnapshots) {
+		byPath.set(file.path, { fileId: file.id, path: file.path });
+	}
+	return [...byPath.values()].sort((left, right) =>
+		left.path.localeCompare(right.path),
+	);
 }
 
 function buildDiffFile(args: {

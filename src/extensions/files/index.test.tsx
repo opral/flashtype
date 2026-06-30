@@ -996,6 +996,7 @@ describe("FilesView", () => {
 				.values({ path: "/docs/" } as any)
 				.execute();
 			await writeReviewFile(lix, "file_live", "/docs/live.md", "after");
+			await writeReviewFile(lix, "file_live_only", "/docs/live-only.md", "head");
 
 			let utils: ReturnType<typeof render>;
 			await act(async () => {
@@ -1006,6 +1007,18 @@ describe("FilesView", () => {
 								context={createViewContext(lix, {
 									openFile,
 									checkpointDiff: checkpointDiff({
+										visibleFiles: [
+											{ fileId: "file_live", path: "/docs/live.md" },
+											{ fileId: "file_added", path: "/docs/added.md" },
+											{
+												fileId: "file_recreated",
+												path: "/docs/recreated.md",
+											},
+											{
+												fileId: "file_unchanged",
+												path: "/docs/unchanged.md",
+											},
+										],
 										files: [
 											checkpointDiffFile({
 												fileId: "file_live",
@@ -1051,6 +1064,10 @@ describe("FilesView", () => {
 					"data-item-git-status",
 					"recreated",
 				);
+				expect(queryTreeItemByLabel(utils!, "unchanged.md")).not.toHaveAttribute(
+					"data-item-git-status",
+				);
+				expect(queryTreeItemByLabel(utils!, "live-only.md")).toBeNull();
 			});
 
 			await act(async () => {

@@ -267,10 +267,10 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await expectFileTreeStatuses(
 			page,
 			{
-				"/head-deleted.md": "<missing>",
+				"/head-deleted.md": null,
 				"/head-recreated.md": null,
 			},
-			"unchanged files should not be marked or synthesized in checkpoint-to-checkpoint diff",
+			"unchanged files in the checkpoint range should not be marked",
 		);
 
 		await clickCheckpointRow(page, 2);

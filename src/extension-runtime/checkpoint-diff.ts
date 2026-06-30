@@ -17,6 +17,11 @@ export type CheckpointDiffFile = {
 	readonly status: CheckpointDiffFileStatus;
 };
 
+export type CheckpointDiffVisibleFile = {
+	readonly fileId: string;
+	readonly path: string;
+};
+
 export type CheckpointDiff = {
 	readonly branchId: string;
 	readonly branchName: string;
@@ -25,6 +30,7 @@ export type CheckpointDiff = {
 	readonly beforeCommitId: string;
 	readonly afterCommitId: string;
 	readonly afterIsActiveHead?: boolean;
+	readonly visibleFiles?: readonly CheckpointDiffVisibleFile[];
 	readonly files: readonly CheckpointDiffFile[];
 };
 
