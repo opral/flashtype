@@ -12,18 +12,6 @@ import { LixProvider } from "@/lib/lix-react";
 import { openLix, type Lix } from "@/test-utils/node-lix-sdk";
 import { BranchSwitcher } from "./branch-switcher";
 
-describe("BranchSwitcher disabled", () => {
-	test("renders a disabled control without a Lix provider", () => {
-		render(<BranchSwitcher disabled />);
-
-		const trigger = screen.getByRole("button", { name: "Select branch" });
-		expect(trigger).toBeDisabled();
-		expect(trigger).toHaveTextContent("No branch");
-		expect(trigger).toHaveAttribute("data-attr", "branch-switcher-disabled");
-		expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
-	});
-});
-
 describe("BranchSwitcher", () => {
 	let lix: Lix;
 	let cleanupFns: Array<() => Promise<void>> = [];
@@ -77,13 +65,18 @@ describe("BranchSwitcher", () => {
 		}
 	});
 
-	test("renders the active branch name", async () => {
+	test("renders main as the current checkpoint", async () => {
 		await renderWithProviders();
 
 		const trigger = await screen.findByRole("button", {
 			name: "Select branch",
 		});
-		expect(trigger).toHaveTextContent("main");
+		expect(trigger).toHaveTextContent("Current Checkpoint");
+
+		await openBranchMenu();
+		expect(
+			await screen.findByRole("menuitem", { name: "Current Checkpoint" }),
+		).toBeInTheDocument();
 	});
 
 	test("switches to another branch when selected", async () => {
@@ -124,14 +117,15 @@ describe("BranchSwitcher", () => {
 		});
 	});
 
-	test("creates a branch from the menu and switches to it", async () => {
+	test("creates a branch from the menu without switching to it", async () => {
 		const branchName = `feature-${Math.random().toString(36).slice(2, 7)}`;
+		const initialActiveBranchId = await lix.activeBranchId();
 
 		await renderWithProviders();
 		await openBranchMenu();
 
 		const createItem = await screen.findByRole("menuitem", {
-			name: "Create branch",
+			name: "Checkpoint",
 		});
 		await act(async () => {
 			fireEvent.click(createItem);
@@ -146,9 +140,12 @@ describe("BranchSwitcher", () => {
 
 		await waitFor(() => {
 			expect(
-				screen.getByRole("button", { name: "Select branch" }),
-			).toHaveTextContent(branchName);
+				screen.queryByRole("textbox", { name: "Branch name" }),
+			).not.toBeInTheDocument();
 		});
+		expect(
+			screen.getByRole("button", { name: "Select branch" }),
+		).toHaveTextContent("Current Checkpoint");
 
 		const created = await qb(lix)
 			.selectFrom("lix_branch")
@@ -162,15 +159,17 @@ describe("BranchSwitcher", () => {
 			.where("key", "=", "lix_workspace_branch_id")
 			.select("value")
 			.executeTakeFirstOrThrow();
-		expect(active.value).toBe(created.id);
+		expect(active.value).toBe(initialActiveBranchId);
 	});
 
 	test("uses the suggested branch name when create prompt is blank", async () => {
+		const initialActiveBranchId = await lix.activeBranchId();
+
 		await renderWithProviders();
 		await openBranchMenu();
 
 		const createItem = await screen.findByRole("menuitem", {
-			name: "Create branch",
+			name: "Checkpoint",
 		});
 		await act(async () => {
 			fireEvent.click(createItem);
@@ -185,21 +184,25 @@ describe("BranchSwitcher", () => {
 
 		await waitFor(() => {
 			expect(
-				screen.getByRole("button", { name: "Select branch" }),
-			).toHaveTextContent("draft-2");
+				screen.queryByRole("textbox", { name: "Branch name" }),
+			).not.toBeInTheDocument();
 		});
+		expect(
+			screen.getByRole("button", { name: "Select branch" }),
+		).toHaveTextContent("Current Checkpoint");
 
 		const created = await qb(lix)
 			.selectFrom("lix_branch")
 			.select(["id", "name"])
 			.where("name", "=", "draft-2")
 			.executeTakeFirstOrThrow();
+		expect(created.name).toBe("draft-2");
 		const active = await qb(lix)
 			.selectFrom("lix_key_value")
 			.where("key", "=", "lix_workspace_branch_id")
 			.select("value")
 			.executeTakeFirstOrThrow();
-		expect(active.value).toBe(created.id);
+		expect(active.value).toBe(initialActiveBranchId);
 	});
 
 	test("does not create a branch when inline creation is cancelled", async () => {
@@ -209,7 +212,7 @@ describe("BranchSwitcher", () => {
 		await openBranchMenu();
 
 		const createItem = await screen.findByRole("menuitem", {
-			name: "Create branch",
+			name: "Checkpoint",
 		});
 		await act(async () => {
 			fireEvent.click(createItem);
@@ -226,7 +229,7 @@ describe("BranchSwitcher", () => {
 		).not.toBeInTheDocument();
 		expect(
 			screen.getByRole("button", { name: "Select branch" }),
-		).toHaveTextContent("main");
+		).toHaveTextContent("Current Checkpoint");
 	});
 
 	test("renames a branch via actions menu", async () => {
@@ -341,7 +344,7 @@ describe("BranchSwitcher", () => {
 		});
 
 		const actionsButton = await screen.findByRole("button", {
-			name: "Branch actions for main",
+			name: "Branch actions for Current Checkpoint",
 		});
 		await act(async () => {
 			fireEvent.pointerDown(actionsButton, { button: 0 });

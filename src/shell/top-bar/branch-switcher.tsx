@@ -13,7 +13,7 @@ import {
 import {
 	Check,
 	ChevronDown,
-	GitBranch,
+	Flag,
 	Loader2,
 	MoreVertical,
 	PenLine,
@@ -30,9 +30,14 @@ type BranchRow = {
 	commit_id: string | null;
 };
 
-type BranchSwitcherProps = {
-	readonly disabled?: boolean;
-};
+const CURRENT_CHECKPOINT_BRANCH_NAME = "main";
+const CURRENT_CHECKPOINT_LABEL = "Current Checkpoint";
+
+function displayBranchName(branchName: string): string {
+	return branchName === CURRENT_CHECKPOINT_BRANCH_NAME
+		? CURRENT_CHECKPOINT_LABEL
+		: branchName;
+}
 
 /**
  * Dropdown trigger that lists available branches and switches the active one.
@@ -44,14 +49,7 @@ type BranchSwitcherProps = {
  * @example
  * <BranchSwitcher />
  */
-export function BranchSwitcher({ disabled = false }: BranchSwitcherProps = {}) {
-	if (disabled) {
-		return <DisabledBranchSwitcher />;
-	}
-	return <EnabledBranchSwitcher />;
-}
-
-function EnabledBranchSwitcher() {
+export function BranchSwitcher() {
 	const lix = useLix();
 	const branches = useQuery<BranchRow>((lix) =>
 		qb(lix)
@@ -65,23 +63,6 @@ function EnabledBranchSwitcher() {
 	);
 
 	return <BranchSwitcherWithActiveBranch lix={lix} branches={branches} />;
-}
-
-function DisabledBranchSwitcher() {
-	return (
-		<Button
-			type="button"
-			variant="ghost"
-			size="sm"
-			className="inline-flex h-5.5 items-center gap-1 rounded-md px-1.5 font-normal text-[var(--color-icon-tertiary)]"
-			aria-label="Select branch"
-			data-attr="branch-switcher-disabled"
-			disabled
-		>
-			<GitBranch className="size-3" />
-			<span className="text-[11.5px]">No branch</span>
-		</Button>
-	);
 }
 
 function BranchSwitcherWithActiveBranch({
@@ -172,10 +153,9 @@ function BranchSwitcherContent({
 		const trimmed = createBranchName.trim();
 		setPendingAction("create");
 		try {
-			const created = await lix.createBranch({
+			await lix.createBranch({
 				name: trimmed.length > 0 ? trimmed : createSuggestion,
 			});
-			await lix.switchBranch({ branchId: created.id });
 			setIsCreateFormOpen(false);
 			setMenuOpen(false);
 		} catch (error) {
@@ -243,7 +223,7 @@ function BranchSwitcherContent({
 		[lix, activeBranchRow.id],
 	);
 
-	const buttonLabel = `${activeBranchRow.name}`;
+	const buttonLabel = displayBranchName(activeBranchRow.name);
 	const isBusy = pendingAction !== null;
 
 	return (
@@ -256,7 +236,7 @@ function BranchSwitcherContent({
 					className="inline-flex h-5.5 items-center gap-1 rounded-md px-1.5 font-normal text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
 					aria-label="Select branch"
 				>
-					<GitBranch className="size-3" />
+					<Flag className="size-3" />
 					<span className="text-[11.5px]">{buttonLabel}</span>
 					{isBusy ? (
 						<Loader2 className="size-2.5 animate-spin" />
@@ -271,7 +251,7 @@ function BranchSwitcherContent({
 				sideOffset={6}
 			>
 				<DropdownMenuLabel className="text-[11px] uppercase tracking-wide text-[var(--color-text-tertiary)]">
-					Branches
+					Checkpoints
 				</DropdownMenuLabel>
 				{branches.length === 0 ? (
 					<div className="px-3 py-2 text-muted-foreground">
@@ -281,6 +261,7 @@ function BranchSwitcherContent({
 					branches.map((branch) => {
 						const isActive = branch.id === activeBranchRow.id;
 						const isDeleteDisabled = isActive;
+						const branchDisplayName = displayBranchName(branch.name);
 						const branchLabelId = `branch-switcher-label-${branch.id}`;
 						return (
 							<DropdownMenuItem
@@ -312,7 +293,7 @@ function BranchSwitcherContent({
 									) : null}
 								</span>
 								<span id={branchLabelId} className="truncate">
-									{branch.name}
+									{branchDisplayName}
 								</span>
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
@@ -326,7 +307,7 @@ function BranchSwitcherContent({
 											}}
 										>
 											<span className="sr-only">
-												Branch actions for {branch.name}
+												Branch actions for {branchDisplayName}
 											</span>
 											<MoreVertical
 												className="h-3.5 w-3.5 text-[var(--color-icon-tertiary)]"
@@ -397,7 +378,7 @@ function BranchSwitcherContent({
 						/>
 						<button
 							type="button"
-							aria-label="Create branch"
+							aria-label="Checkpoint"
 							data-attr="branch-create-submit"
 							className="flex h-6 w-6 items-center justify-center rounded text-[var(--color-icon-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
 							disabled={isBusy}
@@ -426,7 +407,7 @@ function BranchSwitcherContent({
 						className="flex items-center gap-2 px-2 py-1.5 text-xs text-[var(--color-text-secondary)]"
 					>
 						<Plus className="h-3 w-3" />
-						<span>Create branch</span>
+						<span>Checkpoint</span>
 					</DropdownMenuItem>
 				)}
 			</DropdownMenuContent>

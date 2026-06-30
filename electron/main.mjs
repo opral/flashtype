@@ -514,24 +514,6 @@ function requestCloseFileFromApplicationMenu() {
 	window.webContents.send("workspace:closeFile");
 }
 
-function requestNewCheckpointFromApplicationMenu() {
-	if (!canOpenWorkspaceWindows()) {
-		return;
-	}
-	const window = getWorkspaceWindowForFileAction();
-	if (!window || window.webContents.isDestroyed()) {
-		return;
-	}
-	if (!isHeadless) {
-		if (window.isMinimized()) {
-			window.restore();
-		}
-		window.show();
-		window.focus();
-	}
-	window.webContents.send("workspace:newCheckpoint");
-}
-
 async function toggleTrackChangesFromApplicationMenu(trackChanges) {
 	const window = getWorkspaceWindowForFileAction();
 	if (!window || window.isDestroyed() || !getWorkspace(window)) {
@@ -1886,14 +1868,6 @@ function buildFileMenu() {
 				},
 			},
 			{
-				id: "new-checkpoint",
-				label: "New Checkpoint",
-				enabled: Boolean(getWorkspaceWindowForFileAction()),
-				click: () => {
-					requestNewCheckpointFromApplicationMenu();
-				},
-			},
-			{
 				id: "track-changes",
 				label: "Track Changes",
 				type: "checkbox",
@@ -1942,14 +1916,6 @@ function updateDockMenu() {
 				enabled: Boolean(getWorkspaceWindowForFileAction()),
 				click: () => {
 					requestNewFileFromApplicationMenu();
-				},
-			},
-			{
-				id: "dock-new-checkpoint",
-				label: "New Checkpoint",
-				enabled: Boolean(getWorkspaceWindowForFileAction()),
-				click: () => {
-					requestNewCheckpointFromApplicationMenu();
 				},
 			},
 			{

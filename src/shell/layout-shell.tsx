@@ -97,7 +97,6 @@ import {
 	appendAgentTurnCommitRange,
 	type AgentTurnCommitRange,
 } from "./agent-turn-review-range";
-import { appendCheckpointCommitId } from "./checkpoints";
 import {
 	getExternalWriteReview,
 	getFileDataAtCommit,
@@ -2168,38 +2167,13 @@ function LayoutShellLoadedContent({
 	}, [activeCentralEntry, handleCloseView]);
 
 	useEffect(() => {
-		const unsubscribe =
-			window.flashtypeDesktop?.workspace.onCloseFile?.(handleNativeCloseFile);
+		const unsubscribe = window.flashtypeDesktop?.workspace.onCloseFile?.(
+			handleNativeCloseFile,
+		);
 		return () => {
 			unsubscribe?.();
 		};
 	}, [handleNativeCloseFile]);
-
-	const handleNativeNewCheckpoint = useCallback(async () => {
-		try {
-			const commitId = await readSyncedActiveCommitId(lix);
-			if (!commitId) {
-				return;
-			}
-			await appendCheckpointCommitId(lix, commitId);
-		} catch (error) {
-			if (onError) {
-				onError(error);
-				return;
-			}
-			console.error("Failed to create checkpoint from native menu", error);
-		}
-	}, [lix, onError]);
-
-	useEffect(() => {
-		const unsubscribe =
-			window.flashtypeDesktop?.workspace.onNewCheckpoint?.(
-				handleNativeNewCheckpoint,
-			);
-		return () => {
-			unsubscribe?.();
-		};
-	}, [handleNativeNewCheckpoint]);
 
 	const activeCentralFileId =
 		activeMarkdownFileIdFromExtensionInstance(activeCentralEntry);
@@ -2677,9 +2651,7 @@ function LayoutShellLoadedContent({
 						</Panel>
 					</PanelGroup>
 				</div>
-				<StatusBar
-					left={<BranchSwitcher disabled={workspace?.ephemeral === true} />}
-				/>
+				<StatusBar left={<BranchSwitcher />} />
 			</div>
 			<DragOverlay>
 				{activeId && activeDragView ? (

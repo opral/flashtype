@@ -39,9 +39,14 @@ test("persistent workspace branch switching keeps sidebar and disk on the active
 		await expect(fileTreeFile(page, "/main-only.md")).toBeVisible();
 		await expect(
 			page.getByRole("button", { name: "Select branch" }),
-		).toHaveText(/main/);
+		).toHaveText(/Current Checkpoint/);
 
 		await createBranchFromUi(page, "draft-ui");
+		await expect(
+			page.getByRole("button", { name: "Select branch" }),
+		).toHaveText(/Current Checkpoint/);
+
+		await switchBranchFromUi(page, "draft-ui");
 		await expect(
 			page.getByRole("button", { name: "Select branch" }),
 		).toHaveText(/draft-ui/);
@@ -52,10 +57,10 @@ test("persistent workspace branch switching keeps sidebar and disk on the active
 		await expectDiskText(sharedPath, "# Draft shared\n");
 		await expectDiskText(draftOnlyPath, "# Draft only\n");
 
-		await switchBranchFromUi(page, "main");
+		await switchBranchFromUi(page, "Current Checkpoint");
 		await expect(
 			page.getByRole("button", { name: "Select branch" }),
-		).toHaveText(/main/);
+		).toHaveText(/Current Checkpoint/);
 		await expect(fileTreeFile(page, "/shared.md")).toBeVisible();
 		await expect(fileTreeFile(page, "/main-only.md")).toBeVisible();
 		await expect(fileTreeFile(page, "/draft-only.md")).toHaveCount(0);
@@ -66,7 +71,7 @@ test("persistent workspace branch switching keeps sidebar and disk on the active
 	}
 });
 
-test("ephemeral workspace shows disabled branch UI without create or switch actions", async ({
+test("ephemeral workspace shows enabled branch UI", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const workspaceDir = testInfo.outputPath("ephemeral-branch-workspace");
@@ -85,15 +90,12 @@ test("ephemeral workspace shows disabled branch UI without create or switch acti
 		await expectPathMissing(path.join(workspaceDir, ".lix"));
 
 		const branchTrigger = page.getByRole("button", { name: "Select branch" });
-		await expect(branchTrigger).toBeDisabled();
-		await expect(branchTrigger).toHaveText("No branch");
-		await expect(branchTrigger).toHaveAttribute(
-			"data-attr",
-			"branch-switcher-disabled",
-		);
+		await expect(branchTrigger).toBeEnabled();
+		await expect(branchTrigger).toHaveText(/Current Checkpoint/);
+		await branchTrigger.click();
 		await expect(
-			page.getByRole("menuitem", { name: "Create branch" }),
-		).toHaveCount(0);
+			page.getByRole("menuitem", { name: "Checkpoint" }),
+		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -111,12 +113,19 @@ async function createBranchFromUi(
 	branchName: string,
 ): Promise<void> {
 	await openBranchMenu(page);
-	await page.getByRole("menuitem", { name: "Create branch" }).click();
+	await page.getByRole("menuitem", { name: "Checkpoint" }).click();
 	const input = page.getByRole("textbox", { name: "Branch name" });
 	await expect(input).toBeVisible();
 	await expect(input).toHaveValue("draft-2");
 	await input.fill(branchName);
 	await input.press("Enter");
+	await expect(input).toBeHidden();
+	await openBranchMenu(page);
+	await expect(page.getByRole("menuitem", { name: branchName })).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(page.getByRole("menuitem", { name: "Checkpoint" })).toHaveCount(
+		0,
+	);
 }
 
 async function switchBranchFromUi(
@@ -132,7 +141,7 @@ async function openBranchMenu(page: Page): Promise<void> {
 	await expect(trigger).toBeEnabled();
 	await trigger.click();
 	await expect(
-		page.getByRole("menuitem", { name: "Create branch" }),
+		page.getByRole("menuitem", { name: "Checkpoint" }),
 	).toBeVisible();
 }
 
