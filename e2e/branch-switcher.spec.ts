@@ -185,6 +185,10 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		registerRendererConsoleLogging(page);
 
 		const setup = await createCheckpointEditorRevisionMatrix(page);
+		const firstInitialCommitId = await initialCommitIdForCommitFromUi(
+			page,
+			setup.firstCommitId,
+		);
 		await expectHistoryBranchOrder(page, [
 			setup.firstBranchId,
 			setup.secondBranchId,
@@ -207,15 +211,16 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await expect
 			.poll(async () => await activeEditorRevisionStateFromUi(page), {
 				message:
-					"first checkpoint selection should keep the editor as a readonly after snapshot",
+					"first checkpoint selection should keep the editor as a diff from the initial commit",
 				timeout: 3000,
 			})
 			.toEqual({
-				beforeCommitId: null,
+				beforeCommitId: firstInitialCommitId,
 				afterCommitId: setup.firstCommitId,
 			});
-		await expectReadonlyMarkdown(page);
-		await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
+		await expectMarkdownDiff(page, {
+			added: ["Modified at first checkpoint"],
+		});
 		await expectFileTreeStatuses(
 			page,
 			{
@@ -225,7 +230,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 				"/modified.md": "added",
 				"/recreated.md": "added",
 			},
-			"first checkpoint should mark every file as added from no before commit",
+			"first checkpoint should mark every file as added from the initial commit",
 		);
 
 		await clickCheckpointRow(page, 1);
