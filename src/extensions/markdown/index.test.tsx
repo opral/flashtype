@@ -182,6 +182,67 @@ describe("MarkdownView", () => {
 		await lix.close();
 	});
 
+	test("does not mark unchanged before-to-HEAD files as fully added", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_unchanged_head_diff",
+				path: "/unchanged-head-diff.md",
+				data: new TextEncoder().encode("# Stable version"),
+			})
+			.execute();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_other_head_diff",
+				path: "/other-head-diff.md",
+				data: new TextEncoder().encode("# Other before"),
+			})
+			.execute();
+		const beforeCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("# Other after") })
+			.where("id", "=", "file_other_head_diff")
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_unchanged_head_diff"
+								filePath="/unchanged-head-diff.md"
+								beforeCommitId={beforeCommitId}
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.container).toHaveTextContent("Stable version");
+		});
+		expect(
+			utils!.container.querySelector("[data-diff-status='added']"),
+		).toBeNull();
+		expect(
+			utils!.container.querySelector("[data-diff-status='removed']"),
+		).toBeNull();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+		await lix.close();
+	});
+
 	test("shows an autosave hint when pressing Cmd+S", async () => {
 		const lix = await openLix();
 		await qb(lix)

@@ -94,6 +94,18 @@ type HistoricalFileSnapshotRow = {
 	readonly data: unknown;
 };
 
+type RawHistoricalFileSnapshotRow = {
+	readonly id: string;
+	readonly path: string | null;
+	readonly data: unknown | null;
+};
+
+type HistoricalFileSnapshotState = {
+	readonly commitId: string | null;
+	readonly loaded: boolean;
+	readonly snapshot: HistoricalFileSnapshotRow | undefined;
+};
+
 type HistoricalMarkdownFile = {
 	readonly fileRow: MarkdownFileRow;
 	readonly review: ExternalWriteReview | null;
@@ -203,7 +215,8 @@ function MarkdownViewLoaded({
 		fileId: effectiveFileRow?.id,
 		path: effectiveFileRow?.path,
 	});
-	const externalWriteReviewData = useExternalWriteReviewData(externalWriteReview);
+	const externalWriteReviewData =
+		useExternalWriteReviewData(externalWriteReview);
 	useEffect(() => {
 		if (!externalWriteReview) return;
 		return registerExternalWriteReview?.(externalWriteReview);
@@ -323,25 +336,32 @@ function MarkdownHistoricalViewLoaded({
 		fileId,
 		checkpointDiffFile ? null : editorRevision.afterCommitId,
 	);
+	const historicalSnapshotsLoaded =
+		Boolean(checkpointDiffFile) ||
+		((!editorRevision.beforeCommitId || beforeSnapshot.loaded) &&
+			(!editorRevision.afterCommitId || afterSnapshot.loaded));
 	const historicalFile = useMemo(
 		() =>
-			buildHistoricalMarkdownFile({
-				fileId,
-				filePath,
-				fileRow,
-				revision: editorRevision,
-				checkpointDiffFile,
-				beforeSnapshot,
-				afterSnapshot,
-			}),
+			historicalSnapshotsLoaded
+				? buildHistoricalMarkdownFile({
+						fileId,
+						filePath,
+						fileRow,
+						revision: editorRevision,
+						checkpointDiffFile,
+						beforeSnapshot: beforeSnapshot.snapshot,
+						afterSnapshot: afterSnapshot.snapshot,
+					})
+				: null,
 		[
-			beforeSnapshot,
+			beforeSnapshot.snapshot,
 			checkpointDiffFile,
 			editorRevision,
 			fileId,
 			filePath,
 			fileRow,
-			afterSnapshot,
+			historicalSnapshotsLoaded,
+			afterSnapshot.snapshot,
 		],
 	);
 	const effectiveFileRow = historicalFile?.fileRow;
@@ -355,7 +375,9 @@ function MarkdownHistoricalViewLoaded({
 		: null;
 
 	let content: ReactNode;
-	if (!effectiveFileRow) {
+	if (!historicalSnapshotsLoaded) {
+		content = <MarkdownReviewOverlayFallback />;
+	} else if (!effectiveFileRow) {
 		content = (
 			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">
 				File not found in the workspace.
@@ -473,7 +495,12 @@ function MarkdownSnapshotView({
 		return renderMarkdownAstEditorHtml(parseMarkdown(markdown) as any, {
 			resolveImageSrc,
 		});
-	}, [filePath, markdown, workspaceDirState.loaded, workspaceDirState.workspaceDir]);
+	}, [
+		filePath,
+		markdown,
+		workspaceDirState.loaded,
+		workspaceDirState.workspaceDir,
+	]);
 
 	return (
 		<div className="markdown-view flex h-full flex-col bg-background">
@@ -739,43 +766,81 @@ function safeJsonParse(value: string): unknown {
 function useHistoricalFileSnapshot(
 	fileId: string,
 	commitId: string | null,
-): HistoricalFileSnapshotRow | undefined {
+): HistoricalFileSnapshotState {
 	const lix = useLix();
-	const [snapshot, setSnapshot] = useState<
-		HistoricalFileSnapshotRow | undefined
-	>(undefined);
+	const [snapshotState, setSnapshotState] =
+		useState<HistoricalFileSnapshotState>({
+			commitId: null,
+			loaded: true,
+			snapshot: undefined,
+		});
 	useEffect(() => {
 		if (!commitId) {
-			setSnapshot(undefined);
+			setSnapshotState({
+				commitId: null,
+				loaded: true,
+				snapshot: undefined,
+			});
 			return;
 		}
 		let cancelled = false;
-		setSnapshot(undefined);
+		setSnapshotState({
+			commitId,
+			loaded: false,
+			snapshot: undefined,
+		});
 		void qb(lix)
 			.selectFrom("lix_file_history")
 			.select(["id", "path", "data"])
 			.where("id", "=", fileId)
 			.where("lixcol_start_commit_id", "=", commitId)
-			.where("lixcol_depth", "=", 0)
-			.where("data", "is not", null)
+			.orderBy("lixcol_depth", "asc")
 			.limit(1)
 			.executeTakeFirst()
 			.then((row) => {
 				if (!cancelled) {
-					setSnapshot(row as HistoricalFileSnapshotRow | undefined);
+					setSnapshotState({
+						commitId,
+						loaded: true,
+						snapshot: visibleHistoricalSnapshot(row),
+					});
 				}
 			})
 			.catch((error: unknown) => {
 				if (!cancelled) {
 					console.warn("Failed to load historical markdown snapshot", error);
-					setSnapshot(undefined);
+					setSnapshotState({
+						commitId,
+						loaded: true,
+						snapshot: undefined,
+					});
 				}
 			});
 		return () => {
 			cancelled = true;
 		};
 	}, [commitId, fileId, lix]);
-	return snapshot;
+	if (snapshotState.commitId !== commitId) {
+		return {
+			commitId,
+			loaded: commitId === null,
+			snapshot: undefined,
+		};
+	}
+	return snapshotState;
+}
+
+function visibleHistoricalSnapshot(
+	row: RawHistoricalFileSnapshotRow | undefined,
+): HistoricalFileSnapshotRow | undefined {
+	if (!row || typeof row.path !== "string" || row.data === null) {
+		return undefined;
+	}
+	return {
+		id: row.id,
+		path: row.path,
+		data: row.data,
+	};
 }
 
 function checkpointDiffFileForRevision(
@@ -786,19 +851,17 @@ function checkpointDiffFileForRevision(
 ): CheckpointDiffFile | null {
 	if (!checkpointDiff || !filePath) return null;
 	return (
-		checkpointDiff.files.find(
-			(file) => {
-				const afterCommitId = checkpointDiff.afterIsActiveHead
-					? null
-					: file.afterCommitId;
-				return (
-					file.fileId === fileId &&
-					file.path === filePath &&
-					file.beforeCommitId === revision.beforeCommitId &&
-					afterCommitId === revision.afterCommitId
-				);
-			},
-		) ?? null
+		checkpointDiff.files.find((file) => {
+			const afterCommitId = checkpointDiff.afterIsActiveHead
+				? null
+				: file.afterCommitId;
+			return (
+				file.fileId === fileId &&
+				file.path === filePath &&
+				file.beforeCommitId === revision.beforeCommitId &&
+				afterCommitId === revision.afterCommitId
+			);
+		}) ?? null
 	);
 }
 

@@ -152,6 +152,40 @@ describe("resolveCheckpointDiff", () => {
 		}
 	});
 
+	test("diffs the current checkpoint against the initial commit when no checkpoint is above it", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "file_current", "/current.md", "# Current\n");
+			const activeBranchId = await lix.activeBranchId();
+			const activeCommitId = await readBranchCommitId(lix, activeBranchId);
+			const initialCommitId = await initialCommitIdForCommit(
+				lix,
+				activeCommitId,
+			);
+
+			const diff = await resolveCheckpointDiff({
+				lix,
+				branchId: activeBranchId,
+				branches: [
+					{ id: activeBranchId, name: "main", commit_id: activeCommitId },
+				],
+			});
+
+			expect(diff?.branchId).toBe(activeBranchId);
+			expect(diff?.beforeBranchName).toBe("Initial Commit");
+			expect(diff?.beforeCommitId).toBe(initialCommitId);
+			expect(diff?.afterCommitId).toBe(activeCommitId);
+			expect(diff?.files).toHaveLength(1);
+			expect(diff?.files[0]).toMatchObject({
+				fileId: "file_current",
+				path: "/current.md",
+				status: "added",
+			});
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("returns null for missing commits", async () => {
 		const lix = await openLix();
 		try {
@@ -196,4 +230,44 @@ async function writeFile(
 
 function decode(data: Uint8Array | undefined): string {
 	return new TextDecoder().decode(data);
+}
+
+async function readBranchCommitId(
+	lix: Awaited<ReturnType<typeof openLix>>,
+	branchId: string,
+): Promise<string> {
+	const result = await qb(lix)
+		.selectFrom("lix_branch")
+		.select(["commit_id"])
+		.where("id", "=", branchId)
+		.executeTakeFirstOrThrow();
+	expect(result.commit_id).toEqual(expect.any(String));
+	return result.commit_id as string;
+}
+
+async function initialCommitIdForCommit(
+	lix: Awaited<ReturnType<typeof openLix>>,
+	commitId: string,
+): Promise<string> {
+	const result = await lix.execute(
+		`
+			SELECT h.observed_commit_id AS commit_id
+			FROM lix_state_history AS h
+			LEFT JOIN lix_commit_edge AS e
+				ON e.child_id = h.observed_commit_id
+			WHERE h.start_commit_id = $1
+				AND h.schema_key = 'lix_commit'
+				AND e.child_id IS NULL
+			ORDER BY h.depth DESC
+			LIMIT 1
+		`,
+		[commitId],
+	);
+	const commitIds = result.rows
+		.map((row) => row.get("commit_id"))
+		.filter(
+			(value): value is string => typeof value === "string" && value.length > 0,
+		);
+	expect(commitIds).toHaveLength(1);
+	return commitIds[0] as string;
 }

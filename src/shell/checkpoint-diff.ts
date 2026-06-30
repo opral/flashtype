@@ -76,9 +76,12 @@ async function loadInitialCommitId(
 	const result = await lix.execute(
 		`
 			SELECT h.observed_commit_id AS commit_id
-			FROM lix_state_history h
-			WHERE h.start_commit_id = ?
+			FROM lix_state_history AS h
+			LEFT JOIN lix_commit_edge AS e
+				ON e.child_id = h.observed_commit_id
+			WHERE h.start_commit_id = $1
 				AND h.schema_key = 'lix_commit'
+				AND e.child_id IS NULL
 			ORDER BY h.depth DESC
 			LIMIT 1
 		`,
