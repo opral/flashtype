@@ -171,7 +171,9 @@ test("checkpoint row click marks files without auto-opening a diff", async ({
 test("checkpoint diff selection keeps the active editor and toggles revision state", async ({
 	browserName: _browserName,
 }, testInfo) => {
-	const workspaceDir = testInfo.outputPath("checkpoint-editor-revision-workspace");
+	const workspaceDir = testInfo.outputPath(
+		"checkpoint-editor-revision-workspace",
+	);
 
 	let electronApp: ElectronApplication | undefined;
 	try {
@@ -182,54 +184,143 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await createMarkdownFileFromUi(page, "foo");
-		await typeLineInActiveMarkdown(page, "/foo.md", "foo line one");
-
-		const checkpoint1Id = await createCheckpointFromUi(page);
-		const checkpoint1CommitId = await branchCommitIdFromUi(page, checkpoint1Id);
-		const checkpoint0CommitId = await initialCommitIdForCommitFromUi(
-			page,
-			checkpoint1CommitId,
-		);
-		await waitForNextRendererTimestampSecond(page);
-
-		await typeLineInActiveMarkdown(page, "/foo.md", "foo line two");
-		await createMarkdownFileFromUi(page, "bar");
-		await typeLineInActiveMarkdown(page, "/bar.md", "bar line one");
-
-		const checkpoint2Id = await createCheckpointFromUi(page);
-		const checkpoint2CommitId = await branchCommitIdFromUi(page, checkpoint2Id);
-		await waitForNextRendererTimestampSecond(page);
-
-		await openMarkdownFileFromTree(page, "/foo.md");
-		await deleteMarkdownFileFromUi(page, "/foo.md");
-		await expectNoActiveCentralFile(page);
-		await createMarkdownFileFromUi(page, "foo");
-		await typeLineInActiveMarkdown(page, "/foo.md", "foo line one");
-		await typeLineInActiveMarkdown(page, "/foo.md", "foo line two");
-		await openMarkdownFileFromTree(page, "/bar.md");
-		await typeLineInActiveMarkdown(page, "/bar.md", "bar line two");
-
-		const checkpoint3Id = await createCheckpointFromUi(page);
-		const checkpoint3CommitId = await branchCommitIdFromUi(page, checkpoint3Id);
+		const setup = await createCheckpointEditorRevisionMatrix(page);
 		await expectHistoryBranchOrder(page, [
-			checkpoint1Id,
-			checkpoint2Id,
-			checkpoint3Id,
-			await activeBranchIdFromUi(page),
+			setup.firstBranchId,
+			setup.secondBranchId,
+			setup.activeBranchId,
 		]);
+		await expect
+			.poll(async () => await activeBranchIdFromUi(page))
+			.toBe(setup.activeBranchId);
 
-		await deleteMarkdownFileFromUi(page, "/bar.md");
-		await expectNoActiveCentralFile(page);
+		await openMarkdownFileFromTree(page, "/modified.md");
+		await expectActiveEditorRevisionState(page, {
+			beforeCommitId: null,
+			afterCommitId: null,
+		});
+		await expectEditableMarkdown(page);
 
-		// TODO
-		// await clickCheckpointRow(page, 1);
-		// await expectActiveCentralFile(page, "/bar.md");
-		// await expectActiveEditorRevisionState(page, {
-		// 	beforeCommitId: checkpoint1CommitId,
-		// 	afterCommitId: checkpoint2CommitId,
-		// });
-		// await expectMarkdownDiff(page, { added: ["bar line one"] });
+		await clickCheckpointRow(page, 0);
+		await expectCheckpointRowSelected(page, 0);
+		await expectActiveCentralFile(page, "/modified.md");
+		await expect
+			.poll(async () => await activeEditorRevisionStateFromUi(page), {
+				message:
+					"first checkpoint selection should keep the editor as a readonly after snapshot",
+				timeout: 3000,
+			})
+			.toEqual({
+				beforeCommitId: null,
+				afterCommitId: setup.firstCommitId,
+			});
+		await expectReadonlyMarkdown(page);
+		await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
+		await expectFileTreeStatuses(
+			page,
+			{
+				"/deleted.md": "added",
+				"/head-deleted.md": "added",
+				"/head-recreated.md": "added",
+				"/modified.md": "added",
+				"/recreated.md": "added",
+			},
+			"first checkpoint should mark every file as added from no before commit",
+		);
+
+		await clickCheckpointRow(page, 1);
+		await expectCheckpointRowSelected(page, 1);
+		await expectActiveCentralFile(page, "/modified.md");
+		await expect
+			.poll(async () => await activeEditorRevisionStateFromUi(page), {
+				message:
+					"checkpoint-to-checkpoint selection should keep the editor as a diff between checkpoints",
+				timeout: 3000,
+			})
+			.toEqual({
+				beforeCommitId: setup.firstCommitId,
+				afterCommitId: setup.secondCommitId,
+			});
+		await expectMarkdownDiff(page, {
+			added: ["Modified at second checkpoint"],
+			removed: ["Modified at first checkpoint"],
+		});
+		await expectFileTreeStatuses(
+			page,
+			{
+				"/added.md": "added",
+				"/deleted.md": "deleted",
+				"/modified.md": "modified",
+				"/recreated.md": "recreated",
+			},
+			"checkpoint-to-checkpoint diff should expose per-file statuses",
+		);
+		await expectFileTreeStatuses(
+			page,
+			{
+				"/head-deleted.md": null,
+				"/head-recreated.md": null,
+			},
+			"unchanged files should not be marked in checkpoint-to-checkpoint diff",
+		);
+
+		await clickCheckpointRow(page, 2);
+		await expectCheckpointRowSelected(page, 2);
+		await expectActiveCentralFile(page, "/modified.md");
+		await expect
+			.poll(async () => await activeEditorRevisionStateFromUi(page), {
+				message:
+					"current checkpoint selection should keep the editor as a diff from the previous checkpoint to HEAD",
+				timeout: 3000,
+			})
+			.toEqual({
+				beforeCommitId: setup.secondCommitId,
+				afterCommitId: null,
+			});
+		await expectMarkdownDiff(page, {
+			added: ["Modified at HEAD"],
+			removed: ["Modified at second checkpoint"],
+		});
+		await expectFileTreeStatuses(
+			page,
+			{
+				"/head-added.md": "added",
+				"/head-deleted.md": "deleted",
+				"/head-recreated.md": "recreated",
+				"/modified.md": "modified",
+			},
+			"checkpoint-to-HEAD diff should expose per-file statuses",
+		);
+		await expectFileTreeStatuses(
+			page,
+			{
+				"/added.md": null,
+				"/recreated.md": null,
+			},
+			"unchanged checkpoint files should not be marked in checkpoint-to-HEAD diff",
+		);
+
+		await clickCheckpointRow(page, 2);
+		await expectCheckpointRowSelected(page, 2);
+		await expectActiveCentralFile(page, "/modified.md");
+		await expectActiveEditorRevisionState(page, {
+			beforeCommitId: null,
+			afterCommitId: null,
+		});
+		await expectEditableMarkdown(page);
+		await expectFileTreeStatuses(
+			page,
+			{
+				"/added.md": null,
+				"/head-added.md": null,
+				"/head-recreated.md": null,
+				"/modified.md": null,
+				"/recreated.md": null,
+			},
+			"clearing the checkpoint diff should clear file-view statuses",
+		);
+		await expect(fileTreeFile(page, "/deleted.md")).toHaveCount(0);
+		await expect(fileTreeFile(page, "/head-deleted.md")).toHaveCount(0);
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -280,9 +371,9 @@ async function deleteMarkdownFileFromUi(
 	await expect(file).toHaveAttribute("data-item-selected", "true");
 	await page.keyboard.press(deleteShortcut);
 	await expect(file).toHaveCount(0);
-	await expect.poll(async () => await lixFileExistsByPath(page, appPath)).toBe(
-		false,
-	);
+	await expect
+		.poll(async () => await lixFileExistsByPath(page, appPath))
+		.toBe(false);
 }
 
 async function typeLineInActiveMarkdown(
@@ -359,6 +450,16 @@ async function clickCheckpointRow(page: Page, rowIndex: number): Promise<void> {
 	const checkpoint = page.locator('[data-attr="branch-diff"]').nth(rowIndex);
 	await expect(checkpoint).toBeVisible();
 	await checkpoint.click();
+}
+
+async function expectCheckpointRowSelected(
+	page: Page,
+	rowIndex: number,
+): Promise<void> {
+	await ensureHistoryViewOpenInLeftPanel(page);
+	await expect(
+		page.locator('[data-attr="branch-diff"]').nth(rowIndex),
+	).toHaveAttribute("data-selected", "true");
 }
 
 async function switchBranchFromUi(
@@ -463,6 +564,147 @@ async function createCheckpointDiffBranches(
 		await lix.createBranch({ options: { name: "a-previous" } });
 
 		return { activeBranchId: await lix.activeBranchId() };
+	});
+}
+
+async function createCheckpointEditorRevisionMatrix(page: Page): Promise<{
+	firstBranchId: string;
+	firstCommitId: string;
+	secondBranchId: string;
+	secondCommitId: string;
+	activeBranchId: string;
+}> {
+	return await page.evaluate(async () => {
+		const lix = window.flashtypeDesktop?.lix;
+		if (!lix) {
+			throw new Error("Desktop Lix bridge is unavailable");
+		}
+
+		const encoder = new TextEncoder();
+		const data = (text: string) => encoder.encode(text);
+		const execute = async (sql: string, params: unknown[] = []) => {
+			return await lix.execute({ sql, params });
+		};
+		const insertFile = async (id: string, path: string, text: string) => {
+			await execute(
+				"INSERT INTO lix_file (id, path, data) VALUES ($1, $2, $3)",
+				[id, path, data(text)],
+			);
+		};
+		const updateFile = async (id: string, text: string) => {
+			await execute("UPDATE lix_file SET data = $1 WHERE id = $2", [
+				data(text),
+				id,
+			]);
+		};
+		const deleteFile = async (id: string) => {
+			await execute("DELETE FROM lix_file WHERE id = $1", [id]);
+		};
+		const createBranch = async (name: string) => {
+			await lix.createBranch({ options: { name } });
+			const result = await execute(
+				"SELECT id, commit_id FROM lix_branch WHERE name = $1",
+				[name],
+			);
+			const row = result?.rows?.[0];
+			const id = cell(row, 0, "id");
+			const commitId = cell(row, 1, "commit_id");
+			if (
+				typeof id !== "string" ||
+				id.length === 0 ||
+				typeof commitId !== "string" ||
+				commitId.length === 0
+			) {
+				throw new Error(`Created checkpoint ${name} was not found.`);
+			}
+			return { id, commitId };
+		};
+
+		await insertFile(
+			"matrix_modified",
+			"/modified.md",
+			"# Modified\n\nModified at first checkpoint\n",
+		);
+		await insertFile(
+			"matrix_deleted",
+			"/deleted.md",
+			"# Deleted\n\nDeleted after first checkpoint\n",
+		);
+		await insertFile(
+			"matrix_recreated_before",
+			"/recreated.md",
+			"# Recreated\n\nOriginal identity before second checkpoint\n",
+		);
+		await insertFile(
+			"matrix_head_deleted",
+			"/head-deleted.md",
+			"# Head deleted\n\nDeleted after second checkpoint\n",
+		);
+		await insertFile(
+			"matrix_head_recreated_before",
+			"/head-recreated.md",
+			"# Head recreated\n\nOriginal identity before HEAD\n",
+		);
+
+		const first = await createBranch("a-first-statuses");
+
+		await updateFile(
+			"matrix_modified",
+			"# Modified\n\nModified at second checkpoint\n",
+		);
+		await deleteFile("matrix_deleted");
+		await insertFile(
+			"matrix_added",
+			"/added.md",
+			"# Added\n\nAdded at second checkpoint\n",
+		);
+		await deleteFile("matrix_recreated_before");
+		await insertFile(
+			"matrix_recreated_after",
+			"/recreated.md",
+			"# Recreated\n\nNew identity at second checkpoint\n",
+		);
+
+		const second = await createBranch("b-second-statuses");
+
+		await updateFile("matrix_modified", "# Modified\n\nModified at HEAD\n");
+		await insertFile("matrix_head_added", "/head-added.md", "# Head added\n");
+		await deleteFile("matrix_head_deleted");
+		await deleteFile("matrix_head_recreated_before");
+		await insertFile(
+			"matrix_head_recreated_after",
+			"/head-recreated.md",
+			"# Head recreated\n\nNew identity at HEAD\n",
+		);
+
+		const activeBranchId = await lix.activeBranchId();
+		if (!activeBranchId) {
+			throw new Error("Active branch id is unavailable.");
+		}
+
+		return {
+			firstBranchId: first.id,
+			firstCommitId: first.commitId,
+			secondBranchId: second.id,
+			secondCommitId: second.commitId,
+			activeBranchId,
+		};
+
+		function cell(row: unknown, index: number, key: string): unknown {
+			if (Array.isArray(row)) return row[index];
+			if (
+				row &&
+				typeof row === "object" &&
+				"get" in row &&
+				typeof (row as { get?: unknown }).get === "function"
+			) {
+				return (row as { get(key: string): unknown }).get(key);
+			}
+			if (row && typeof row === "object" && key in row) {
+				return (row as Record<string, unknown>)[key];
+			}
+			return undefined;
+		}
 	});
 }
 
@@ -578,18 +820,18 @@ async function expectActiveCentralFile(
 	page: Page,
 	appPath: string,
 ): Promise<void> {
-	await expect.poll(async () => await activeCentralFilePathFromUi(page)).toBe(
-		appPath,
-	);
+	await expect
+		.poll(async () => await activeCentralFilePathFromUi(page))
+		.toBe(appPath);
 }
 
 async function expectNoActiveCentralFile(page: Page): Promise<void> {
-	await expect.poll(async () => await activeCentralFilePathFromUi(page)).toBeNull();
+	await expect
+		.poll(async () => await activeCentralFilePathFromUi(page))
+		.toBeNull();
 }
 
-async function activeCentralFilePathFromUi(
-	page: Page,
-): Promise<string | null> {
+async function activeCentralFilePathFromUi(page: Page): Promise<string | null> {
 	return await page.evaluate(async () => {
 		const result = await window.flashtypeDesktop?.lix.execute({
 			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
@@ -676,6 +918,36 @@ async function activeEditorRevisionStateFromUi(page: Page): Promise<{
 	});
 }
 
+async function expectFileTreeStatuses(
+	page: Page,
+	expected: Record<string, string | null>,
+	message: string,
+): Promise<void> {
+	await ensureFilesViewOpenInLeftPanel(page);
+	await expect
+		.poll(async () => await fileTreeStatuses(page, Object.keys(expected)), {
+			message,
+			timeout: 3000,
+		})
+		.toEqual(expected);
+}
+
+async function fileTreeStatuses(
+	page: Page,
+	appPaths: readonly string[],
+): Promise<Record<string, string | null>> {
+	const statuses: Record<string, string | null> = {};
+	for (const appPath of appPaths) {
+		const file = fileTreeFile(page, appPath);
+		if ((await file.count()) === 0) {
+			statuses[appPath] = "<missing>";
+			continue;
+		}
+		statuses[appPath] = await file.first().getAttribute("data-item-git-status");
+	}
+	return statuses;
+}
+
 async function expectEditableMarkdown(page: Page): Promise<void> {
 	await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
 	await expect(
@@ -729,9 +1001,9 @@ async function expectLixFileToContain(
 	appPath: string,
 	text: string,
 ): Promise<void> {
-	await expect.poll(async () => await lixFileTextByPath(page, appPath)).toContain(
-		text,
-	);
+	await expect
+		.poll(async () => await lixFileTextByPath(page, appPath))
+		.toContain(text);
 }
 
 async function lixFileExistsByPath(
@@ -747,10 +1019,7 @@ async function lixFileExistsByPath(
 	}, appPath);
 }
 
-async function lixFileTextByPath(
-	page: Page,
-	appPath: string,
-): Promise<string> {
+async function lixFileTextByPath(page: Page, appPath: string): Promise<string> {
 	return (
 		(await page.evaluate(async (path) => {
 			const result = await window.flashtypeDesktop?.lix.execute({
@@ -774,11 +1043,7 @@ async function lixFileTextByPath(
 				if (Array.isArray(value)) {
 					return new TextDecoder().decode(new Uint8Array(value as number[]));
 				}
-				if (
-					value &&
-					typeof value === "object" &&
-					"value" in value
-				) {
+				if (value && typeof value === "object" && "value" in value) {
 					return decodeSqlText((value as { value: unknown }).value);
 				}
 				return typeof value === "string" ? value : "";
