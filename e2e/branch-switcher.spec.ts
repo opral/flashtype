@@ -115,7 +115,13 @@ async function switchBranchFromUi(
 	branchName: string,
 ): Promise<void> {
 	await ensureHistoryViewOpenInLeftPanel(page);
-	await page.getByRole("button", { name: branchName, exact: true }).click();
+	await page
+		.getByRole("button", {
+			name: `Checkpoint actions for ${branchName}`,
+			exact: true,
+		})
+		.click();
+	await page.getByRole("menuitem", { name: "Restore", exact: true }).click();
 }
 
 async function expectCurrentCheckpointActive(page: Page): Promise<void> {

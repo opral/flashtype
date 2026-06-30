@@ -62,19 +62,55 @@ describe("HistoryView", () => {
 		expect(activeCheckpoint).toHaveAttribute("aria-current", "true");
 	});
 
-	test("switches to another branch when selected", async () => {
+	test("selects another branch for diff without restoring it", async () => {
+		const initialActiveBranchId = await lix.activeBranchId();
 		const draftName = `draft-${Math.random().toString(36).slice(2, 7)}`;
-		const newBranch = await lix.createBranch({ name: draftName });
+		await lix.createBranch({ name: draftName });
 
 		await renderWithProviders();
 
 		const draftItem = await screen.findByRole("button", { name: draftName });
-		expect(draftItem).toHaveAttribute("data-attr", "branch-switch");
+		expect(draftItem).toHaveAttribute("data-attr", "branch-diff");
+		expect(draftItem).not.toHaveAttribute("aria-current");
 
 		await act(async () => {
 			fireEvent.click(draftItem);
 		});
 
+		expect(draftItem).toHaveAttribute("data-selected", "true");
+		expect(draftItem).not.toHaveAttribute("aria-current");
+
+		const active = await qb(lix)
+			.selectFrom("lix_key_value")
+			.where("key", "=", "lix_workspace_branch_id")
+			.select("value")
+			.executeTakeFirstOrThrow();
+		expect(active.value).toBe(initialActiveBranchId);
+	});
+
+	test("restores another branch via actions menu", async () => {
+		const draftName = `draft-${Math.random().toString(36).slice(2, 7)}`;
+		const newBranch = await lix.createBranch({ name: draftName });
+
+		await renderWithProviders();
+
+		const actionsButton = await screen.findByRole("button", {
+			name: `Checkpoint actions for ${draftName}`,
+		});
+		await act(async () => {
+			fireEvent.pointerDown(actionsButton, { button: 0 });
+			fireEvent.pointerUp(actionsButton, { button: 0 });
+		});
+
+		const restoreItem = await screen.findByRole("menuitem", {
+			name: "Restore",
+		});
+		expect(restoreItem).toHaveAttribute("data-attr", "branch-switch");
+		await act(async () => {
+			fireEvent.click(restoreItem);
+		});
+
+		const draftItem = await screen.findByRole("button", { name: draftName });
 		await waitFor(() => {
 			expect(draftItem).toHaveAttribute("aria-current", "true");
 		});
@@ -260,19 +296,22 @@ describe("HistoryView", () => {
 		await renderWithProviders();
 
 		const actionsButton = await screen.findByRole("button", {
-			name: `Branch actions for ${baseName}`,
+			name: `Checkpoint actions for ${baseName}`,
 		});
 		await act(async () => {
 			fireEvent.pointerDown(actionsButton, { button: 0 });
 			fireEvent.pointerUp(actionsButton, { button: 0 });
 		});
 
-		const renameItem = await screen.findByRole("menuitem", { name: "Rename" });
+		const renameItem = await screen.findByRole("menuitem", {
+			name: "Rename checkpoint",
+		});
 		expect(renameItem).toHaveAttribute("data-attr", "branch-rename");
 		await act(async () => {
 			fireEvent.click(renameItem);
 		});
 
+		expect(promptSpy).toHaveBeenCalledWith("Rename checkpoint", baseName);
 		await waitFor(() => {
 			expect(screen.getByText(renamedName)).toBeInTheDocument();
 		});
@@ -294,19 +333,24 @@ describe("HistoryView", () => {
 		await renderWithProviders();
 
 		const actionsButton = await screen.findByRole("button", {
-			name: `Branch actions for ${tempName}`,
+			name: `Checkpoint actions for ${tempName}`,
 		});
 		await act(async () => {
 			fireEvent.pointerDown(actionsButton, { button: 0 });
 			fireEvent.pointerUp(actionsButton, { button: 0 });
 		});
 
-		const deleteItem = await screen.findByRole("menuitem", { name: "Delete" });
+		const deleteItem = await screen.findByRole("menuitem", {
+			name: "Delete checkpoint",
+		});
 		expect(deleteItem).toHaveAttribute("data-attr", "branch-delete");
 		await act(async () => {
 			fireEvent.click(deleteItem);
 		});
 
+		expect(confirmSpy).toHaveBeenCalledWith(
+			`Delete checkpoint "${tempName}"? This will hide it from the list.`,
+		);
 		await waitFor(() => {
 			expect(
 				screen.queryByRole("button", { name: tempName }),
@@ -330,14 +374,33 @@ describe("HistoryView", () => {
 		await renderWithProviders();
 
 		const actionsButton = await screen.findByRole("button", {
-			name: "Branch actions for Current Checkpoint",
+			name: "Checkpoint actions for Current Checkpoint",
 		});
 		await act(async () => {
 			fireEvent.pointerDown(actionsButton, { button: 0 });
 			fireEvent.pointerUp(actionsButton, { button: 0 });
 		});
 
-		const deleteItem = await screen.findByRole("menuitem", { name: "Delete" });
+		const deleteItem = await screen.findByRole("menuitem", {
+			name: "Delete checkpoint",
+		});
 		expect(deleteItem).toHaveAttribute("data-disabled");
+	});
+
+	test("restore action is disabled for active branch", async () => {
+		await renderWithProviders();
+
+		const actionsButton = await screen.findByRole("button", {
+			name: "Checkpoint actions for Current Checkpoint",
+		});
+		await act(async () => {
+			fireEvent.pointerDown(actionsButton, { button: 0 });
+			fireEvent.pointerUp(actionsButton, { button: 0 });
+		});
+
+		const restoreItem = await screen.findByRole("menuitem", {
+			name: "Restore",
+		});
+		expect(restoreItem).toHaveAttribute("data-disabled");
 	});
 });

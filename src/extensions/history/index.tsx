@@ -7,6 +7,7 @@ import {
 	MoreVertical,
 	PenLine,
 	Plus,
+	RotateCcw,
 	Trash2,
 } from "lucide-react";
 import {
@@ -112,6 +113,7 @@ function HistoryViewContent({
 		} satisfies BranchRow);
 
 	const [pendingAction, setPendingAction] = useState<string | null>(null);
+	const [selectedBranchId, setSelectedBranchId] = useState(activeBranchRow.id);
 	const renameTimerIdsRef = useRef<Set<number>>(new Set());
 
 	useEffect(() => {
@@ -124,12 +126,20 @@ function HistoryViewContent({
 		};
 	}, []);
 
+	useEffect(() => {
+		if (branches.some((branch) => branch.id === selectedBranchId)) {
+			return;
+		}
+		setSelectedBranchId(activeBranchRow.id);
+	}, [activeBranchRow.id, branches, selectedBranchId]);
+
 	const handleSwitch = useCallback(
 		async (branchId: string) => {
 			if (!lix || branchId === activeBranchRow.id) return;
 			setPendingAction(branchId);
 			try {
 				await lix.switchBranch({ branchId });
+				setSelectedBranchId(branchId);
 			} catch (error) {
 				console.error("Failed to switch branch", error);
 			} finally {
@@ -177,7 +187,7 @@ function HistoryViewContent({
 
 	const handleRenameBranch = useCallback(
 		async (branchId: string, currentName: string) => {
-			const entered = window.prompt("Rename branch", currentName);
+			const entered = window.prompt("Rename checkpoint", currentName);
 			if (entered === null) return;
 			const trimmed = entered.trim();
 			if (trimmed === "" || trimmed === currentName) return;
@@ -200,11 +210,11 @@ function HistoryViewContent({
 	const handleDeleteBranch = useCallback(
 		async (branchId: string, branchName: string) => {
 			if (branchId === activeBranchRow.id) {
-				window.alert("Cannot delete the active branch.");
+				window.alert("Cannot delete the active checkpoint.");
 				return;
 			}
 			const confirmed = window.confirm(
-				`Delete branch "${branchName}"? This will hide it from the list.`,
+				`Delete checkpoint "${branchName}"? This will hide it from the list.`,
 			);
 			if (!confirmed) return;
 			setPendingAction(branchId);
@@ -260,12 +270,14 @@ function HistoryViewContent({
 			<div className="min-h-0 flex-1 overflow-y-auto p-1.5">
 				{branches.length === 0 ? (
 					<div className="px-2 py-2 text-xs text-[var(--color-text-tertiary)]">
-						No branches available
+						No checkpoints available
 					</div>
 				) : (
 					<div className="flex flex-col gap-0.5" role="list">
 						{branches.map((branch) => {
 							const isActive = branch.id === activeBranchRow.id;
+							const isSelected = branch.id === selectedBranchId;
+							const isRestoreDisabled = isActive;
 							const isDeleteDisabled = isActive;
 							const branchDisplayName = displayBranchName(branch.name);
 							const isPending = pendingAction === branch.id;
@@ -273,19 +285,23 @@ function HistoryViewContent({
 								<div
 									key={branch.id}
 									role="listitem"
+									data-selected={isSelected ? "true" : undefined}
 									className={clsx(
 										"group flex min-w-0 items-center rounded-[7px] transition-colors",
 										isActive
 											? "bg-[var(--color-bg-selection-current)] text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-border-selection-current)]"
-											: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
+											: isSelected
+												? "bg-[var(--color-bg-hover)] text-[var(--color-text-primary)] ring-1 ring-inset ring-[var(--color-border-panel)]"
+												: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
 									)}
 								>
 									<button
 										type="button"
-										data-attr="branch-switch"
+										data-attr="branch-diff"
+										data-selected={isSelected ? "true" : undefined}
 										aria-current={isActive ? "true" : undefined}
 										onClick={() => {
-											void handleSwitch(branch.id);
+											setSelectedBranchId(branch.id);
 										}}
 										className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-l-[7px] px-2 text-left text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
 									>
@@ -306,7 +322,7 @@ function HistoryViewContent({
 												data-branch-actions
 											>
 												<span className="sr-only">
-													Branch actions for {branchDisplayName}
+													Checkpoint actions for {branchDisplayName}
 												</span>
 												<MoreVertical className="size-3.5" aria-hidden="true" />
 											</button>
@@ -318,6 +334,18 @@ function HistoryViewContent({
 										>
 											<DropdownMenuItem
 												className="flex items-center gap-2 text-xs"
+												data-attr="branch-switch"
+												onSelect={() => {
+													if (isRestoreDisabled) return;
+													void handleSwitch(branch.id);
+												}}
+												disabled={isRestoreDisabled}
+											>
+												<RotateCcw className="size-3" />
+												<span>Restore</span>
+											</DropdownMenuItem>
+											<DropdownMenuItem
+												className="flex items-center gap-2 text-xs"
 												data-attr="branch-rename"
 												onSelect={(event) => {
 													event.preventDefault();
@@ -325,7 +353,7 @@ function HistoryViewContent({
 												}}
 											>
 												<PenLine className="size-3" />
-												<span>Rename</span>
+												<span>Rename checkpoint</span>
 											</DropdownMenuItem>
 											<DropdownMenuItem
 												className="flex items-center gap-2 text-xs text-destructive focus:bg-destructive/10 focus:text-destructive [&_svg]:!text-destructive"
@@ -337,7 +365,7 @@ function HistoryViewContent({
 												disabled={isDeleteDisabled}
 											>
 												<Trash2 className="size-3" />
-												<span>Delete</span>
+												<span>Delete checkpoint</span>
 											</DropdownMenuItem>
 										</DropdownMenuContent>
 									</DropdownMenu>
@@ -380,7 +408,7 @@ function formatLocalTimestamp(date = new Date()): string {
 export const extension = createReactExtensionDefinition({
 	kind: HISTORY_EXTENSION_KIND,
 	label: "History",
-	description: "Review and switch checkpoints.",
+	description: "Review and restore checkpoints.",
 	icon: HistoryIcon,
 	component: ({ context }) => (
 		<LixProvider lix={context.lix}>
