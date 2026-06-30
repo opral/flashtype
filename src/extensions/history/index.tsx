@@ -26,12 +26,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
 import { HISTORY_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
+import type {
+	CheckpointDiff,
+	ShowCheckpointDiffArgs,
+} from "../../extension-runtime/checkpoint-diff";
 
 type BranchRow = {
 	id: string;
 	name: string;
 	hidden: boolean | null;
 	commit_id: string | null;
+};
+
+type HistoryViewProps = {
+	readonly checkpointDiff?: CheckpointDiff | null;
+	readonly showCheckpointDiff?: (
+		args: ShowCheckpointDiffArgs,
+	) => Promise<CheckpointDiff | null>;
+	readonly clearCheckpointDiff?: () => void;
 };
 
 const CURRENT_CHECKPOINT_NAME = "main";
@@ -67,7 +79,7 @@ function displayBranchName(branchName: string): string {
  * @example
  * <HistoryView />
  */
-export function HistoryView() {
+export function HistoryView(props: HistoryViewProps = {}) {
 	const lix = useLix();
 	const branches = useQuery<BranchRow>((lix) =>
 		qb(lix)
@@ -90,6 +102,9 @@ export function HistoryView() {
 			lix={lix}
 			branches={branches}
 			activeBranchId={activeBranch.value}
+			checkpointDiff={props.checkpointDiff}
+			showCheckpointDiff={props.showCheckpointDiff}
+			clearCheckpointDiff={props.clearCheckpointDiff}
 		/>
 	);
 }
@@ -98,10 +113,18 @@ function HistoryViewContent({
 	lix,
 	branches,
 	activeBranchId,
+	checkpointDiff,
+	showCheckpointDiff,
+	clearCheckpointDiff,
 }: {
 	readonly lix: ReturnType<typeof useLix>;
 	readonly branches: BranchRow[];
 	readonly activeBranchId: string;
+	readonly checkpointDiff?: CheckpointDiff | null;
+	readonly showCheckpointDiff?: (
+		args: ShowCheckpointDiffArgs,
+	) => Promise<CheckpointDiff | null>;
+	readonly clearCheckpointDiff?: () => void;
 }) {
 	const activeBranchRow =
 		branches.find((branch) => branch.id === activeBranchId) ??
@@ -127,11 +150,23 @@ function HistoryViewContent({
 	}, []);
 
 	useEffect(() => {
+		if (
+			checkpointDiff?.branchId &&
+			branches.some((branch) => branch.id === checkpointDiff.branchId)
+		) {
+			setSelectedBranchId(checkpointDiff.branchId);
+			return;
+		}
 		if (branches.some((branch) => branch.id === selectedBranchId)) {
 			return;
 		}
 		setSelectedBranchId(activeBranchRow.id);
-	}, [activeBranchRow.id, branches, selectedBranchId]);
+	}, [
+		activeBranchRow.id,
+		branches,
+		checkpointDiff?.branchId,
+		selectedBranchId,
+	]);
 
 	const handleSwitch = useCallback(
 		async (branchId: string) => {
@@ -140,13 +175,42 @@ function HistoryViewContent({
 			try {
 				await lix.switchBranch({ branchId });
 				setSelectedBranchId(branchId);
+				clearCheckpointDiff?.();
 			} catch (error) {
 				console.error("Failed to switch branch", error);
 			} finally {
 				setPendingAction(null);
 			}
 		},
-		[lix, activeBranchRow.id],
+		[lix, activeBranchRow.id, clearCheckpointDiff],
+	);
+
+	const handleSelectBranch = useCallback(
+		async (branchId: string) => {
+			if (checkpointDiff?.branchId === branchId) {
+				clearCheckpointDiff?.();
+				setSelectedBranchId(activeBranchRow.id);
+				return;
+			}
+			setSelectedBranchId(branchId);
+			if (!showCheckpointDiff) return;
+			setPendingAction(branchId);
+			try {
+				await showCheckpointDiff({ branchId, branches });
+			} catch (error) {
+				console.error("Failed to resolve checkpoint diff", error);
+				clearCheckpointDiff?.();
+			} finally {
+				setPendingAction(null);
+			}
+		},
+		[
+			activeBranchRow.id,
+			branches,
+			checkpointDiff?.branchId,
+			clearCheckpointDiff,
+			showCheckpointDiff,
+		],
 	);
 
 	const handleCreateBranch = useCallback(async () => {
@@ -301,7 +365,7 @@ function HistoryViewContent({
 										data-selected={isSelected ? "true" : undefined}
 										aria-current={isActive ? "true" : undefined}
 										onClick={() => {
-											setSelectedBranchId(branch.id);
+											void handleSelectBranch(branch.id);
 										}}
 										className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-l-[7px] px-2 text-left text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
 									>
@@ -412,7 +476,11 @@ export const extension = createReactExtensionDefinition({
 	icon: HistoryIcon,
 	component: ({ context }) => (
 		<LixProvider lix={context.lix}>
-			<HistoryView />
+			<HistoryView
+				checkpointDiff={context.checkpointDiff}
+				showCheckpointDiff={context.showCheckpointDiff}
+				clearCheckpointDiff={context.clearCheckpointDiff}
+			/>
 		</LixProvider>
 	),
 });

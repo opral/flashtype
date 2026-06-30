@@ -9,7 +9,10 @@ import type {
 	FileTreeRenamingItem,
 	GitStatusEntry,
 } from "@pierre/trees";
-import type { FilesystemTreeNode } from "@/extensions/files/build-filesystem-tree";
+import type {
+	FilesystemTreeNode,
+	FilesystemTreeSource,
+} from "@/extensions/files/build-filesystem-tree";
 
 export type FileTreeCreateRequest = {
 	readonly id: number;
@@ -21,7 +24,7 @@ export type FileTreeCreateRequest = {
 export type FileTreeRenameRequest = {
 	readonly id?: string;
 	readonly kind: "file" | "directory";
-	readonly source: "lix" | "watched";
+	readonly source: FilesystemTreeSource;
 	readonly sourcePath: string;
 	readonly destinationPath: string;
 };
@@ -35,7 +38,11 @@ export type FileTreeProps = {
 	readonly createRequest?: FileTreeCreateRequest | null;
 	readonly selectedPath?: string;
 	readonly isPanelFocused?: boolean;
-	readonly onSelectItem?: (path: string, kind: "file" | "directory") => void;
+	readonly onSelectItem?: (
+		path: string,
+		kind: "file" | "directory",
+		source?: FilesystemTreeSource,
+	) => void;
 	readonly openDirectories?: ReadonlySet<string>;
 	readonly reviewPaths?: ReadonlySet<string>;
 	readonly onOpenDirectoriesChange?: (paths: ReadonlySet<string>) => void;
@@ -54,7 +61,7 @@ type TreePathInfo = {
 	readonly kind: "file" | "directory";
 	readonly id?: string;
 	readonly createRequestId?: number;
-	readonly source?: "lix" | "watched";
+	readonly source?: FilesystemTreeSource;
 };
 
 type TreeInput = {
@@ -290,7 +297,7 @@ export function FileTree({
 			latestTreePath,
 		);
 		if (info) {
-			stateRef.current.onSelectItem?.(info.appPath, info.kind);
+			stateRef.current.onSelectItem?.(info.appPath, info.kind, info.source);
 			if (
 				!suppressSelectionOpenRef.current &&
 				!suppressSelectionOpenForClickRef.current &&
@@ -317,6 +324,9 @@ export function FileTree({
 		if (info.source === "watched") {
 			return info.kind === "file";
 		}
+		if (info.source === "checkpoint-diff") {
+			return false;
+		}
 		return true;
 	};
 
@@ -339,6 +349,9 @@ export function FileTree({
 			return;
 		}
 		if (sourceInfo.source === "watched" && sourceInfo.kind !== "file") {
+			return;
+		}
+		if (sourceInfo.source === "checkpoint-diff") {
 			return;
 		}
 		void stateRef.current.onRenameCommit?.({

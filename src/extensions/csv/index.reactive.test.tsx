@@ -115,3 +115,59 @@ test("updates when CSV file data changes in Lix", async () => {
 		await lix.close();
 	}
 });
+
+test("renders checkpoint CSV diffs without review controls for missing active files", async () => {
+	const lix = await openLix();
+	let utils: ReturnType<typeof render> | undefined;
+	try {
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<CsvView
+							fileId="file_checkpoint_csv"
+							isActiveView
+							isPanelFocused
+							checkpointDiffReviewId="checkpoint:csv"
+							checkpointDiff={{
+								branchId: "checkpoint-after",
+								branchName: "After",
+								beforeBranchId: "checkpoint-before",
+								beforeBranchName: "Before",
+								beforeCommitId: "before-commit",
+								afterCommitId: "after-commit",
+								files: [
+									{
+										fileId: "file_checkpoint_csv",
+										path: "/checkpoint.csv",
+										beforePath: "/checkpoint.csv",
+										afterPath: "/checkpoint.csv",
+										beforeData: new TextEncoder().encode("name,value\nalpha,1"),
+										afterData: new TextEncoder().encode("name,value\nalpha,2"),
+										beforeCommitId: "before-commit",
+										afterCommitId: "after-commit",
+										reviewId: "checkpoint:csv",
+										status: "modified",
+									},
+								],
+							}}
+						/>
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.container.querySelector(".csv-review-table")).toBeTruthy();
+		});
+		expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+	} finally {
+		if (utils) {
+			await act(async () => {
+				utils!.unmount();
+			});
+		}
+		await lix.close();
+	}
+});

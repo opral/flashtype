@@ -12,7 +12,14 @@ import { LixProvider, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
 import { decodeFileDataToText } from "@/lib/decode-file-data";
 import { ExternalWriteReviewControls } from "@/extension-runtime/external-write-review-controls";
-import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import type {
+	ExternalWriteReview,
+	ExternalWriteReviewData,
+} from "@/extension-runtime/external-write-review";
+import type {
+	CheckpointDiff,
+	CheckpointDiffFile,
+} from "@/extension-runtime/checkpoint-diff";
 import {
 	useExternalWriteReview,
 	useExternalWriteReviewData,
@@ -27,6 +34,8 @@ type CsvViewProps = {
 	readonly fileId: string;
 	readonly isActiveView?: boolean;
 	readonly isPanelFocused?: boolean;
+	readonly checkpointDiff?: CheckpointDiff | null;
+	readonly checkpointDiffReviewId?: string;
 	readonly registerExternalWriteReview?: (
 		review: ExternalWriteReview,
 	) => () => void;
@@ -72,6 +81,8 @@ export function CsvView({
 	fileId,
 	isActiveView = true,
 	isPanelFocused = true,
+	checkpointDiff,
+	checkpointDiffReviewId,
 	registerExternalWriteReview,
 	onAcceptReview,
 	onRejectReview,
@@ -82,6 +93,8 @@ export function CsvView({
 				fileId={fileId}
 				isActiveView={isActiveView}
 				isPanelFocused={isPanelFocused}
+				checkpointDiff={checkpointDiff}
+				checkpointDiffReviewId={checkpointDiffReviewId}
 				registerExternalWriteReview={registerExternalWriteReview}
 				onAcceptReview={onAcceptReview}
 				onRejectReview={onRejectReview}
@@ -100,26 +113,54 @@ function CsvViewContent({ fileId, ...props }: CsvViewProps) {
 			.where("id", "=", fileId)
 			.limit(1),
 	);
-	return <CsvViewData fileRow={fileRow} {...props} />;
+	return <CsvViewData fileId={fileId} fileRow={fileRow} {...props} />;
 }
 
 function CsvViewData({
+	fileId,
 	fileRow,
+	checkpointDiff,
+	checkpointDiffReviewId,
 	registerExternalWriteReview,
 	...props
-}: Omit<CsvViewProps, "fileId"> & {
+}: CsvViewProps & {
 	readonly fileRow?: CsvFileRow | undefined;
 }) {
+	const checkpointDiffFile = useMemo(
+		() =>
+			checkpointDiffFileForReviewId(
+				checkpointDiff,
+				checkpointDiffReviewId,
+				fileId,
+			),
+		[checkpointDiff, checkpointDiffReviewId, fileId],
+	);
+	const effectiveFileRow =
+		fileRow ??
+		(checkpointDiffFile
+			? {
+					id: checkpointDiffFile.fileId,
+					path: checkpointDiffFile.path,
+					data: checkpointDiffFile.afterData,
+				}
+			: undefined);
+	const checkpointReview = useMemo(
+		() =>
+			checkpointDiffFile
+				? checkpointDiffFileToReview(checkpointDiffFile)
+				: null,
+		[checkpointDiffFile],
+	);
 	const externalWriteReview = useExternalWriteReview({
-		fileId: fileRow?.id,
-		path: fileRow?.path,
+		fileId: checkpointReview ? null : effectiveFileRow?.id,
+		path: checkpointReview ? null : effectiveFileRow?.path,
 	});
 	useEffect(() => {
 		if (!externalWriteReview) return;
 		return registerExternalWriteReview?.(externalWriteReview);
 	}, [externalWriteReview, registerExternalWriteReview]);
 
-	if (!fileRow) {
+	if (!effectiveFileRow) {
 		return (
 			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">
 				File not found in the workspace.
@@ -129,8 +170,17 @@ function CsvViewData({
 
 	return (
 		<CsvViewLoaded
-			fileRow={fileRow}
-			externalWriteReview={externalWriteReview}
+			fileRow={effectiveFileRow}
+			externalWriteReview={checkpointReview ?? externalWriteReview}
+			reviewDataOverride={
+				checkpointDiffFile
+					? {
+							beforeData: checkpointDiffFile.beforeData,
+							afterData: checkpointDiffFile.afterData,
+						}
+					: undefined
+			}
+			reviewControls={checkpointDiffFile ? "none" : "review"}
 			{...props}
 		/>
 	);
@@ -139,6 +189,8 @@ function CsvViewData({
 function CsvViewLoaded({
 	fileRow,
 	externalWriteReview,
+	reviewDataOverride,
+	reviewControls = "review",
 	isActiveView = true,
 	isPanelFocused = true,
 	onAcceptReview,
@@ -146,14 +198,12 @@ function CsvViewLoaded({
 }: Omit<CsvViewProps, "fileId"> & {
 	readonly fileRow: CsvFileRow;
 	readonly externalWriteReview: ExternalWriteReview | null;
+	readonly reviewDataOverride?: ExternalWriteReviewData;
+	readonly reviewControls?: "review" | "none";
 }) {
 	const parsed = useMemo<CsvParseResult>(() => {
 		return parseCsv(decodeFileDataToText(fileRow.data));
 	}, [fileRow]);
-
-	if (parsed.columns.length === 0) {
-		return <CsvEmptyState filePath={fileRow.path} />;
-	}
 
 	return (
 		<div className="csv-view flex min-h-0 flex-1 flex-col bg-background">
@@ -164,14 +214,20 @@ function CsvViewLoaded({
 				</div>
 			) : null}
 			<div className="relative min-h-0 flex-1 overflow-hidden">
-				<CsvTable parsed={parsed} isActiveView={isActiveView} />
+				{parsed.columns.length === 0 ? (
+					<CsvEmptyState filePath={fileRow.path} />
+				) : (
+					<CsvTable parsed={parsed} isActiveView={isActiveView} />
+				)}
 				{externalWriteReview ? (
 					<CsvReviewOverlay
 						fileId={fileRow.id}
 						review={externalWriteReview}
+						reviewDataOverride={reviewDataOverride}
 						isActive={isActiveView && isPanelFocused}
 						onAccept={onAcceptReview}
 						onReject={onRejectReview}
+						controls={reviewControls}
 					/>
 				) : null}
 			</div>
@@ -182,13 +238,17 @@ function CsvViewLoaded({
 function CsvReviewOverlay({
 	fileId,
 	review,
+	reviewDataOverride,
 	isActive,
+	controls = "review",
 	onAccept,
 	onReject,
 }: {
 	readonly fileId: string;
 	readonly review: ExternalWriteReview;
+	readonly reviewDataOverride?: ExternalWriteReviewData;
 	readonly isActive: boolean;
+	readonly controls?: "review" | "none";
 	readonly onAccept?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
@@ -200,7 +260,10 @@ function CsvReviewOverlay({
 		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
 }) {
-	const reviewData = useExternalWriteReviewData(review);
+	const externalReviewData = useExternalWriteReviewData(
+		reviewDataOverride ? null : review,
+	);
+	const reviewData = reviewDataOverride ?? externalReviewData;
 	const diffHtml = useMemo(
 		() => (reviewData ? renderCsvReviewDiffHtml(reviewData) : null),
 		[reviewData],
@@ -221,13 +284,15 @@ function CsvReviewOverlay({
 					<span>Loading review…</span>
 				</div>
 			)}
-			<ExternalWriteReviewControls
-				isActive={isActive}
-				onAccept={() =>
-					void onAccept?.({ fileId, reviewId: review.reviewId, review })
-				}
-				onReject={rejectReview}
-			/>
+			{controls === "review" ? (
+				<ExternalWriteReviewControls
+					isActive={isActive}
+					onAccept={() =>
+						void onAccept?.({ fileId, reviewId: review.reviewId, review })
+					}
+					onReject={rejectReview}
+				/>
+			) : null}
 		</div>
 	);
 }
@@ -421,6 +486,32 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+function checkpointDiffFileForReviewId(
+	checkpointDiff: CheckpointDiff | null | undefined,
+	reviewId: string | undefined,
+	fileId: string,
+): CheckpointDiffFile | null {
+	if (!checkpointDiff || !reviewId) return null;
+	return (
+		checkpointDiff.files.find(
+			(file) => file.reviewId === reviewId && file.fileId === fileId,
+		) ?? null
+	);
+}
+
+function checkpointDiffFileToReview(
+	file: CheckpointDiffFile,
+): ExternalWriteReview {
+	return {
+		fileId: file.fileId,
+		path: file.path,
+		reviewId: file.reviewId,
+		beforeCommitId: file.beforeCommitId,
+		afterCommitId: file.afterCommitId,
+		agentTurnRangeIds: [],
+	};
+}
+
 function assertFileId(fileId: unknown): asserts fileId is string {
 	if (typeof fileId !== "string" || fileId.length === 0) {
 		throw new Error("CsvView requires a non-empty fileId.");
@@ -437,6 +528,12 @@ export const extension = createReactExtensionDefinition({
 		<LixProvider lix={context.lix}>
 			<CsvView
 				fileId={instance.state?.fileId as string}
+				checkpointDiff={context.checkpointDiff}
+				checkpointDiffReviewId={
+					typeof instance.state?.checkpointDiffReviewId === "string"
+						? instance.state.checkpointDiffReviewId
+						: undefined
+				}
 				onAcceptReview={context.acceptExternalWriteReview}
 				onRejectReview={context.rejectExternalWriteReview}
 				registerExternalWriteReview={context.registerExternalWriteReview}

@@ -13,17 +13,22 @@ const mermaidMock = vi.hoisted(() => {
 	let deferNextRender = false;
 
 	return {
-		renderMermaidDiagram: vi.fn(async (_source: string, container: HTMLElement) => {
-			if (deferNextRender) {
-				deferNextRender = false;
-				await new Promise<void>((resolve) => {
-					releaseInFlightRender = resolve;
-				});
-				releaseInFlightRender = null;
-			}
-			const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-			container.replaceChildren(svg);
-		}),
+		renderMermaidDiagram: vi.fn(
+			async (_source: string, container: HTMLElement) => {
+				if (deferNextRender) {
+					deferNextRender = false;
+					await new Promise<void>((resolve) => {
+						releaseInFlightRender = resolve;
+					});
+					releaseInFlightRender = null;
+				}
+				const svg = document.createElementNS(
+					"http://www.w3.org/2000/svg",
+					"svg",
+				);
+				container.replaceChildren(svg);
+			},
+		),
 		resetMermaidForTests: vi.fn(),
 		getMermaidRenderTheme: vi.fn(() => theme),
 		onMermaidThemeChange: vi.fn((listener: () => void) => {
@@ -135,7 +140,11 @@ describe("mermaid code blocks", () => {
 
 		isFocusedSpy.mockReturnValue(false);
 		editor.commands.blur();
-		editor.emit("blur", { editor, event: new FocusEvent("blur") });
+		editor.emit("blur", {
+			editor,
+			event: new FocusEvent("blur"),
+			transaction: editor.state.tr,
+		});
 		expect(block?.getAttribute("data-editing")).toBe("false");
 		expect(preview?.getAttribute("aria-hidden")).toBe("false");
 		expect(
@@ -165,9 +174,9 @@ describe("mermaid code blocks", () => {
 		mermaidMock.setTheme("dark");
 		mermaidMock.finishInFlightRender();
 		await vi.waitFor(() => {
-			expect(mermaidMock.renderMermaidDiagram.mock.calls.length).toBeGreaterThan(
-				callsBeforeThemeChange,
-			);
+			expect(
+				mermaidMock.renderMermaidDiagram.mock.calls.length,
+			).toBeGreaterThan(callsBeforeThemeChange);
 		});
 
 		editor.destroy();
@@ -237,7 +246,9 @@ describe("mermaid code blocks", () => {
 		});
 
 		expect(editor.view.dom.querySelector(".markdown-mermaid-block")).toBeNull();
-		expect(editor.view.dom.querySelector("pre code.language-js")).not.toBeNull();
+		expect(
+			editor.view.dom.querySelector("pre code.language-js"),
+		).not.toBeNull();
 
 		editor.destroy();
 	});

@@ -1,11 +1,13 @@
 import type { FilesystemEntryRow } from "@/queries";
 
+export type FilesystemTreeSource = "lix" | "watched" | "checkpoint-diff";
+
 export type FilesystemTreeFile = {
 	type: "file";
 	id: string;
 	name: string;
 	path: string;
-	source?: "lix" | "watched";
+	source?: FilesystemTreeSource;
 };
 
 export type FilesystemTreeDirectory = {
@@ -13,7 +15,7 @@ export type FilesystemTreeDirectory = {
 	id: string;
 	name: string;
 	path: string;
-	source?: "lix" | "watched";
+	source?: FilesystemTreeSource;
 	children: FilesystemTreeNode[];
 };
 
@@ -68,6 +70,18 @@ function preferLixEntry(
 	next: FilesystemEntryRow,
 ): boolean {
 	if (!existing) return true;
+	if (
+		existing.source === "checkpoint-diff" &&
+		next.source !== "checkpoint-diff"
+	) {
+		return true;
+	}
+	if (
+		next.source === "checkpoint-diff" &&
+		existing.source !== "checkpoint-diff"
+	) {
+		return false;
+	}
 	return existing.source === "watched" && next.source !== "watched";
 }
 

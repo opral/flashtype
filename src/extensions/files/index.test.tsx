@@ -10,6 +10,10 @@ import {
 	appendAgentTurnCommitRange,
 	type AgentTurnCommitRange,
 } from "@/shell/agent-turn-review-range";
+import type {
+	CheckpointDiff,
+	CheckpointDiffFile,
+} from "@/extension-runtime/checkpoint-diff";
 
 const createViewContext = (
 	lix: Awaited<ReturnType<typeof openLix>>,
@@ -983,6 +987,135 @@ describe("FilesView", () => {
 		}
 	});
 
+	test("marks checkpoint diff files and opens virtual paths as checkpoint tabs", async () => {
+		const lix = await openLix();
+		const openFile = vi.fn();
+		try {
+			await qb(lix)
+				.insertInto("lix_directory")
+				.values({ path: "/docs/" } as any)
+				.execute();
+			await writeReviewFile(lix, "file_live", "/docs/live.md", "after");
+
+			let utils: ReturnType<typeof render>;
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView
+								context={createViewContext(lix, {
+									openFile,
+									checkpointDiff: checkpointDiff({
+										files: [
+											checkpointDiffFile({
+												fileId: "file_live",
+												path: "/docs/live.md",
+												reviewId: "checkpoint:live",
+											}),
+											checkpointDiffFile({
+												fileId: "file_added",
+												path: "/docs/added.md",
+												reviewId: "checkpoint:added",
+												status: "added",
+											}),
+										],
+									}),
+								})}
+							/>
+						</Suspense>
+					</LixProvider>,
+				);
+			});
+
+			await findTreeItemByLabel(utils!, "docs");
+			await act(async () => {
+				fireEvent.click(await findTreeItemByLabel(utils!, "docs"));
+			});
+
+			await waitFor(() => {
+				expect(queryTreeItemByLabel(utils!, "live.md")).toHaveAttribute(
+					"data-item-git-status",
+					"modified",
+				);
+				expect(queryTreeItemByLabel(utils!, "added.md")).toHaveAttribute(
+					"data-item-git-status",
+					"modified",
+				);
+			});
+
+			await act(async () => {
+				fireEvent.click(await findTreeItemByLabel(utils!, "added.md"));
+			});
+
+			expect(openFile).toHaveBeenCalledWith({
+				panel: "central",
+				fileId: "file_added",
+				filePath: "/docs/added.md",
+				state: {
+					checkpointDiffReviewId: "checkpoint:added",
+					checkpointDiffBranchId: "checkpoint-after",
+				},
+				focus: false,
+				trackTelemetry: false,
+				trackDocumentOpenAttempt: false,
+				trackDocumentViewed: false,
+			});
+
+			utils!.unmount();
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("does not delete selected checkpoint diff files", async () => {
+		const lix = await openLix();
+		try {
+			await writeReviewFile(lix, "file_live", "/live.md", "after");
+
+			let utils: ReturnType<typeof render>;
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView
+								context={createViewContext(lix, {
+									checkpointDiff: checkpointDiff({
+										files: [
+											checkpointDiffFile({
+												fileId: "file_live",
+												path: "/live.md",
+												reviewId: "checkpoint:live",
+											}),
+										],
+									}),
+								})}
+							/>
+						</Suspense>
+					</LixProvider>,
+				);
+			});
+
+			await findTreeItemByLabel(utils!, "live.md");
+			await act(async () => {
+				fireEvent.click(await findTreeItemByLabel(utils!, "live.md"));
+			});
+			await act(async () => {
+				fireEvent.keyDown(document, { key: "Backspace", metaKey: true });
+			});
+
+			const row = await qb(lix)
+				.selectFrom("lix_file")
+				.select("path")
+				.where("id", "=", "file_live")
+				.executeTakeFirst();
+			expect(row?.path).toBe("/live.md");
+
+			utils!.unmount();
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("watches transient directories on demand and delegates watched-only file opens", async () => {
 		const lix = await openLix();
 		const originalDesktop = window.flashtypeDesktop;
@@ -1708,5 +1841,40 @@ function agentRange(
 		startedAt: 1,
 		completedAt: 2,
 		...overrides,
+	};
+}
+
+function checkpointDiff(
+	overrides: Partial<CheckpointDiff> = {},
+): CheckpointDiff {
+	return {
+		branchId: "checkpoint-after",
+		branchName: "After",
+		beforeBranchId: "checkpoint-before",
+		beforeBranchName: "Before",
+		beforeCommitId: "before-commit",
+		afterCommitId: "after-commit",
+		files: [],
+		...overrides,
+	};
+}
+
+function checkpointDiffFile(
+	overrides: Partial<CheckpointDiffFile> &
+		Pick<CheckpointDiffFile, "fileId" | "path" | "reviewId">,
+): CheckpointDiffFile {
+	const { fileId, path, reviewId, ...rest } = overrides;
+	return {
+		fileId,
+		path,
+		beforePath: path,
+		afterPath: path,
+		beforeData: new TextEncoder().encode("before"),
+		afterData: new TextEncoder().encode("after"),
+		beforeCommitId: "before-commit",
+		afterCommitId: "after-commit",
+		reviewId,
+		status: "modified",
+		...rest,
 	};
 }

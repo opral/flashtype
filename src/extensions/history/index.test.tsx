@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, type ComponentProps } from "react";
 import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import { qb } from "@/lib/lix-kysely";
 import {
@@ -19,12 +19,14 @@ describe("HistoryView", () => {
 	let lix: Lix;
 	let cleanupFns: Array<() => Promise<void>> = [];
 
-	const renderWithProviders = async () => {
+	const renderWithProviders = async (
+		props: ComponentProps<typeof HistoryView> = {},
+	) => {
 		await act(async () => {
 			render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<HistoryView />
+						<HistoryView {...props} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -86,6 +88,69 @@ describe("HistoryView", () => {
 			.select("value")
 			.executeTakeFirstOrThrow();
 		expect(active.value).toBe(initialActiveBranchId);
+	});
+
+	test("passes visible sorted checkpoint rows to the diff resolver", async () => {
+		const branchB = await lix.createBranch({ name: "b-checkpoint" });
+		const branchA = await lix.createBranch({ name: "a-checkpoint" });
+		const showCheckpointDiff = vi.fn().mockResolvedValue(null);
+
+		await renderWithProviders({ showCheckpointDiff });
+
+		const checkpoint = await screen.findByRole("button", {
+			name: "b-checkpoint",
+		});
+		await act(async () => {
+			fireEvent.click(checkpoint);
+		});
+
+		expect(showCheckpointDiff).toHaveBeenCalledTimes(1);
+		expect(showCheckpointDiff).toHaveBeenCalledWith({
+			branchId: branchB.id,
+			branches: expect.arrayContaining([
+				expect.objectContaining({ id: branchA.id, name: "a-checkpoint" }),
+				expect.objectContaining({ id: branchB.id, name: "b-checkpoint" }),
+			]),
+		});
+		const diffArgs = showCheckpointDiff.mock.calls[0]?.[0] as
+			| { branches: Array<{ name: string }> }
+			| undefined;
+		expect(diffArgs?.branches.map((branch) => branch.name)).toEqual([
+			"a-checkpoint",
+			"b-checkpoint",
+			"main",
+		]);
+	});
+
+	test("clicking the active checkpoint diff again clears it", async () => {
+		const target = await lix.createBranch({ name: "selected-checkpoint" });
+		const clearCheckpointDiff = vi.fn();
+
+		await renderWithProviders({
+			checkpointDiff: {
+				branchId: target.id,
+				branchName: target.name,
+				beforeBranchId: "before",
+				beforeBranchName: "before",
+				beforeCommitId: "before-commit",
+				afterCommitId: "after-commit",
+				files: [],
+			},
+			clearCheckpointDiff,
+		});
+
+		const checkpoint = await screen.findByRole("button", {
+			name: "selected-checkpoint",
+		});
+		await waitFor(() => {
+			expect(checkpoint).toHaveAttribute("data-selected", "true");
+		});
+
+		await act(async () => {
+			fireEvent.click(checkpoint);
+		});
+
+		expect(clearCheckpointDiff).toHaveBeenCalledTimes(1);
 	});
 
 	test("restores another branch via actions menu", async () => {

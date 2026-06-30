@@ -29,6 +29,10 @@ import { CentralPanel } from "./central-panel";
 import { TopBar } from "./top-bar";
 import { FlashtypeMenu } from "./top-bar/flashtype-menu";
 import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import type {
+	CheckpointDiff,
+	ShowCheckpointDiffArgs,
+} from "@/extension-runtime/checkpoint-diff";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import { qb } from "@/lib/lix-kysely";
 import {
@@ -100,6 +104,7 @@ import {
 	getFileDataAtCommit,
 	getPendingExternalWriteReviewPaths,
 } from "./external-write-review-history";
+import { resolveCheckpointDiff } from "./checkpoint-diff";
 
 type NewFileDraftHandlerRegistration = {
 	readonly panelSide: PanelSide;
@@ -125,6 +130,9 @@ type ActiveAgentTurn = {
 	readonly event: AgentHookTurnEvent;
 	readonly beforeCommitIdPromise: Promise<string | null>;
 };
+
+const CHECKPOINT_DIFF_REVIEW_ID_STATE_KEY = "checkpointDiffReviewId";
+const CHECKPOINT_DIFF_BRANCH_ID_STATE_KEY = "checkpointDiffBranchId";
 
 type AgentHookTurnEventResult = void | {
 	readonly additionalContext?: string | null;
@@ -207,6 +215,30 @@ const activeFilePathFromPanel = (panel: PanelState): string | null => {
 	return typeof rawPath === "string" && rawPath.length > 0 ? rawPath : null;
 };
 
+const checkpointDiffReviewIdFromState = (
+	state: ExtensionState | undefined,
+): string | null => {
+	const reviewId = state?.[CHECKPOINT_DIFF_REVIEW_ID_STATE_KEY];
+	return typeof reviewId === "string" && reviewId.length > 0 ? reviewId : null;
+};
+
+const checkpointDiffFileInstance = (reviewId: string): string =>
+	`checkpoint-diff:${reviewId}`;
+
+const isCheckpointDiffView = (view: ExtensionInstance): boolean =>
+	checkpointDiffReviewIdFromState(view.state) !== null;
+
+const removeCheckpointDiffViews = (panel: PanelState): PanelState => {
+	const views = panel.views.filter((view) => !isCheckpointDiffView(view));
+	if (views.length === panel.views.length) return panel;
+	const activeInstance = views.some(
+		(view) => view.instance === panel.activeInstance,
+	)
+		? panel.activeInstance
+		: (views[views.length - 1]?.instance ?? null);
+	return { views, activeInstance };
+};
+
 const collapsePanelToActiveView = (panel: PanelState): PanelState => {
 	const activeEntry = activeEntryFromPanel(panel);
 	if (!activeEntry) return { views: [], activeInstance: null };
@@ -285,20 +317,24 @@ const isWorkspaceLixFilePath = (filePath: string): boolean => {
 
 const sanitizePanels = (
 	panels: Record<PanelSide, PanelState>,
-): Record<PanelSide, PanelState> => ({
-	left: {
-		views: panels.left.views.map(stripLaunchArgs),
-		activeInstance: panels.left.activeInstance,
-	},
-	central: {
-		views: panels.central.views.map(stripLaunchArgs),
-		activeInstance: panels.central.activeInstance,
-	},
-	right: {
-		views: panels.right.views.map(stripLaunchArgs),
-		activeInstance: panels.right.activeInstance,
-	},
-});
+): Record<PanelSide, PanelState> => {
+	const sanitizePanel = (panel: PanelState): PanelState => {
+		const views = panel.views
+			.filter((view) => !isCheckpointDiffView(view))
+			.map(stripLaunchArgs);
+		const activeInstance = views.some(
+			(view) => view.instance === panel.activeInstance,
+		)
+			? panel.activeInstance
+			: (views[views.length - 1]?.instance ?? null);
+		return { views, activeInstance };
+	};
+	return {
+		left: sanitizePanel(panels.left),
+		central: sanitizePanel(panels.central),
+		right: sanitizePanel(panels.right),
+	};
+};
 
 const hydratePanel = (
 	panel: PanelState,
@@ -731,6 +767,9 @@ function LayoutShellLoadedContent({
 		() => initialLayoutSizes.right <= MIN_VISIBLE_PANEL_SIZE,
 	);
 	const [shouldAnimatePanels, setShouldAnimatePanels] = useState(false);
+	const [checkpointDiff, setCheckpointDiff] = useState<CheckpointDiff | null>(
+		null,
+	);
 	const animationTimeoutRef = useRef<number | null>(null);
 	const newFileDraftHandlersRef = useRef(
 		new Map<string, NewFileDraftHandlerRegistration>(),
@@ -1247,6 +1286,13 @@ function LayoutShellLoadedContent({
 		],
 	);
 
+	const clearCheckpointDiff = useCallback(() => {
+		setCheckpointDiff(null);
+		setLeftPanel(removeCheckpointDiffViews);
+		setCentralPanel(removeCheckpointDiffViews);
+		setRightPanel(removeCheckpointDiffViews);
+	}, []);
+
 	const schedulePanelAnimation = useCallback(() => {
 		setShouldAnimatePanels(true);
 		if (animationTimeoutRef.current !== null) {
@@ -1397,6 +1443,7 @@ function LayoutShellLoadedContent({
 			panel,
 			fileId,
 			filePath,
+			instance,
 			state,
 			launchArgs,
 			focus = true,
@@ -1409,6 +1456,7 @@ function LayoutShellLoadedContent({
 			panel: PanelSide;
 			fileId: string;
 			filePath: string;
+			instance?: string;
 			state?: ExtensionState;
 			launchArgs?: ExtensionLaunchArgs;
 			focus?: boolean;
@@ -1440,7 +1488,7 @@ function LayoutShellLoadedContent({
 			handleOpenView({
 				panel,
 				kind,
-				instance: fileExtensionInstanceForKind(kind, fileId),
+				instance: instance ?? fileExtensionInstanceForKind(kind, fileId),
 				state: {
 					...buildFileExtensionProps({ fileId, filePath }),
 					...(state ?? {}),
@@ -1451,6 +1499,35 @@ function LayoutShellLoadedContent({
 			});
 		},
 		[handleOpenView, extensionMap, captureWorkspaceTelemetry],
+	);
+
+	const showCheckpointDiff = useCallback(
+		async ({ branchId, branches }: ShowCheckpointDiffArgs) => {
+			const nextDiff = await resolveCheckpointDiff({ lix, branches, branchId });
+			setCheckpointDiff(nextDiff);
+			setLeftPanel(removeCheckpointDiffViews);
+			setCentralPanel(removeCheckpointDiffViews);
+			setRightPanel(removeCheckpointDiffViews);
+			const firstFile = nextDiff?.files[0];
+			if (firstFile) {
+				openResolvedFileView({
+					panel: "central",
+					fileId: firstFile.fileId,
+					filePath: firstFile.path,
+					instance: checkpointDiffFileInstance(firstFile.reviewId),
+					state: {
+						[CHECKPOINT_DIFF_REVIEW_ID_STATE_KEY]: firstFile.reviewId,
+						[CHECKPOINT_DIFF_BRANCH_ID_STATE_KEY]: nextDiff.branchId,
+					},
+					focus: true,
+					trackTelemetry: false,
+					trackDocumentOpenAttempt: false,
+					trackDocumentViewed: false,
+				});
+			}
+			return nextDiff;
+		},
+		[lix, openResolvedFileView],
 	);
 
 	const autoOpenFirstAgentReviewFile = useCallback(
@@ -1541,6 +1618,31 @@ function LayoutShellLoadedContent({
 			trackDocumentOpenAttempt?: boolean;
 			trackDocumentViewed?: boolean;
 		}) => {
+			const checkpointReviewId = checkpointDiffReviewIdFromState(state);
+			if (checkpointReviewId) {
+				const checkpointFile = checkpointDiff?.files.find(
+					(file) =>
+						file.reviewId === checkpointReviewId &&
+						file.fileId === _requestedFileId,
+				);
+				if (!checkpointFile) return;
+				openResolvedFileView({
+					panel,
+					fileId: checkpointFile.fileId,
+					filePath: checkpointFile.path,
+					instance: checkpointDiffFileInstance(checkpointFile.reviewId),
+					state,
+					launchArgs,
+					focus,
+					pending,
+					documentOrigin,
+					trackTelemetry,
+					trackDocumentOpenAttempt,
+					trackDocumentViewed,
+				});
+				return;
+			}
+
 			let resolvedFile: LixFileForOpen | null = null;
 			try {
 				resolvedFile = await resolveLixFileForOpen({
@@ -1573,7 +1675,7 @@ function LayoutShellLoadedContent({
 				trackDocumentViewed,
 			});
 		},
-		[lix, workspace, onError, openResolvedFileView],
+		[lix, workspace, onError, openResolvedFileView, checkpointDiff],
 	);
 
 	useEffect(() => {
@@ -2364,6 +2466,9 @@ function LayoutShellLoadedContent({
 			openFile: handleOpenFile,
 			closeExtension: handleCloseView,
 			closeFileViews: handleCloseFileViews,
+			checkpointDiff,
+			showCheckpointDiff,
+			clearCheckpointDiff,
 			setTabBadgeCount: () => {},
 			moveExtensionToPanel: handleMoveViewToPanel,
 			resizePanel: handleResizePanel,
@@ -2381,6 +2486,9 @@ function LayoutShellLoadedContent({
 			handleOpenFile,
 			handleCloseView,
 			handleCloseFileViews,
+			checkpointDiff,
+			showCheckpointDiff,
+			clearCheckpointDiff,
 			handleMoveViewToPanel,
 			handleResizePanel,
 			handleAcceptExternalWriteReview,

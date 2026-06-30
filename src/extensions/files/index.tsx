@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Files, FileUp, FilePlus, Github } from "lucide-react";
-import {
-	LixProvider,
-	useLix,
-	useQuery,
-	useQueryTakeFirst,
-} from "@/lib/lix-react";
+import { LixProvider, useLix, useQuery } from "@/lib/lix-react";
 import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
 import { selectFilesystemEntries } from "@/queries";
 import {
 	buildFilesystemTree,
 	type FilesystemTreeNode,
+	type FilesystemTreeSource,
 } from "@/extensions/files/build-filesystem-tree";
 import type { ExtensionContext } from "../../extension-runtime/types";
 import {
@@ -22,6 +18,7 @@ import { createReactExtensionDefinition } from "../../extension-runtime/react-ex
 import { qb } from "@/lib/lix-kysely";
 import { FILES_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
+import type { CheckpointDiffFile } from "@/extension-runtime/checkpoint-diff";
 import type { Lix } from "@/lib/lix-types";
 import {
 	AGENT_TURN_COMMIT_RANGE_KEY,
@@ -80,15 +77,36 @@ function FilesViewContent({
 			return !upgradedWatchedFilePaths.has(filesystemEntryPathKey(entry));
 		});
 	}, [isEphemeralWorkspace, upgradedWatchedFilePaths, watchedEntries]);
+	const checkpointDiffEntries = useMemo(
+		() => checkpointDiffFilesystemEntries(context?.checkpointDiff?.files ?? []),
+		[context?.checkpointDiff?.files],
+	);
 	const combinedEntries = useMemo(
-		() => unionFilesystemEntries(entries ?? [], visibleWatchedEntries),
-		[entries, visibleWatchedEntries],
+		() =>
+			unionFilesystemEntries(
+				entries ?? [],
+				visibleWatchedEntries,
+				checkpointDiffEntries,
+			),
+		[entries, visibleWatchedEntries, checkpointDiffEntries],
 	);
 	const nodes = useMemo(
 		() => buildFilesystemTree(combinedEntries),
 		[combinedEntries],
 	);
 	const pendingReviewPaths = usePendingExternalWriteReviewPaths(lix, nodes);
+	const checkpointReviewPaths = useMemo(
+		() =>
+			new Set(
+				(context?.checkpointDiff?.files ?? []).map((file) =>
+					normalizeFilePath(file.path),
+				),
+			),
+		[context?.checkpointDiff?.files],
+	);
+	const reviewPaths = context?.checkpointDiff
+		? checkpointReviewPaths
+		: pendingReviewPaths;
 	const creatingRef = useRef(false);
 	const renamingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
@@ -103,6 +121,8 @@ function FilesViewContent({
 	const [selectedKind, setSelectedKind] = useState<"file" | "directory" | null>(
 		null,
 	);
+	const [selectedSource, setSelectedSource] =
+		useState<FilesystemTreeSource | null>(null);
 	const selectedKindRef = useRef(selectedKind);
 	const syncedActiveFilePathRef = useRef<string | null>(null);
 	const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -162,6 +182,7 @@ function FilesViewContent({
 				setSelectedPath(null);
 				setSelectedFileId(null);
 				setSelectedKind(null);
+				setSelectedSource(null);
 				selectedKindRef.current = null;
 			}
 			return;
@@ -182,6 +203,7 @@ function FilesViewContent({
 				setSelectedPath(null);
 				setSelectedFileId(null);
 				setSelectedKind(null);
+				setSelectedSource(null);
 				selectedKindRef.current = null;
 			}
 			return;
@@ -192,6 +214,7 @@ function FilesViewContent({
 		setSelectedPath(normalizedActiveFilePath);
 		setSelectedFileId(activeEntry.id);
 		setSelectedKind("file");
+		setSelectedSource(activeEntry.source ?? "lix");
 		setOpenDirectoryPaths((prev) => {
 			const ancestors = ancestorDirectoryPathsForFilePath(
 				normalizedActiveFilePath,
@@ -294,6 +317,7 @@ function FilesViewContent({
 				setSelectedPath(null);
 				setSelectedFileId(null);
 				setSelectedKind(null);
+				setSelectedSource(null);
 				if (directoryPath !== "/") {
 					setOpenDirectoryPaths((openPaths) => {
 						const next = new Set(openPaths);
@@ -322,6 +346,7 @@ function FilesViewContent({
 		setSelectedPath(null);
 		setSelectedFileId(null);
 		setSelectedKind(null);
+		setSelectedSource(null);
 	}, []);
 
 	const handleCreateCommit = useCallback(
@@ -364,6 +389,7 @@ function FilesViewContent({
 					setSelectedPath(path);
 					setSelectedFileId(id);
 					setSelectedKind("file");
+					setSelectedSource("lix");
 					context?.openFile?.({
 						panel: "central",
 						fileId: id,
@@ -399,6 +425,7 @@ function FilesViewContent({
 					setPendingDirectoryPaths((prev) => [...prev, path]);
 					setSelectedPath(path);
 					setSelectedKind("directory");
+					setSelectedSource("lix");
 				} catch (error) {
 					console.error("Failed to create directory", error);
 				} finally {
@@ -422,6 +449,7 @@ function FilesViewContent({
 	const handleRenameCommit = useCallback(
 		async (request: FileTreeRenameRequest) => {
 			if (renamingRef.current) return;
+			if (request.source === "checkpoint-diff") return;
 			const sourcePath =
 				request.kind === "directory"
 					? ensureDirectoryPath(request.sourcePath)
@@ -461,6 +489,7 @@ function FilesViewContent({
 					setSelectedPath(destinationPath);
 					setSelectedFileId(null);
 					setSelectedKind("directory");
+					setSelectedSource("lix");
 					return;
 				}
 
@@ -500,6 +529,7 @@ function FilesViewContent({
 				setSelectedPath(destinationPath);
 				setSelectedFileId(resolvedFileId ?? null);
 				setSelectedKind("file");
+				setSelectedSource("lix");
 				if (resolvedFileId) {
 					void context?.openFile?.({
 						panel: "central",
@@ -552,11 +582,24 @@ function FilesViewContent({
 			setSelectedPath(path);
 			setSelectedFileId(fileId);
 			setSelectedKind("file");
+			const checkpointDiffFile = context?.checkpointDiff?.files.find(
+				(file) => file.fileId === fileId && file.path === path,
+			);
+			setSelectedSource(checkpointDiffFile ? "checkpoint-diff" : "lix");
 			void context?.openFile?.({
 				panel: "central",
 				fileId,
 				filePath: path,
+				state: checkpointDiffFile
+					? {
+							checkpointDiffReviewId: checkpointDiffFile.reviewId,
+							checkpointDiffBranchId: context.checkpointDiff?.branchId,
+						}
+					: undefined,
 				focus: false,
+				trackTelemetry: checkpointDiffFile ? false : undefined,
+				trackDocumentOpenAttempt: checkpointDiffFile ? false : undefined,
+				trackDocumentViewed: checkpointDiffFile ? false : undefined,
 			});
 		},
 		[context],
@@ -582,18 +625,24 @@ function FilesViewContent({
 	);
 
 	const handleSelectItem = useCallback(
-		(path: string, kind: "file" | "directory") => {
+		(
+			path: string,
+			kind: "file" | "directory",
+			source?: FilesystemTreeSource,
+		) => {
 			setSelectedPath(path);
 			if (kind === "directory") {
 				setSelectedFileId(null);
 			}
 			setSelectedKind(kind);
+			setSelectedSource(source ?? "lix");
 		},
 		[],
 	);
 
 	const handleDeleteSelection = useCallback(async () => {
 		if (!selectedPath || !selectedKind) return;
+		if (selectedSource === "checkpoint-diff") return;
 		const normalizedPath =
 			selectedKind === "file"
 				? selectedPath
@@ -625,8 +674,16 @@ function FilesViewContent({
 			setSelectedPath(null);
 			setSelectedFileId(null);
 			setSelectedKind(null);
+			setSelectedSource(null);
 		}
-	}, [context, lix, selectedFileId, selectedKind, selectedPath]);
+	}, [
+		context,
+		lix,
+		selectedFileId,
+		selectedKind,
+		selectedPath,
+		selectedSource,
+	]);
 
 	useEffect(() => {
 		const listener = (event: KeyboardEvent) => {
@@ -866,7 +923,7 @@ function FilesViewContent({
 				<FileTree
 					nodes={nodes}
 					openFileView={handleOpenFile}
-					reviewPaths={pendingReviewPaths}
+					reviewPaths={reviewPaths}
 					onSelectItem={handleSelectItem}
 					selectedPath={selectedPath ?? undefined}
 					isPanelFocused={isPanelFocused}
@@ -886,27 +943,6 @@ function usePendingExternalWriteReviewPaths(
 	lix: Lix,
 	nodes: readonly FilesystemTreeNode[],
 ): ReadonlySet<string> {
-	const activeBranch = useQueryTakeFirst<{ value: string }>((lix) =>
-		qb(lix)
-			.selectFrom("lix_key_value")
-			.where("key", "=", "lix_workspace_branch_id")
-			.select(["value"]),
-	);
-	const activeBranchId =
-		typeof activeBranch?.value === "string" ? activeBranch.value : "";
-	const rangeRow = useQueryTakeFirst<{ value: unknown }>((lix) =>
-		qb(lix)
-			.selectFrom("lix_key_value_by_branch")
-			.select("value")
-			.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
-			.where("lixcol_branch_id", "=", activeBranchId)
-			.limit(1),
-	);
-	const ranges = useMemo(
-		() =>
-			isAgentTurnCommitRangeStore(rangeRow?.value) ? rangeRow.value.ranges : [],
-		[rangeRow?.value],
-	);
 	const reviewableFiles = useMemo(
 		() => collectReviewableTreeFiles(nodes),
 		[nodes],
@@ -914,29 +950,93 @@ function usePendingExternalWriteReviewPaths(
 	const [pendingPaths, setPendingPaths] = useState<ReadonlySet<string>>(
 		() => new Set(),
 	);
+	const [reviewRevision, setReviewRevision] = useState(0);
 
 	useEffect(() => {
 		let cancelled = false;
-		if (ranges.length === 0 || reviewableFiles.length === 0) {
+		const activeBranchEvents = lix.observe(
+			`SELECT value
+			 FROM lix_key_value
+			 WHERE key = ?`,
+			["lix_workspace_branch_id"],
+		);
+		const reviewRangeEvents = lix.observe(
+			`SELECT value, lixcol_branch_id
+			 FROM lix_key_value_by_branch
+			 WHERE key = ?`,
+			[AGENT_TURN_COMMIT_RANGE_KEY],
+		);
+		const watchEvents = async (
+			events: ReturnType<Lix["observe"]>,
+		): Promise<void> => {
+			let receivedInitialSnapshot = false;
+			while (!cancelled) {
+				const event = await events.next();
+				if (!event || cancelled) break;
+				if (!receivedInitialSnapshot) {
+					receivedInitialSnapshot = true;
+					continue;
+				}
+				setReviewRevision((current) => current + 1);
+			}
+		};
+		void watchEvents(activeBranchEvents);
+		void watchEvents(reviewRangeEvents);
+		return () => {
+			cancelled = true;
+			activeBranchEvents.close();
+			reviewRangeEvents.close();
+		};
+	}, [lix]);
+
+	useEffect(() => {
+		let cancelled = false;
+		if (reviewableFiles.length === 0) {
 			setPendingPaths((prev) => (prev.size === 0 ? prev : new Set()));
 			return;
 		}
-		void getPendingExternalWriteReviewPaths(lix, reviewableFiles, ranges)
-			.then((nextPaths) => {
-				if (cancelled) return;
-				setPendingPaths((prev) =>
-					sameStringSet(prev, nextPaths) ? prev : nextPaths,
-				);
-			})
-			.catch((error: unknown) => {
-				if (cancelled) return;
-				console.warn("Failed to resolve pending file reviews", error);
-				setPendingPaths((prev) => (prev.size === 0 ? prev : new Set()));
-			});
+		void (async () => {
+			const activeBranch = await qb(lix)
+				.selectFrom("lix_key_value")
+				.where("key", "=", "lix_workspace_branch_id")
+				.select(["value"])
+				.executeTakeFirst();
+			const activeBranchId =
+				typeof activeBranch?.value === "string" ? activeBranch.value : "";
+			const rangeRow = await qb(lix)
+				.selectFrom("lix_key_value_by_branch")
+				.select("value")
+				.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
+				.where("lixcol_branch_id", "=", activeBranchId)
+				.limit(1)
+				.executeTakeFirst();
+			const ranges = isAgentTurnCommitRangeStore(rangeRow?.value)
+				? rangeRow.value.ranges
+				: [];
+			if (ranges.length === 0) {
+				if (!cancelled) {
+					setPendingPaths((prev) => (prev.size === 0 ? prev : new Set()));
+				}
+				return;
+			}
+			const nextPaths = await getPendingExternalWriteReviewPaths(
+				lix,
+				reviewableFiles,
+				ranges,
+			);
+			if (cancelled) return;
+			setPendingPaths((prev) =>
+				sameStringSet(prev, nextPaths) ? prev : nextPaths,
+			);
+		})().catch((error: unknown) => {
+			if (cancelled) return;
+			console.warn("Failed to resolve pending file reviews", error);
+			setPendingPaths((prev) => (prev.size === 0 ? prev : new Set()));
+		});
 		return () => {
 			cancelled = true;
 		};
-	}, [lix, ranges, reviewableFiles]);
+	}, [lix, reviewRevision, reviewableFiles]);
 
 	return pendingPaths;
 }
@@ -947,7 +1047,7 @@ function collectReviewableTreeFiles(
 	const files: ExternalWriteReviewFile[] = [];
 	const visit = (node: FilesystemTreeNode) => {
 		if (node.type === "file") {
-			if (node.source !== "watched") {
+			if (node.source !== "watched" && node.source !== "checkpoint-diff") {
 				files.push({ fileId: node.id, path: node.path });
 			}
 			return;
@@ -1195,8 +1295,16 @@ function appendUniquePath(paths: readonly string[], path: string): string[] {
 function unionFilesystemEntries(
 	lixEntries: readonly FilesystemEntryRow[],
 	watchedEntries: readonly FilesystemEntryRow[],
+	checkpointDiffEntries: readonly FilesystemEntryRow[] = [],
 ): FilesystemEntryRow[] {
 	const entriesByPath = new Map<string, FilesystemEntryRow>();
+	for (const entry of checkpointDiffEntries) {
+		entriesByPath.set(filesystemEntryPathKey(entry), {
+			...entry,
+			path: filesystemEntryPathKey(entry),
+			source: "checkpoint-diff",
+		});
+	}
 	for (const entry of watchedEntries) {
 		entriesByPath.set(filesystemEntryPathKey(entry), {
 			...entry,
@@ -1214,6 +1322,42 @@ function unionFilesystemEntries(
 	return [...entriesByPath.values()].sort((left, right) =>
 		left.path.localeCompare(right.path),
 	);
+}
+
+function checkpointDiffFilesystemEntries(
+	files: readonly CheckpointDiffFile[],
+): FilesystemEntryRow[] {
+	if (files.length === 0) return [];
+	const entriesByPath = new Map<string, FilesystemEntryRow>();
+	for (const file of files) {
+		const path = normalizeFilePath(file.path);
+		for (const directoryPath of ancestorDirectoryPathsForFilePath(path)) {
+			if (entriesByPath.has(directoryPath)) continue;
+			entriesByPath.set(directoryPath, {
+				id: `checkpoint-diff-dir:${directoryPath}`,
+				parent_id: null,
+				path: directoryPath,
+				display_name: leafNameFromPath(directoryPath),
+				kind: "directory",
+				source: "checkpoint-diff",
+			});
+		}
+		entriesByPath.set(path, {
+			id: file.fileId,
+			parent_id: null,
+			path,
+			display_name: leafNameFromPath(path),
+			kind: "file",
+			source: "checkpoint-diff",
+		});
+	}
+	return [...entriesByPath.values()];
+}
+
+function leafNameFromPath(path: string): string {
+	const normalized = path.endsWith("/") ? path.slice(0, -1) : path;
+	const segments = normalized.split("/").filter(Boolean);
+	return segments.at(-1) ?? "";
 }
 
 function filesystemEntryPathKey(entry: FilesystemEntryRow): string {
