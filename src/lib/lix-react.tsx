@@ -33,11 +33,23 @@ type QueryCacheEntry<TRow> = {
 	error?: unknown;
 };
 
+type QueryObserverSubscriber<TRow> = {
+	onRows(rows: TRow[]): void;
+	onError(error: unknown): void;
+};
+
+type QueryObserverEntry<TRow> = {
+	events: ReturnType<Lix["observe"]>;
+	subscribers: Set<QueryObserverSubscriber<TRow>>;
+	closed: boolean;
+};
+
 const queryCache = new Map<string, QueryCacheEntry<any>>();
 const observeQueryCache = new Map<
 	string,
 	{ sql: string; params: ReadonlyArray<unknown> }
 >();
+const observeSubscriptionCache = new Map<string, QueryObserverEntry<any>>();
 const lixInstanceIds = new WeakMap<object, number>();
 let nextLixInstanceId = 1;
 
@@ -81,35 +93,20 @@ export function useQuery<TRow>(
 
 	useEffect(() => {
 		if (!subscribe) return;
-		let closed = false;
-		const events = lix.observe(observeQuery.sql, observeQuery.params);
-
-		void (async () => {
-			try {
-				while (!closed) {
-					const event = await events.next();
-					if (closed || event === undefined) break;
-					const nextRows = queryResultToRows<TRow>(event.result);
-					cacheQueryRows(cacheKey, nextRows);
-					if (rowsEqual(rowsRef.current, nextRows)) {
-						continue;
-					}
-					rowsRef.current = nextRows;
-					setRows(nextRows);
+		return subscribeToQueryObserver<TRow>(cacheKey, lix, observeQuery, {
+			onRows(nextRows) {
+				if (rowsEqual(rowsRef.current, nextRows)) {
+					return;
 				}
-			} catch (error) {
-				if (closed) return;
-				queryCache.delete(cacheKey);
+				rowsRef.current = nextRows;
+				setRows(nextRows);
+			},
+			onError(error) {
 				setRows(() => {
 					throw error instanceof Error ? error : new Error(String(error));
 				});
-			}
-		})();
-
-		return () => {
-			closed = true;
-			events.close();
-		};
+			},
+		});
 	}, [cacheKey, subscribe, lix, observeQuery]);
 
 	if (entry.error !== undefined) {
@@ -122,6 +119,84 @@ export function useQuery<TRow>(
 	return subscribe
 		? (cachedRows ?? rowsRef.current ?? initialRows)
 		: initialRows;
+}
+
+function subscribeToQueryObserver<TRow>(
+	cacheKey: string,
+	lix: Lix,
+	observeQuery: { sql: string; params: ReadonlyArray<unknown> },
+	subscriber: QueryObserverSubscriber<TRow>,
+): () => void {
+	const entry = getQueryObserverEntry<TRow>(cacheKey, lix, observeQuery);
+	entry.subscribers.add(subscriber);
+	return () => {
+		entry.subscribers.delete(subscriber);
+		if (entry.subscribers.size > 0) {
+			return;
+		}
+		closeQueryObserverEntry(cacheKey, entry);
+	};
+}
+
+function getQueryObserverEntry<TRow>(
+	cacheKey: string,
+	lix: Lix,
+	observeQuery: { sql: string; params: ReadonlyArray<unknown> },
+): QueryObserverEntry<TRow> {
+	const cached = observeSubscriptionCache.get(cacheKey) as
+		| QueryObserverEntry<TRow>
+		| undefined;
+	if (cached && !cached.closed) {
+		return cached;
+	}
+
+	const entry: QueryObserverEntry<TRow> = {
+		events: lix.observe(observeQuery.sql, observeQuery.params),
+		subscribers: new Set(),
+		closed: false,
+	};
+	observeSubscriptionCache.set(cacheKey, entry);
+	void runQueryObserver(cacheKey, entry);
+	return entry;
+}
+
+async function runQueryObserver<TRow>(
+	cacheKey: string,
+	entry: QueryObserverEntry<TRow>,
+): Promise<void> {
+	try {
+		while (!entry.closed) {
+			const event = await entry.events.next();
+			if (entry.closed || event === undefined) break;
+			const nextRows = queryResultToRows<TRow>(event.result);
+			cacheQueryRows(cacheKey, nextRows);
+			for (const subscriber of Array.from(entry.subscribers)) {
+				subscriber.onRows(nextRows);
+			}
+		}
+	} catch (error) {
+		if (entry.closed) return;
+		queryCache.delete(cacheKey);
+		for (const subscriber of Array.from(entry.subscribers)) {
+			subscriber.onError(error);
+		}
+	} finally {
+		if (!entry.closed) {
+			closeQueryObserverEntry(cacheKey, entry);
+		}
+	}
+}
+
+function closeQueryObserverEntry<TRow>(
+	cacheKey: string,
+	entry: QueryObserverEntry<TRow>,
+): void {
+	if (entry.closed) {
+		return;
+	}
+	entry.closed = true;
+	observeSubscriptionCache.delete(cacheKey);
+	entry.events.close();
 }
 
 export const useQueryTakeFirst = <TResult,>(

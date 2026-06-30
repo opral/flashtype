@@ -212,7 +212,9 @@ export async function openDesktopLix(): Promise<Lix> {
 				void (async () => {
 					const observeId = await ensureObserveId();
 					await desktop.lix.observeClose({ observeId });
-				})();
+				})().catch(() => {
+					// If observeStart already failed, next() reports the real error.
+				});
 			},
 		};
 	};
