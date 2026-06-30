@@ -133,10 +133,14 @@ test("checkpoint row click marks files without auto-opening a diff", async ({
 		await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
 
 		await ensureFilesViewOpenInLeftPanel(page);
-		for (const filePath of ["/added.md", "/removed.md", "/shared.md"]) {
+		for (const [filePath, status] of [
+			["/added.md", "added"],
+			["/removed.md", "deleted"],
+			["/shared.md", "modified"],
+		] as const) {
 			const file = fileTreeFile(page, filePath);
 			await expect(file).toBeVisible();
-			await expect(file).toHaveAttribute("data-item-git-status", "modified");
+			await expect(file).toHaveAttribute("data-item-git-status", status);
 		}
 
 		await fileTreeFile(page, "/added.md").click();
@@ -247,8 +251,8 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 				afterCommitId: setup.secondCommitId,
 			});
 		await expectMarkdownDiff(page, {
-			added: ["Modified at second checkpoint"],
-			removed: ["Modified at first checkpoint"],
+			added: ["second"],
+			removed: ["first"],
 		});
 		await expectFileTreeStatuses(
 			page,
@@ -263,10 +267,10 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await expectFileTreeStatuses(
 			page,
 			{
-				"/head-deleted.md": null,
+				"/head-deleted.md": "<missing>",
 				"/head-recreated.md": null,
 			},
-			"unchanged files should not be marked in checkpoint-to-checkpoint diff",
+			"unchanged files should not be marked or synthesized in checkpoint-to-checkpoint diff",
 		);
 
 		await clickCheckpointRow(page, 2);
@@ -283,8 +287,8 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 				afterCommitId: null,
 			});
 		await expectMarkdownDiff(page, {
-			added: ["Modified at HEAD"],
-			removed: ["Modified at second checkpoint"],
+			added: ["HEAD"],
+			removed: ["second"],
 		});
 		await expectFileTreeStatuses(
 			page,
@@ -979,7 +983,10 @@ async function expectMarkdownDiff(
 	page: Page,
 	expected: { added?: readonly string[]; removed?: readonly string[] } = {},
 ): Promise<void> {
-	const overlay = page.locator(".markdown-review-overlay");
+	const overlay = page
+		.locator(".markdown-review-overlay")
+		.filter({ has: page.locator("[data-diff-status]") })
+		.first();
 	await expect(overlay).toBeVisible();
 	await expectReadonlyMarkdown(page);
 	await expect(overlay.locator("[data-diff-status]").first()).toBeVisible();

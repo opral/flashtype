@@ -10,6 +10,13 @@ import { qb } from "@/lib/lix-kysely";
 
 type FileHistorySnapshot = {
 	readonly id: string;
+	readonly path: string | null;
+	readonly data: unknown | null;
+	readonly lixcol_depth: number;
+};
+
+type VisibleFileSnapshot = {
+	readonly id: string;
 	readonly path: string;
 	readonly data: unknown;
 };
@@ -62,13 +69,12 @@ async function loadInitialCommitId(
 ): Promise<string | null> {
 	const result = await lix.execute(
 		`
-			SELECT DISTINCT h.observed_commit_id AS commit_id
+			SELECT h.observed_commit_id AS commit_id
 			FROM lix_state_history h
-			LEFT JOIN lix_commit_edge e
-				ON e.child_id = h.observed_commit_id
 			WHERE h.start_commit_id = ?
 				AND h.schema_key = 'lix_commit'
-				AND e.child_id IS NULL
+			ORDER BY h.depth DESC
+			LIMIT 1
 		`,
 		[startCommitId],
 	);
@@ -83,23 +89,36 @@ async function loadInitialCommitId(
 async function loadFileSnapshotsAtCommit(
 	lix: Lix,
 	commitId: string,
-): Promise<FileHistorySnapshot[]> {
+): Promise<VisibleFileSnapshot[]> {
 	const rows = (await qb(lix)
 		.selectFrom("lix_file_history")
-		.select(["id", "path", "data"])
+		.select(["id", "path", "data", "lixcol_depth"])
 		.where("lixcol_start_commit_id", "=", commitId)
-		.where("lixcol_depth", "=", 0)
-		.where("data", "is not", null)
-		.orderBy("path", "asc")
+		.orderBy("id", "asc")
+		.orderBy("lixcol_depth", "asc")
 		.execute()) as FileHistorySnapshot[];
-	return rows;
+	const latestByFileId = new Map<string, FileHistorySnapshot>();
+	for (const row of rows) {
+		const existing = latestByFileId.get(row.id);
+		if (!existing || row.lixcol_depth < existing.lixcol_depth) {
+			latestByFileId.set(row.id, row);
+		}
+	}
+	return [...latestByFileId.values()]
+		.filter((row) => typeof row.path === "string" && row.data !== null)
+		.map((row) => ({
+			id: row.id,
+			path: row.path as string,
+			data: row.data as unknown,
+		}))
+		.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function buildCheckpointDiffFiles(args: {
 	readonly beforeCommitId: string;
-	readonly beforeSnapshots: readonly FileHistorySnapshot[];
+	readonly beforeSnapshots: readonly VisibleFileSnapshot[];
 	readonly afterCommitId: string;
-	readonly afterSnapshots: readonly FileHistorySnapshot[];
+	readonly afterSnapshots: readonly VisibleFileSnapshot[];
 }): CheckpointDiffFile[] {
 	const beforeById = new Map(
 		args.beforeSnapshots.map((file) => [file.id, file]),
@@ -119,6 +138,7 @@ function buildCheckpointDiffFiles(args: {
 			beforeCommitId: args.beforeCommitId,
 			after,
 			afterCommitId: args.afterCommitId,
+			status: "modified",
 		});
 		if (diffFile) {
 			files.push(diffFile);
@@ -137,6 +157,7 @@ function buildCheckpointDiffFiles(args: {
 			beforeCommitId: args.beforeCommitId,
 			after,
 			afterCommitId: args.afterCommitId,
+			status: "recreated",
 		});
 		if (diffFile) {
 			files.push(diffFile);
@@ -168,16 +189,17 @@ function buildCheckpointDiffFiles(args: {
 }
 
 function buildDiffFile(args: {
-	readonly before: FileHistorySnapshot;
+	readonly before: VisibleFileSnapshot;
 	readonly beforeCommitId: string;
-	readonly after: FileHistorySnapshot;
+	readonly after: VisibleFileSnapshot;
 	readonly afterCommitId: string;
+	readonly status: Extract<CheckpointDiffFileStatus, "modified" | "recreated">;
 }): CheckpointDiffFile | null {
 	const beforeData = decodeFileDataToBytes(args.before.data);
 	const afterData = decodeFileDataToBytes(args.after.data);
 	const pathChanged = args.before.path !== args.after.path;
 	const dataChanged = !fileBytesEqual(beforeData, afterData);
-	if (!pathChanged && !dataChanged) return null;
+	if (args.status === "modified" && !pathChanged && !dataChanged) return null;
 	return {
 		fileId: args.after.id,
 		path: args.after.path,
@@ -193,20 +215,20 @@ function buildDiffFile(args: {
 			fileId: args.after.id,
 			path: args.after.path,
 		}),
-		status: "modified",
+		status: args.status,
 	};
 }
 
 function buildMissingSideDiffFile(
 	args:
 		| {
-				readonly before: FileHistorySnapshot;
+				readonly before: VisibleFileSnapshot;
 				readonly beforeCommitId: string;
 				readonly afterCommitId: string;
 				readonly status: Extract<CheckpointDiffFileStatus, "deleted">;
 		  }
 		| {
-				readonly after: FileHistorySnapshot;
+				readonly after: VisibleFileSnapshot;
 				readonly beforeCommitId: string;
 				readonly afterCommitId: string;
 				readonly status: Extract<CheckpointDiffFileStatus, "added">;

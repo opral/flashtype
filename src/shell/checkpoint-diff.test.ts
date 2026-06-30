@@ -120,6 +120,38 @@ describe("resolveCheckpointDiff", () => {
 		}
 	});
 
+	test("diffs every visible file in the first checkpoint snapshot", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "file_alpha", "/alpha.md", "# Alpha\n");
+			await writeFile(lix, "file_beta", "/beta.md", "# Beta\n");
+			await writeFile(lix, "file_gamma", "/gamma.md", "# Gamma\n");
+			const first = await lix.createBranch({ name: "a-first" });
+
+			const diff = await resolveCheckpointDiff({
+				lix,
+				branchId: first.id,
+				branches: [
+					{ id: first.id, name: first.name, commit_id: first.commitId },
+				],
+			});
+
+			expect(diff?.beforeBranchName).toBe("Initial Commit");
+			expect(diff?.files.map((file) => file.path)).toEqual([
+				"/alpha.md",
+				"/beta.md",
+				"/gamma.md",
+			]);
+			expect(diff?.files.map((file) => file.status)).toEqual([
+				"added",
+				"added",
+				"added",
+			]);
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("returns null for missing commits", async () => {
 		const lix = await openLix();
 		try {

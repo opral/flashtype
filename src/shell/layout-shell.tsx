@@ -396,7 +396,9 @@ function transitionCheckpointEditorRevisionPanel(args: {
 				state: {
 					...(stripEditorRevisionState(nextView.state) ?? {}),
 					beforeCommitId: nextDiffFile.beforeCommitId,
-					afterCommitId: nextDiffFile.afterCommitId,
+					afterCommitId: args.nextDiff?.afterIsActiveHead
+						? null
+						: nextDiffFile.afterCommitId,
 				},
 			};
 		}
@@ -441,10 +443,13 @@ function isCheckpointEditorRevisionView(
 	const filePath =
 		typeof view.state?.filePath === "string" ? view.state.filePath : "";
 	const revision = normalizeEditorRevisionState(view.state);
+	const afterCommitId = checkpointDiff.afterIsActiveHead
+		? null
+		: checkpointDiff.afterCommitId;
 	const normalizedFilePath = normalizeLixFileOpenPath(filePath) ?? filePath;
 	return (
 		revision.beforeCommitId === checkpointDiff.beforeCommitId &&
-		revision.afterCommitId === checkpointDiff.afterCommitId &&
+		revision.afterCommitId === afterCommitId &&
 		checkpointDiff.files.some(
 			(file) =>
 				file.fileId === fileId ||
@@ -1631,7 +1636,14 @@ function LayoutShellLoadedContent({
 	const showCheckpointDiff = useCallback(
 		async ({ branchId, branches }: ShowCheckpointDiffArgs) => {
 			const previousDiff = checkpointDiffRef.current;
-			const nextDiff = await resolveCheckpointDiff({ lix, branches, branchId });
+			const [resolvedDiff, activeBranchId] = await Promise.all([
+				resolveCheckpointDiff({ lix, branches, branchId }),
+				lix.activeBranchId().catch(() => null),
+			]);
+			const nextDiff =
+				resolvedDiff && activeBranchId === branchId
+					? { ...resolvedDiff, afterIsActiveHead: true }
+					: resolvedDiff;
 			checkpointDiffRef.current = nextDiff;
 			setCheckpointDiff(nextDiff);
 			transitionCheckpointEditorRevisions({

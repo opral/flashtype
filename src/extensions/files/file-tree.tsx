@@ -45,6 +45,7 @@ export type FileTreeProps = {
 	) => void;
 	readonly openDirectories?: ReadonlySet<string>;
 	readonly reviewPaths?: ReadonlySet<string>;
+	readonly reviewStatuses?: ReadonlyMap<string, ReviewGitStatus>;
 	readonly onOpenDirectoriesChange?: (paths: ReadonlySet<string>) => void;
 	readonly onCreateCommit?: (
 		request: FileTreeCreateRequest,
@@ -54,6 +55,13 @@ export type FileTreeProps = {
 	readonly onRenameCommit?: (
 		request: FileTreeRenameRequest,
 	) => Promise<void> | void;
+};
+
+type ReviewGitStatus = GitStatusEntry["status"] | "recreated";
+
+type ReviewGitStatusEntry = {
+	readonly path: string;
+	readonly status: ReviewGitStatus;
 };
 
 type TreePathInfo = {
@@ -144,6 +152,16 @@ const FILE_TREE_UNSAFE_CSS = `
 		background: currentColor;
 	}
 
+	[data-item-git-status='recreated'] {
+		--trees-item-git-status-color: var(--trees-git-renamed-color);
+	}
+
+	[data-item-git-status='recreated'] > [data-item-section='git']::before {
+		content: "R";
+		font-size: var(--trees-font-size);
+		font-weight: var(--trees-font-weight-semibold);
+	}
+
 	[data-item-contains-git-change='true'] > [data-item-section='git'] {
 		color: var(--color-warning-600);
 		opacity: 0.75;
@@ -193,6 +211,7 @@ export function FileTree({
 	onSelectItem,
 	openDirectories,
 	reviewPaths,
+	reviewStatuses,
 	onOpenDirectoriesChange,
 	onCreateCommit,
 	onCreateCancel,
@@ -229,8 +248,8 @@ export function FileTree({
 		[openDirectoryTreePaths],
 	);
 	const reviewGitStatusEntries = useMemo(
-		() => buildReviewGitStatusEntries(reviewPaths, treeInput),
-		[reviewPaths, treeInput],
+		() => buildReviewGitStatusEntries(reviewPaths, reviewStatuses, treeInput),
+		[reviewPaths, reviewStatuses, treeInput],
 	);
 	const reviewGitStatusKey = useMemo(
 		() =>
@@ -388,7 +407,7 @@ export function FileTree({
 		dragAndDrop: false,
 		flattenEmptyDirectories: false,
 		icons: { set: "minimal", colored: false },
-		gitStatus: reviewGitStatusEntries,
+		gitStatus: reviewGitStatusEntries as GitStatusEntry[],
 		initialExpansion: "closed",
 		itemHeight: 28,
 		onSelectionChange: (paths) => handleSelectionChangeRef.current(paths),
@@ -410,7 +429,7 @@ export function FileTree({
 	}, [model, treeInput.paths, treePathsKey]);
 
 	useEffect(() => {
-		model.setGitStatus(reviewGitStatusEntries);
+		model.setGitStatus(reviewGitStatusEntries as GitStatusEntry[]);
 	}, [model, reviewGitStatusEntries, reviewGitStatusKey]);
 
 	useEffect(() => {
@@ -610,11 +629,25 @@ function buildTreeInput(
 
 function buildReviewGitStatusEntries(
 	reviewPaths: ReadonlySet<string> | undefined,
+	reviewStatuses: ReadonlyMap<string, ReviewGitStatus> | undefined,
 	treeInput: TreeInput,
-): GitStatusEntry[] {
-	if (!reviewPaths || reviewPaths.size === 0) return [];
-	const entries: GitStatusEntry[] = [];
-	for (const appPath of reviewPaths) {
+): ReviewGitStatusEntry[] {
+	if (
+		(!reviewPaths || reviewPaths.size === 0) &&
+		(!reviewStatuses || reviewStatuses.size === 0)
+	) {
+		return [];
+	}
+	const entries: ReviewGitStatusEntry[] = [];
+	for (const [appPath, status] of reviewStatuses ?? []) {
+		const treePath = appPathToTreePath(appPath, false);
+		const info = treeInput.pathInfoByTreePath.get(treePath);
+		if (!info || info.kind !== "file" || info.createRequestId != null) {
+			continue;
+		}
+		entries.push({ path: treePath, status });
+	}
+	for (const appPath of reviewPaths ?? []) {
 		const treePath = appPathToTreePath(appPath, false);
 		const info = treeInput.pathInfoByTreePath.get(treePath);
 		if (!info || info.kind !== "file" || info.createRequestId != null) {

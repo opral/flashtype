@@ -1,4 +1,8 @@
-export type CheckpointDiffFileStatus = "added" | "deleted" | "modified";
+export type CheckpointDiffFileStatus =
+	| "added"
+	| "deleted"
+	| "modified"
+	| "recreated";
 
 export type CheckpointDiffFile = {
 	readonly fileId: string;
@@ -20,6 +24,7 @@ export type CheckpointDiff = {
 	readonly beforeBranchName: string;
 	readonly beforeCommitId: string;
 	readonly afterCommitId: string;
+	readonly afterIsActiveHead?: boolean;
 	readonly files: readonly CheckpointDiffFile[];
 };
 

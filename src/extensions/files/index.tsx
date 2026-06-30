@@ -95,18 +95,21 @@ function FilesViewContent({
 		[combinedEntries],
 	);
 	const pendingReviewPaths = usePendingExternalWriteReviewPaths(lix, nodes);
-	const checkpointReviewPaths = useMemo(
+	const checkpointReviewStatuses = useMemo(
 		() =>
-			new Set(
+			new Map(
 				(context?.checkpointDiff?.files ?? []).map((file) =>
-					normalizeFilePath(file.path),
+					[normalizeFilePath(file.path), file.status] as const,
 				),
 			),
 		[context?.checkpointDiff?.files],
 	);
 	const reviewPaths = context?.checkpointDiff
-		? checkpointReviewPaths
+		? undefined
 		: pendingReviewPaths;
+	const reviewStatuses = context?.checkpointDiff
+		? checkpointReviewStatuses
+		: undefined;
 	const creatingRef = useRef(false);
 	const renamingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
@@ -596,7 +599,9 @@ function FilesViewContent({
 				state: checkpointDiffFile
 					? {
 							beforeCommitId: checkpointDiffFile.beforeCommitId,
-							afterCommitId: checkpointDiffFile.afterCommitId,
+							afterCommitId: context?.checkpointDiff?.afterIsActiveHead
+								? null
+								: checkpointDiffFile.afterCommitId,
 						}
 					: undefined,
 				focus: false,
@@ -927,6 +932,7 @@ function FilesViewContent({
 					nodes={nodes}
 					openFileView={handleOpenFile}
 					reviewPaths={reviewPaths}
+					reviewStatuses={reviewStatuses}
 					onSelectItem={handleSelectItem}
 					selectedPath={selectedPath ?? undefined}
 					isPanelFocused={isPanelFocused}

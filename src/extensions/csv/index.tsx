@@ -626,11 +626,17 @@ function checkpointDiffFileForRevision(
 	if (!checkpointDiff || !filePath) return null;
 	return (
 		checkpointDiff.files.find(
-			(file) =>
-				file.fileId === fileId &&
-				file.path === filePath &&
-				file.beforeCommitId === revision.beforeCommitId &&
-				file.afterCommitId === revision.afterCommitId,
+			(file) => {
+				const afterCommitId = checkpointDiff.afterIsActiveHead
+					? null
+					: file.afterCommitId;
+				return (
+					file.fileId === fileId &&
+					file.path === filePath &&
+					file.beforeCommitId === revision.beforeCommitId &&
+					afterCommitId === revision.afterCommitId
+				);
+			},
 		) ?? null
 	);
 }

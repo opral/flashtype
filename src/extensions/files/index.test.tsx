@@ -1018,6 +1018,12 @@ describe("FilesView", () => {
 												reviewId: "checkpoint:added",
 												status: "added",
 											}),
+											checkpointDiffFile({
+												fileId: "file_recreated",
+												path: "/docs/recreated.md",
+												reviewId: "checkpoint:recreated",
+												status: "recreated",
+											}),
 										],
 									}),
 								})}
@@ -1039,7 +1045,11 @@ describe("FilesView", () => {
 				);
 				expect(queryTreeItemByLabel(utils!, "added.md")).toHaveAttribute(
 					"data-item-git-status",
-					"modified",
+					"added",
+				);
+				expect(queryTreeItemByLabel(utils!, "recreated.md")).toHaveAttribute(
+					"data-item-git-status",
+					"recreated",
 				);
 			});
 
