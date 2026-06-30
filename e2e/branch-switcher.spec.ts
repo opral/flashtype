@@ -181,6 +181,71 @@ test("checkpoint row click marks files without auto-opening a diff", async ({
 	}
 });
 
+test("checkpoint diff selection keeps the active editor and toggles revision state", async ({
+	browserName: _browserName,
+}, testInfo) => {
+	const workspaceDir = testInfo.outputPath("checkpoint-editor-revision-workspace");
+
+	let electronApp: ElectronApplication | undefined;
+	try {
+		await mkdir(workspaceDir, { recursive: true });
+		await initializeLixWorkspace(workspaceDir);
+
+		electronApp = await launchDevElectronApp(workspaceDir);
+		const page = await electronApp.firstWindow();
+		registerRendererConsoleLogging(page);
+
+		await createMarkdownFileFromUi(page, "foo");
+		await typeLineInActiveMarkdown(page, "/foo.md", "foo line one");
+
+		const checkpoint1Id = await createCheckpointFromUi(page);
+		await waitForNextRendererTimestampSecond(page);
+
+		await openMarkdownFileFromTree(page, "/foo.md");
+		await typeLineInActiveMarkdown(page, "/foo.md", "foo line two");
+		await createMarkdownFileFromUi(page, "bar");
+		await typeLineInActiveMarkdown(page, "/bar.md", "bar line one");
+
+		const checkpoint2Id = await createCheckpointFromUi(page);
+		const currentBranchId = await activeBranchIdFromUi(page);
+		if (!currentBranchId) {
+			throw new Error("Active branch id is unavailable.");
+		}
+		await expectHistoryBranchOrder(page, [
+			checkpoint1Id,
+			checkpoint2Id,
+			currentBranchId,
+		]);
+
+		await openMarkdownFileFromTree(page, "/foo.md");
+		await typeLineInActiveMarkdown(page, "/foo.md", "foo line three");
+		await openMarkdownFileFromTree(page, "/bar.md");
+		await typeLineInActiveMarkdown(page, "/bar.md", "bar line two");
+
+		await clickCheckpointRow(page, 1);
+		await expectActiveCentralFile(page, "/bar.md");
+		await expectMarkdownDiff(page, { added: ["bar line one"] });
+
+		await openMarkdownFileFromTree(page, "/foo.md");
+		await expectActiveCentralFile(page, "/foo.md");
+		await expectMarkdownDiff(page, { added: ["foo line two"] });
+
+		await clickCheckpointRow(page, 1);
+		await expectActiveCentralFile(page, "/foo.md");
+		await expectEditableMarkdown(page);
+
+		await clickCheckpointRow(page, 1);
+		await expectActiveCentralFile(page, "/foo.md");
+		await expectMarkdownDiff(page, { added: ["foo line two"] });
+
+		await clickCheckpointRow(page, 0);
+		await expectActiveCentralFile(page, "/foo.md");
+		await expectMarkdownDiff(page);
+	} finally {
+		await closeElectronApp(electronApp);
+	}
+});
+
 async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
 	const lix = await openLix({
 		backend: new FsBackend({ path: workspaceDir, syncAllFiles: true }),
@@ -188,12 +253,106 @@ async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
 	await lix.close();
 }
 
-async function createCheckpointFromUi(page: Page): Promise<void> {
+async function createMarkdownFileFromUi(
+	page: Page,
+	stem: string,
+): Promise<void> {
+	const appPath = `/${stem}.md`;
+	await ensureFilesViewOpenInLeftPanel(page);
+	await page.getByRole("button", { name: "New file", exact: true }).click();
+	const renameInput = page.locator("[data-item-rename-input]").first();
+	await expect(renameInput).toBeVisible();
+	await renameInput.fill(stem);
+	await renameInput.press("Enter");
+	await expect(fileTreeFile(page, appPath)).toBeVisible();
+	await expectActiveCentralFile(page, appPath);
+	await expectEditableMarkdown(page);
+}
+
+async function openMarkdownFileFromTree(
+	page: Page,
+	appPath: string,
+): Promise<void> {
+	await ensureFilesViewOpenInLeftPanel(page);
+	const file = fileTreeFile(page, appPath);
+	await expect(file).toBeVisible();
+	await file.click();
+	await expectActiveCentralFile(page, appPath);
+}
+
+async function typeLineInActiveMarkdown(
+	page: Page,
+	appPath: string,
+	line: string,
+): Promise<void> {
+	const editor = page.locator('[data-testid="tiptap-editor"] .ProseMirror');
+	await expect(editor).toBeVisible();
+	await focusEditableMarkdownEnd(page, editor);
+	const existingText = (await editor.innerText()).trim();
+	if (existingText.length > 0) {
+		await page.keyboard.press("Enter");
+	}
+	await page.keyboard.type(line);
+	await expect(editor).toContainText(line);
+	await expectLixFileToContain(page, appPath, line);
+}
+
+async function focusEditableMarkdownEnd(
+	page: Page,
+	editor: ReturnType<Page["locator"]>,
+): Promise<void> {
+	await editor.click();
+	await page.keyboard.press(
+		process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End",
+	);
+}
+
+async function waitForNextRendererTimestampSecond(page: Page): Promise<void> {
+	const startedAtSecond = await page.evaluate(() =>
+		Math.floor(Date.now() / 1000),
+	);
+	await expect
+		.poll(async () => await page.evaluate(() => Math.floor(Date.now() / 1000)))
+		.not.toBe(startedAtSecond);
+}
+
+async function createCheckpointFromUi(page: Page): Promise<string> {
+	const beforeIds = await branchIdsFromUi(page);
 	await ensureHistoryViewOpenInLeftPanel(page);
 	await page.getByRole("button", { name: "Create checkpoint" }).click();
 	await expect(
 		page.getByRole("button", { name: "Naming checkpoint...", exact: true }),
 	).toBeVisible();
+	await expect
+		.poll(async () => await newBranchIdFromUi(page, beforeIds))
+		.not.toBeNull();
+	const branchId = await newBranchIdFromUi(page, beforeIds);
+	if (!branchId) {
+		throw new Error("Created checkpoint branch was not found.");
+	}
+	return branchId;
+}
+
+async function expectHistoryBranchOrder(
+	page: Page,
+	expectedBranchIds: readonly string[],
+): Promise<void> {
+	await ensureHistoryViewOpenInLeftPanel(page);
+	await expect
+		.poll(async () => await visibleBranchIdsInHistoryOrderFromUi(page))
+		.toEqual(expectedBranchIds);
+	const rows = page.locator('[data-attr="branch-diff"]');
+	await expect(rows).toHaveCount(expectedBranchIds.length);
+	await expect(rows.nth(expectedBranchIds.length - 1)).toContainText(
+		"Current Checkpoint",
+	);
+}
+
+async function clickCheckpointRow(page: Page, rowIndex: number): Promise<void> {
+	await ensureHistoryViewOpenInLeftPanel(page);
+	const checkpoint = page.locator('[data-attr="branch-diff"]').nth(rowIndex);
+	await expect(checkpoint).toBeVisible();
+	await checkpoint.click();
 }
 
 async function switchBranchFromUi(
@@ -299,6 +458,176 @@ async function createCheckpointDiffBranches(
 
 		return { activeBranchId: await lix.activeBranchId() };
 	});
+}
+
+async function branchIdsFromUi(page: Page): Promise<string[]> {
+	return await page.evaluate(async () => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: "SELECT id FROM lix_branch",
+			params: [],
+		});
+		return (result?.rows ?? []).map((row) => String(row[0]));
+	});
+}
+
+async function newBranchIdFromUi(
+	page: Page,
+	beforeIds: readonly string[],
+): Promise<string | null> {
+	return await page.evaluate(async (previousIds) => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: "SELECT id FROM lix_branch",
+			params: [],
+		});
+		const previous = new Set(previousIds);
+		for (const row of result?.rows ?? []) {
+			const id = String(row[0]);
+			if (!previous.has(id)) return id;
+		}
+		return null;
+	}, beforeIds);
+}
+
+async function visibleBranchIdsInHistoryOrderFromUi(
+	page: Page,
+): Promise<string[]> {
+	return await page.evaluate(async () => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: `
+				SELECT id
+				FROM lix_branch
+				WHERE COALESCE(CAST(hidden AS TEXT), 'false') NOT IN ('true', '1', 't')
+				ORDER BY name ASC
+			`,
+			params: [],
+		});
+		return (result?.rows ?? []).map((row) => String(row[0]));
+	});
+}
+
+async function expectActiveCentralFile(
+	page: Page,
+	appPath: string,
+): Promise<void> {
+	await expect.poll(async () => await activeCentralFilePathFromUi(page)).toBe(
+		appPath,
+	);
+}
+
+async function activeCentralFilePathFromUi(
+	page: Page,
+): Promise<string | null> {
+	return await page.evaluate(async () => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
+			params: ["flashtype_ui_state", "global"],
+		});
+		const state = result?.rows?.[0]?.[0] as
+			| {
+					panels?: {
+						central?: {
+							activeInstance?: string | null;
+							views?: Array<{
+								instance?: string;
+								state?: { filePath?: unknown };
+							}>;
+						};
+					};
+			  }
+			| undefined;
+		const central = state?.panels?.central;
+		const views = central?.views ?? [];
+		const active =
+			views.find((view) => view.instance === central?.activeInstance) ??
+			views[0];
+		const filePath = active?.state?.filePath;
+		return typeof filePath === "string" ? filePath : null;
+	});
+}
+
+async function expectEditableMarkdown(page: Page): Promise<void> {
+	await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
+	await expect(
+		page.locator('[data-testid="tiptap-editor"] .ProseMirror'),
+	).toBeVisible();
+	await expect(
+		page.locator('[data-testid="tiptap-editor"] .ProseMirror'),
+	).toHaveAttribute("contenteditable", "true");
+}
+
+async function expectMarkdownDiff(
+	page: Page,
+	expected: { added?: readonly string[]; removed?: readonly string[] } = {},
+): Promise<void> {
+	const overlay = page.locator(".markdown-review-overlay");
+	await expect(overlay).toBeVisible();
+	await expect(overlay.locator("[data-diff-status]").first()).toBeVisible();
+	for (const text of expected.added ?? []) {
+		await expect(
+			overlay.locator("[data-diff-status='added']").filter({ hasText: text }),
+		).toBeVisible();
+	}
+	for (const text of expected.removed ?? []) {
+		await expect(
+			overlay.locator("[data-diff-status='removed']").filter({ hasText: text }),
+		).toBeVisible();
+	}
+	await expect(
+		page.getByRole("button", { name: "Keep", exact: true }),
+	).toHaveCount(0);
+	await expect(
+		page.getByRole("button", { name: "Undo", exact: true }),
+	).toHaveCount(0);
+}
+
+async function expectLixFileToContain(
+	page: Page,
+	appPath: string,
+	text: string,
+): Promise<void> {
+	await expect.poll(async () => await lixFileTextByPath(page, appPath)).toContain(
+		text,
+	);
+}
+
+async function lixFileTextByPath(
+	page: Page,
+	appPath: string,
+): Promise<string> {
+	return (
+		(await page.evaluate(async (path) => {
+			const result = await window.flashtypeDesktop?.lix.execute({
+				sql: "SELECT data FROM lix_file WHERE path = $1",
+				params: [path],
+			});
+			const value = result?.rows?.[0]?.[0];
+			return decodeSqlText(value);
+
+			function decodeSqlText(value: unknown): string {
+				if (value instanceof Uint8Array) return new TextDecoder().decode(value);
+				if (value instanceof ArrayBuffer) {
+					return new TextDecoder().decode(new Uint8Array(value));
+				}
+				if (ArrayBuffer.isView(value)) {
+					const view = value as Uint8Array;
+					return new TextDecoder().decode(
+						new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
+					);
+				}
+				if (Array.isArray(value)) {
+					return new TextDecoder().decode(new Uint8Array(value as number[]));
+				}
+				if (
+					value &&
+					typeof value === "object" &&
+					"value" in value
+				) {
+					return decodeSqlText((value as { value: unknown }).value);
+				}
+				return typeof value === "string" ? value : "";
+			}
+		}, appPath)) ?? ""
+	);
 }
 
 async function checkpointRowLabels(page: Page): Promise<string[]> {
