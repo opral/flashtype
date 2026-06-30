@@ -24,18 +24,22 @@ export async function resolveCheckpointDiff(args: {
 	const selectedIndex = args.branches.findIndex(
 		(branch) => branch.id === args.branchId,
 	);
-	if (selectedIndex <= 0) return null;
-	const beforeBranch = args.branches[selectedIndex - 1];
+	if (selectedIndex < 0) return null;
 	const afterBranch = args.branches[selectedIndex];
-	if (!beforeBranch?.commit_id || !afterBranch?.commit_id) return null;
-	if (beforeBranch.commit_id === afterBranch.commit_id) return null;
+	if (!afterBranch?.commit_id) return null;
+	const beforeBranch = args.branches[selectedIndex - 1] ?? null;
+	const beforeCommitId = beforeBranch
+		? beforeBranch.commit_id
+		: await loadInitialCommitId(args.lix, afterBranch.commit_id);
+	if (!beforeCommitId) return null;
+	if (beforeCommitId === afterBranch.commit_id) return null;
 
 	const [beforeSnapshots, afterSnapshots] = await Promise.all([
-		loadFileSnapshotsAtCommit(args.lix, beforeBranch.commit_id),
+		loadFileSnapshotsAtCommit(args.lix, beforeCommitId),
 		loadFileSnapshotsAtCommit(args.lix, afterBranch.commit_id),
 	]);
 	const files = buildCheckpointDiffFiles({
-		beforeCommitId: beforeBranch.commit_id,
+		beforeCommitId,
 		beforeSnapshots,
 		afterCommitId: afterBranch.commit_id,
 		afterSnapshots,
@@ -44,12 +48,36 @@ export async function resolveCheckpointDiff(args: {
 	return {
 		branchId: afterBranch.id,
 		branchName: afterBranch.name,
-		beforeBranchId: beforeBranch.id,
-		beforeBranchName: beforeBranch.name,
-		beforeCommitId: beforeBranch.commit_id,
+		beforeBranchId: beforeBranch?.id ?? `initial:${beforeCommitId}`,
+		beforeBranchName: beforeBranch?.name ?? "Initial Commit",
+		beforeCommitId,
 		afterCommitId: afterBranch.commit_id,
 		files,
 	};
+}
+
+async function loadInitialCommitId(
+	lix: Lix,
+	startCommitId: string,
+): Promise<string | null> {
+	const result = await lix.execute(
+		`
+			SELECT DISTINCT h.observed_commit_id AS commit_id
+			FROM lix_state_history h
+			LEFT JOIN lix_commit_edge e
+				ON e.child_id = h.observed_commit_id
+			WHERE h.start_commit_id = ?
+				AND h.schema_key = 'lix_commit'
+				AND e.child_id IS NULL
+		`,
+		[startCommitId],
+	);
+	const commitIds = result.rows
+		.map((row) => row.get("commit_id"))
+		.filter(
+			(value): value is string => typeof value === "string" && value.length > 0,
+		);
+	return commitIds.length === 1 ? commitIds[0] : null;
 }
 
 async function loadFileSnapshotsAtCommit(

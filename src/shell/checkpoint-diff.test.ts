@@ -90,24 +90,43 @@ describe("resolveCheckpointDiff", () => {
 		}
 	});
 
-	test("returns null for first visible checkpoint and missing commits", async () => {
+	test("diffs the first visible checkpoint against the initial commit", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "file_doc", "/doc.md", "# First\n");
+			const first = await lix.createBranch({ name: "a-first" });
+
+			const diff = await resolveCheckpointDiff({
+				lix,
+				branchId: first.id,
+				branches: [
+					{ id: first.id, name: first.name, commit_id: first.commitId },
+				],
+			});
+
+			expect(diff?.beforeBranchName).toBe("Initial Commit");
+			expect(diff?.beforeCommitId).not.toBe(first.commitId);
+			expect(diff?.afterCommitId).toBe(first.commitId);
+			expect(diff?.files).toHaveLength(1);
+			expect(diff?.files[0]).toMatchObject({
+				fileId: "file_doc",
+				path: "/doc.md",
+				status: "added",
+			});
+			expect(decode(diff?.files[0]?.beforeData)).toBe("");
+			expect(decode(diff?.files[0]?.afterData)).toBe("# First\n");
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("returns null for missing commits", async () => {
 		const lix = await openLix();
 		try {
 			await writeFile(lix, "file_doc", "/doc.md", "# Before\n");
 			const first = await lix.createBranch({ name: "a-first" });
 			await writeFile(lix, "file_doc", "/doc.md", "# After\n");
 			const second = await lix.createBranch({ name: "b-second" });
-
-			await expect(
-				resolveCheckpointDiff({
-					lix,
-					branchId: first.id,
-					branches: [
-						{ id: first.id, name: first.name, commit_id: first.commitId },
-						{ id: second.id, name: second.name, commit_id: second.commitId },
-					],
-				}),
-			).resolves.toBeNull();
 
 			await expect(
 				resolveCheckpointDiff({
