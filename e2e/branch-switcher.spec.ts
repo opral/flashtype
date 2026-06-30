@@ -199,6 +199,11 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await typeLineInActiveMarkdown(page, "/foo.md", "foo line one");
 
 		const checkpoint1Id = await createCheckpointFromUi(page);
+		const checkpoint1CommitId = await branchCommitIdFromUi(page, checkpoint1Id);
+		const initialCommitId = await initialCommitIdForCommitFromUi(
+			page,
+			checkpoint1CommitId,
+		);
 		await waitForNextRendererTimestampSecond(page);
 
 		await openMarkdownFileFromTree(page, "/foo.md");
@@ -207,6 +212,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await typeLineInActiveMarkdown(page, "/bar.md", "bar line one");
 
 		const checkpoint2Id = await createCheckpointFromUi(page);
+		const checkpoint2CommitId = await branchCommitIdFromUi(page, checkpoint2Id);
 		const currentBranchId = await activeBranchIdFromUi(page);
 		if (!currentBranchId) {
 			throw new Error("Active branch id is unavailable.");
@@ -224,23 +230,43 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 
 		await clickCheckpointRow(page, 1);
 		await expectActiveCentralFile(page, "/bar.md");
+		await expectActiveEditorRevisionState(page, {
+			beforeCommitId: checkpoint1CommitId,
+			afterCommitId: checkpoint2CommitId,
+		});
 		await expectMarkdownDiff(page, { added: ["bar line one"] });
 
 		await openMarkdownFileFromTree(page, "/foo.md");
 		await expectActiveCentralFile(page, "/foo.md");
+		await expectActiveEditorRevisionState(page, {
+			beforeCommitId: checkpoint1CommitId,
+			afterCommitId: checkpoint2CommitId,
+		});
 		await expectMarkdownDiff(page, { added: ["foo line two"] });
 
 		await clickCheckpointRow(page, 1);
 		await expectActiveCentralFile(page, "/foo.md");
+		await expectActiveEditorRevisionState(page, {
+			beforeCommitId: null,
+			afterCommitId: null,
+		});
 		await expectEditableMarkdown(page);
 
 		await clickCheckpointRow(page, 1);
 		await expectActiveCentralFile(page, "/foo.md");
+		await expectActiveEditorRevisionState(page, {
+			beforeCommitId: checkpoint1CommitId,
+			afterCommitId: checkpoint2CommitId,
+		});
 		await expectMarkdownDiff(page, { added: ["foo line two"] });
 
 		await clickCheckpointRow(page, 0);
 		await expectActiveCentralFile(page, "/foo.md");
-		await expectEditableMarkdown(page);
+		await expectActiveEditorRevisionState(page, {
+			beforeCommitId: initialCommitId,
+			afterCommitId: checkpoint1CommitId,
+		});
+		await expectMarkdownDiff(page, { added: ["foo line one"] });
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -488,6 +514,69 @@ async function newBranchIdFromUi(
 	}, beforeIds);
 }
 
+async function branchCommitIdFromUi(
+	page: Page,
+	branchId: string,
+): Promise<string> {
+	await expect
+		.poll(async () => {
+			return await page.evaluate(async (id) => {
+				const result = await window.flashtypeDesktop?.lix.execute({
+					sql: "SELECT commit_id FROM lix_branch WHERE id = $1",
+					params: [id],
+				});
+				const value = result?.rows?.[0]?.[0];
+				return typeof value === "string" && value.length > 0 ? value : null;
+			}, branchId);
+		})
+		.not.toBeNull();
+	const commitId = await page.evaluate(async (id) => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: "SELECT commit_id FROM lix_branch WHERE id = $1",
+			params: [id],
+		});
+		const value = result?.rows?.[0]?.[0];
+		return typeof value === "string" && value.length > 0 ? value : null;
+	}, branchId);
+	if (!commitId) {
+		throw new Error(`Commit id for branch ${branchId} was not found.`);
+	}
+	return commitId;
+}
+
+async function initialCommitIdForCommitFromUi(
+	page: Page,
+	commitId: string,
+): Promise<string> {
+	const initialCommitId = await page.evaluate(async (startCommitId) => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: `
+				SELECT DISTINCT h.observed_commit_id AS commit_id
+				FROM lix_state_history h
+				LEFT JOIN lix_commit_edge e
+					ON e.child_id = h.observed_commit_id
+				WHERE h.start_commit_id = $1
+					AND h.schema_key = 'lix_commit'
+					AND e.child_id IS NULL
+			`,
+			params: [startCommitId],
+		});
+		const commitIds = (result?.rows ?? [])
+			.map((row) => row[0])
+			.filter(
+				(value): value is string =>
+					typeof value === "string" && value.length > 0,
+			);
+		if (commitIds.length !== 1) {
+			throw new Error(
+				`Expected exactly one initial commit for ${startCommitId}, found ${commitIds.length}.`,
+			);
+		}
+		return commitIds[0];
+	}, commitId);
+	return initialCommitId;
+}
+
 async function visibleBranchIdsInHistoryOrderFromUi(
 	page: Page,
 ): Promise<string[]> {
@@ -545,6 +634,64 @@ async function activeCentralFilePathFromUi(
 	});
 }
 
+async function expectActiveEditorRevisionState(
+	page: Page,
+	expected: {
+		readonly beforeCommitId: string | null;
+		readonly afterCommitId: string | null;
+	},
+): Promise<void> {
+	await expect
+		.poll(async () => await activeEditorRevisionStateFromUi(page))
+		.toEqual(expected);
+}
+
+async function activeEditorRevisionStateFromUi(page: Page): Promise<{
+	beforeCommitId: string | null;
+	afterCommitId: string | null;
+} | null> {
+	return await page.evaluate(async () => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
+			params: ["flashtype_ui_state", "global"],
+		});
+		const state = result?.rows?.[0]?.[0] as
+			| {
+					panels?: {
+						central?: {
+							activeInstance?: string | null;
+							views?: Array<{
+								instance?: string;
+								state?: {
+									beforeCommitId?: unknown;
+									afterCommitId?: unknown;
+								};
+							}>;
+						};
+					};
+			  }
+			| undefined;
+		const central = state?.panels?.central;
+		const views = central?.views ?? [];
+		const active =
+			views.find((view) => view.instance === central?.activeInstance) ??
+			views[0];
+		if (!active) return null;
+		const beforeCommitId = active.state?.beforeCommitId;
+		const afterCommitId = active.state?.afterCommitId;
+		return {
+			beforeCommitId:
+				typeof beforeCommitId === "string" && beforeCommitId.length > 0
+					? beforeCommitId
+					: null,
+			afterCommitId:
+				typeof afterCommitId === "string" && afterCommitId.length > 0
+					? afterCommitId
+					: null,
+		};
+	});
+}
+
 async function expectEditableMarkdown(page: Page): Promise<void> {
 	await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
 	await expect(
@@ -555,12 +702,25 @@ async function expectEditableMarkdown(page: Page): Promise<void> {
 	).toHaveAttribute("contenteditable", "true");
 }
 
+async function expectReadonlyMarkdown(page: Page): Promise<void> {
+	const editor = page.locator('[data-attr="markdown-editor"] .ProseMirror');
+	await expect(editor.first()).toBeVisible();
+	await expect
+		.poll(async () => {
+			return await editor.evaluateAll((nodes) =>
+				nodes.every((node) => node.getAttribute("contenteditable") !== "true"),
+			);
+		})
+		.toBe(true);
+}
+
 async function expectMarkdownDiff(
 	page: Page,
 	expected: { added?: readonly string[]; removed?: readonly string[] } = {},
 ): Promise<void> {
 	const overlay = page.locator(".markdown-review-overlay");
 	await expect(overlay).toBeVisible();
+	await expectReadonlyMarkdown(page);
 	await expect(overlay.locator("[data-diff-status]").first()).toBeVisible();
 	for (const text of expected.added ?? []) {
 		await expect(
