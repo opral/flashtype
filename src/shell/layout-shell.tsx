@@ -3122,7 +3122,7 @@ function LayoutShellLoadedContent({
 					isUpdateReady={isUpdateReady}
 					onInstallUpdate={onInstallUpdate}
 				/>
-				<div className="flex flex-1 min-h-0 overflow-hidden px-2">
+				<div className="flex flex-1 min-h-0 overflow-hidden px-2 pb-2">
 					<PanelGroup direction="horizontal" onLayout={handleLayoutChange}>
 						<Panel
 							ref={leftPanelRef}
