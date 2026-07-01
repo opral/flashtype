@@ -355,7 +355,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await expectSingleCentralDocumentSlot(page);
 
 		await clickCheckpointRow(page, 2);
-		await expectCheckpointRowSelected(page, 2);
+		await expectNoCheckpointRowSelected(page);
 		await expectActiveCentralFile(page, "/added.md");
 		await expectActiveCentralDocumentIdentity(
 			page,
@@ -416,7 +416,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await expectSingleCentralDocumentSlot(page);
 
 		await clickCheckpointRow(page, 2);
-		await expectCheckpointRowSelected(page, 2);
+		await expectNoCheckpointRowSelected(page);
 		await expectActiveCentralFile(page, "/modified.md");
 		await expectActiveCentralDocumentIdentity(
 			page,
@@ -582,6 +582,13 @@ async function expectCheckpointRowSelected(
 	await expect(
 		page.locator('[data-attr="branch-diff"]').nth(rowIndex),
 	).toHaveAttribute("data-selected", "true");
+}
+
+async function expectNoCheckpointRowSelected(page: Page): Promise<void> {
+	await ensureHistoryViewOpenInLeftPanel(page);
+	await expect(
+		page.locator('[data-attr="branch-diff"][data-selected="true"]'),
+	).toHaveCount(0);
 }
 
 async function switchBranchFromUi(
