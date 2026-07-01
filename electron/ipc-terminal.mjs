@@ -174,6 +174,7 @@ export function registerTerminalIpc() {
 		);
 		return await generateCheckpointName({
 			cwd: payload?.cwd,
+			diffContext: payload?.diffContext,
 			env: terminalEnv,
 			shell,
 			shellArgs,

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+	buildCheckpointNamePrompt,
 	formatLocalTimestamp,
 	generateCheckpointName,
 	normalizeCheckpointNameOutput,
@@ -17,8 +18,6 @@ import {
 import { resetAgentExecutablePathsForTests } from "./agent-executable-paths.mjs";
 
 const unixTest = process.platform === "win32" ? test.skip : test;
-const CHECKPOINT_NAME_PROMPT =
-	"come up with a funny name for a checkpoint in a markdown editor, in 3 words. output nothing else.";
 
 describe("checkpoint name generation", () => {
 	test("formats the local timestamp fallback", () => {
@@ -32,6 +31,13 @@ describe("checkpoint name generation", () => {
 			normalizeCheckpointNameOutput("Name: `Silly Markdown Pancake`\n"),
 		).toBe("Silly Markdown Pancake");
 		expect(normalizeCheckpointNameOutput("\n")).toBeNull();
+	});
+
+	test("builds a safe diff-summary prompt without diff details", () => {
+		const prompt = buildCheckpointNamePrompt("");
+
+		expect(prompt).toContain("Name this checkpoint by summarizing the diff");
+		expect(prompt).toContain("No diff details were available.");
 	});
 
 	unixTest("asks Codex first with the checkpoint naming prompt", async () => {
@@ -63,15 +69,24 @@ describe("checkpoint name generation", () => {
 				].join("\n"),
 			);
 
+			const diffContext = [
+				"Files changed: 1 (1 modified)",
+				"File: modified /docs/onboarding.md",
+				"After excerpt:",
+				"  Welcome to the updated flow.",
+			].join("\n");
 			const result = await generateCheckpointName(
-				generatorArgs({ cwd: rootDir, PATH: binDir }),
+				generatorArgs({ cwd: rootDir, PATH: binDir, diffContext }),
 			);
 
 			expect(result).toEqual({
 				name: "Silly Markdown Pancake",
 				source: "codex",
 			});
-			expect((await readFile(argsPath, "utf8")).trimEnd().split("\n")).toEqual([
+			const codexArgs = (await readFile(argsPath, "utf8"))
+				.trimEnd()
+				.split("\n");
+			expect(codexArgs.slice(0, 11)).toEqual([
 				"exec",
 				"--skip-git-repo-check",
 				"--ephemeral",
@@ -83,11 +98,11 @@ describe("checkpoint name generation", () => {
 				rootDir,
 				"-o",
 				expect.stringContaining("flashtype-checkpoint-name-"),
-				CHECKPOINT_NAME_PROMPT,
 			]);
-			expect(await readFile(promptPath, "utf8")).toBe(
-				`${CHECKPOINT_NAME_PROMPT}\n`,
-			);
+			const prompt = (await readFile(promptPath, "utf8")).trimEnd();
+			expect(prompt).toContain("Name this checkpoint by summarizing the diff");
+			expect(prompt).toContain("3 to 8 words");
+			expect(prompt).toContain(diffContext);
 		} finally {
 			await rm(rootDir, { recursive: true, force: true });
 			resetAgentExecutablePathsForTests();
@@ -148,6 +163,7 @@ describe("checkpoint name generation", () => {
 function generatorArgs(options = {}) {
 	return {
 		cwd: options.cwd ?? process.cwd(),
+		diffContext: options.diffContext,
 		env: {
 			...process.env,
 			PATH: options.PATH ?? process.env.PATH,

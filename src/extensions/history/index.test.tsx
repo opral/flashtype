@@ -23,6 +23,24 @@ function selectedCheckpointButtons(): HTMLButtonElement[] {
 	];
 }
 
+async function writeLixFile(
+	lix: Lix,
+	id: string,
+	path: string,
+	text: string,
+): Promise<void> {
+	await qb(lix)
+		.insertInto("lix_file")
+		.values({ id, path, data: new TextEncoder().encode(text) })
+		.onConflict((oc) =>
+			oc.column("id").doUpdateSet({
+				path,
+				data: new TextEncoder().encode(text),
+			}),
+		)
+		.execute();
+}
+
 describe("HistoryView", () => {
 	let lix: Lix;
 	let cleanupFns: Array<() => Promise<void>> = [];
@@ -226,7 +244,7 @@ describe("HistoryView", () => {
 			});
 		const workspaceDir = vi.fn().mockResolvedValue("/tmp/flashtype-workspace");
 		const generateCheckpointName = vi.fn().mockResolvedValue({
-			name: "Silly Markdown Pancake",
+			name: "Update onboarding copy",
 			source: "codex",
 		});
 		window.flashtypeDesktop = {
@@ -237,6 +255,12 @@ describe("HistoryView", () => {
 				generateCheckpointName,
 			},
 		} as unknown as Window["flashtypeDesktop"];
+		await writeLixFile(
+			lix,
+			"file_onboarding",
+			"/onboarding.md",
+			"# Onboarding\nWelcome to the updated flow.\n",
+		);
 
 		await renderWithProviders();
 		const createButton = await screen.findByRole("button", {
@@ -303,14 +327,19 @@ describe("HistoryView", () => {
 				.select("name")
 				.where("id", "=", created?.id ?? "")
 				.executeTakeFirstOrThrow();
-			expect(renamed.name).toBe(`${created?.name}:Silly Markdown Pancake`);
+			expect(renamed.name).toBe(`${created?.name}:Update onboarding copy`);
 		});
 		expect(workspaceDir).toHaveBeenCalled();
 		expect(generateCheckpointName).toHaveBeenCalledWith({
 			cwd: "/tmp/flashtype-workspace",
+			diffContext: expect.stringContaining("/onboarding.md"),
 		});
+		const diffContext = generateCheckpointName.mock.calls[0]?.[0]?.diffContext;
+		expect(diffContext).toContain("File: added /onboarding.md");
+		expect(diffContext).toContain("Added excerpt");
+		expect(diffContext).toContain("Welcome to the updated flow.");
 		expect(
-			await screen.findByRole("button", { name: "Silly Markdown Pancake" }),
+			await screen.findByRole("button", { name: "Update onboarding copy" }),
 		).toBeInTheDocument();
 	});
 

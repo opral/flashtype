@@ -27,8 +27,11 @@ import { createReactExtensionDefinition } from "../../extension-runtime/react-ex
 import { HISTORY_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import type {
 	CheckpointDiff,
+	CheckpointDiffBranchRow,
+	CheckpointDiffFile,
 	ShowCheckpointDiffArgs,
 } from "../../extension-runtime/checkpoint-diff";
+import { resolveCheckpointDiff } from "@/shell/checkpoint-diff";
 
 type BranchRow = {
 	id: string;
@@ -49,6 +52,10 @@ const CURRENT_CHECKPOINT_NAME = "main";
 const CURRENT_CHECKPOINT_LABEL = "Current Checkpoint";
 const UNNAMED_CHECKPOINT_LABEL = "Naming checkpoint...";
 const CHECKPOINT_RENAME_DELAY_MS = 5000;
+const MAX_CHECKPOINT_DIFF_CONTEXT_LENGTH = 10_000;
+const MAX_CHECKPOINT_DIFF_CONTEXT_FILES = 12;
+const MAX_CHECKPOINT_DIFF_SNIPPET_LINES = 8;
+const MAX_CHECKPOINT_DIFF_SNIPPET_LINE_LENGTH = 160;
 const BRANCH_TIMESTAMP_NAME_PATTERN =
 	/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?::(.*))?$/u;
 
@@ -224,7 +231,8 @@ function HistoryViewContent({
 			});
 			const timerId = window.setTimeout(() => {
 				renameTimerIdsRef.current.delete(timerId);
-				void generateCheckpointName()
+				void buildCheckpointNameDiffContextForBranch(lix, created.id)
+					.then((diffContext) => generateCheckpointName({ diffContext }))
 					.then((checkpointName) => {
 						const generatedName = checkpointName.name.trim();
 						if (!generatedName || checkpointName.source === "timestamp") {
@@ -441,13 +449,18 @@ function HistoryViewContent({
 	);
 }
 
-async function generateCheckpointName(): Promise<GeneratedCheckpointName> {
+async function generateCheckpointName(args: {
+	readonly diffContext?: string;
+}): Promise<GeneratedCheckpointName> {
 	const desktop = window.flashtypeDesktop;
 	const terminal = desktop?.terminal;
 	if (desktop?.lix && terminal?.generateCheckpointName) {
 		try {
 			const cwd = await desktop.lix.workspaceDir();
-			const result = await terminal.generateCheckpointName({ cwd });
+			const result = await terminal.generateCheckpointName({
+				cwd,
+				diffContext: args.diffContext,
+			});
 			const name = result.name.trim();
 			if (name) {
 				return { name, source: result.source };
@@ -457,6 +470,184 @@ async function generateCheckpointName(): Promise<GeneratedCheckpointName> {
 		}
 	}
 	return { name: formatLocalTimestamp(), source: "timestamp" };
+}
+
+async function buildCheckpointNameDiffContextForBranch(
+	lix: ReturnType<typeof useLix>,
+	branchId: string,
+): Promise<string> {
+	try {
+		const branches = await loadVisibleCheckpointBranches(lix);
+		const diff = await resolveCheckpointDiff({ lix, branches, branchId });
+		return buildCheckpointNameDiffContext(diff);
+	} catch (error) {
+		console.warn("Failed to build checkpoint name diff context", error);
+		return buildCheckpointNameDiffContext(null);
+	}
+}
+
+async function loadVisibleCheckpointBranches(
+	lix: ReturnType<typeof useLix>,
+): Promise<CheckpointDiffBranchRow[]> {
+	return (await qb(lix)
+		.selectFrom("lix_branch")
+		.select(["id", "name", "commit_id"])
+		.where(
+			() =>
+				sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+		)
+		.orderBy("name", "asc")
+		.execute()) as CheckpointDiffBranchRow[];
+}
+
+export function buildCheckpointNameDiffContext(
+	diff: CheckpointDiff | null | undefined,
+): string {
+	if (!diff || diff.files.length === 0) {
+		return "No file changes were detected.";
+	}
+
+	const lines = [
+		`Checkpoint diff: ${displayBranchName(diff.beforeBranchName)} -> ${displayBranchName(diff.branchName)}`,
+		`Files changed: ${diff.files.length} (${formatStatusCounts(diff.files)})`,
+	];
+	const files = diff.files.slice(0, MAX_CHECKPOINT_DIFF_CONTEXT_FILES);
+	for (const file of files) {
+		lines.push("", ...summarizeCheckpointDiffFile(file));
+	}
+	if (diff.files.length > files.length) {
+		lines.push("", `${diff.files.length - files.length} more files omitted.`);
+	}
+
+	const context = lines.join("\n");
+	if (context.length <= MAX_CHECKPOINT_DIFF_CONTEXT_LENGTH) {
+		return context;
+	}
+	return `${context.slice(0, MAX_CHECKPOINT_DIFF_CONTEXT_LENGTH).trimEnd()}\n[diff context truncated]`;
+}
+
+function formatStatusCounts(files: readonly CheckpointDiffFile[]): string {
+	const counts = new Map<CheckpointDiffFile["status"], number>();
+	for (const file of files) {
+		counts.set(file.status, (counts.get(file.status) ?? 0) + 1);
+	}
+	return [...counts.entries()]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([status, count]) => `${count} ${status}`)
+		.join(", ");
+}
+
+function summarizeCheckpointDiffFile(file: CheckpointDiffFile): string[] {
+	const beforeText = decodeUtf8ForCheckpointSummary(file.beforeData);
+	const afterText = decodeUtf8ForCheckpointSummary(file.afterData);
+	const lines = [
+		`File: ${file.status} ${formatCheckpointDiffPath(file)}`,
+		`Bytes: ${file.beforeData.byteLength} -> ${file.afterData.byteLength}`,
+	];
+	if (beforeText === null || afterText === null) {
+		lines.push("Content: binary or non-UTF-8; text excerpt unavailable.");
+		return lines;
+	}
+
+	const beforeLines = splitCheckpointSummaryLines(beforeText);
+	const afterLines = splitCheckpointSummaryLines(afterText);
+	lines.push(`Lines: ${beforeLines.length} -> ${afterLines.length}`);
+	if (file.status === "added") {
+		lines.push(...formatCheckpointSnippet("Added excerpt", afterLines));
+		return lines;
+	}
+	if (file.status === "deleted") {
+		lines.push(...formatCheckpointSnippet("Deleted excerpt", beforeLines));
+		return lines;
+	}
+
+	const changed = checkpointChangedLineWindow(beforeLines, afterLines);
+	if (changed.before.length === 0 && changed.after.length === 0) {
+		lines.push("Content: unchanged; path or file identity changed.");
+		return lines;
+	}
+	lines.push(...formatCheckpointSnippet("Before excerpt", changed.before));
+	lines.push(...formatCheckpointSnippet("After excerpt", changed.after));
+	return lines;
+}
+
+function formatCheckpointDiffPath(file: CheckpointDiffFile): string {
+	if (
+		file.beforePath &&
+		file.afterPath &&
+		file.beforePath !== file.afterPath
+	) {
+		return `${file.beforePath} -> ${file.afterPath}`;
+	}
+	return file.path;
+}
+
+function decodeUtf8ForCheckpointSummary(data: Uint8Array): string | null {
+	try {
+		return new TextDecoder("utf-8", { fatal: true }).decode(data);
+	} catch {
+		return null;
+	}
+}
+
+function splitCheckpointSummaryLines(text: string): string[] {
+	if (text.length === 0) return [];
+	return text.replace(/\r\n?/gu, "\n").split("\n");
+}
+
+function checkpointChangedLineWindow(
+	beforeLines: readonly string[],
+	afterLines: readonly string[],
+): {
+	readonly before: readonly string[];
+	readonly after: readonly string[];
+} {
+	let prefix = 0;
+	while (
+		prefix < beforeLines.length &&
+		prefix < afterLines.length &&
+		beforeLines[prefix] === afterLines[prefix]
+	) {
+		prefix += 1;
+	}
+	let suffix = 0;
+	while (
+		suffix + prefix < beforeLines.length &&
+		suffix + prefix < afterLines.length &&
+		beforeLines[beforeLines.length - 1 - suffix] ===
+			afterLines[afterLines.length - 1 - suffix]
+	) {
+		suffix += 1;
+	}
+	return {
+		before: beforeLines.slice(prefix, beforeLines.length - suffix),
+		after: afterLines.slice(prefix, afterLines.length - suffix),
+	};
+}
+
+function formatCheckpointSnippet(
+	label: string,
+	lines: readonly string[],
+): string[] {
+	if (lines.length === 0) {
+		return [`${label}: <none>`];
+	}
+	const preview = lines.slice(0, MAX_CHECKPOINT_DIFF_SNIPPET_LINES);
+	const formatted = [
+		`${label}${lines.length > preview.length ? ` (${preview.length} of ${lines.length} changed lines)` : ""}:`,
+		...preview.map(
+			(line) =>
+				`  ${truncateCheckpointSnippetLine(line) || "<blank line>"}`,
+		),
+	];
+	return formatted;
+}
+
+function truncateCheckpointSnippetLine(line: string): string {
+	if (line.length <= MAX_CHECKPOINT_DIFF_SNIPPET_LINE_LENGTH) {
+		return line;
+	}
+	return `${line.slice(0, MAX_CHECKPOINT_DIFF_SNIPPET_LINE_LENGTH).trimEnd()}...`;
 }
 
 function formatLocalTimestamp(date = new Date()): string {

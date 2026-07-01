@@ -6,11 +6,17 @@ import { refreshAgentExecutablePaths } from "./agent-executable-paths.mjs";
 
 const CHECKPOINT_NAME_TIMEOUT_MS = 45_000;
 const MAX_AGENT_OUTPUT_LENGTH = 64 * 1024;
-const CHECKPOINT_NAME_PROMPT =
-	"come up with a funny name for a checkpoint in a markdown editor, in 3 words. output nothing else.";
+const MAX_DIFF_CONTEXT_LENGTH = 12 * 1024;
+const CHECKPOINT_NAME_INSTRUCTIONS = [
+	"Name this checkpoint by summarizing the diff below.",
+	"Write a concise checkpoint title in 2 to 5 words.",
+	'Prefer direct titles like "Update onboarding copy" or "Add new ICP".',
+	"Output only the title.",
+].join("\n");
 
 export async function generateCheckpointName(args) {
 	const cwd = normalizeCwd(args?.cwd);
+	const prompt = buildCheckpointNamePrompt(args?.diffContext);
 	let paths;
 	try {
 		paths = await refreshAgentExecutablePaths({
@@ -36,6 +42,7 @@ export async function generateCheckpointName(args) {
 				cwd,
 				env: args?.env,
 				executablePath,
+				prompt,
 				timeoutMs: args?.timeoutMs,
 			});
 			if (name) {
@@ -50,6 +57,15 @@ export async function generateCheckpointName(args) {
 	}
 
 	return { name: formatLocalTimestamp(), source: "timestamp" };
+}
+
+export function buildCheckpointNamePrompt(diffContext) {
+	return [
+		CHECKPOINT_NAME_INSTRUCTIONS,
+		"",
+		"Diff context:",
+		normalizeDiffContext(diffContext),
+	].join("\n");
 }
 
 export function formatLocalTimestamp(date = new Date()) {
@@ -91,7 +107,9 @@ async function generateCheckpointNameWithAgent(args) {
 }
 
 async function generateCheckpointNameWithCodex(args) {
-	const tmpRoot = await mkdtemp(path.join(tmpdir(), "flashtype-checkpoint-name-"));
+	const tmpRoot = await mkdtemp(
+		path.join(tmpdir(), "flashtype-checkpoint-name-"),
+	);
 	const outputPath = path.join(tmpRoot, "last-message.txt");
 	try {
 		const result = await runAgentCommand({
@@ -110,7 +128,7 @@ async function generateCheckpointNameWithCodex(args) {
 				args.cwd,
 				"-o",
 				outputPath,
-				CHECKPOINT_NAME_PROMPT,
+				args.prompt,
 			],
 			timeoutMs: args.timeoutMs,
 		});
@@ -140,7 +158,7 @@ async function generateCheckpointNameWithClaude(args) {
 			"--no-session-persistence",
 			"--permission-mode",
 			"dontAsk",
-			CHECKPOINT_NAME_PROMPT,
+			args.prompt,
 		],
 		timeoutMs: args.timeoutMs,
 	});
@@ -215,6 +233,21 @@ function runAgentCommand(args) {
 
 function normalizeCwd(cwd) {
 	return typeof cwd === "string" && cwd.trim().length > 0 ? cwd : process.cwd();
+}
+
+function normalizeDiffContext(value) {
+	const text =
+		typeof value === "string" && value.trim().length > 0
+			? value
+			: "No diff details were available.";
+	const normalized = text
+		.replace(/\r\n?/gu, "\n")
+		.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, " ")
+		.trim();
+	if (normalized.length <= MAX_DIFF_CONTEXT_LENGTH) {
+		return normalized;
+	}
+	return `${normalized.slice(0, MAX_DIFF_CONTEXT_LENGTH).trimEnd()}\n[diff context truncated]`;
 }
 
 function appendBoundedOutput(current, next) {

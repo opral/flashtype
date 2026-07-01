@@ -112,6 +112,7 @@ export type DesktopAgentExecutablePathRefreshPayload = {
 
 export type DesktopGenerateCheckpointNamePayload = {
 	cwd?: string;
+	diffContext?: string;
 	shell?: string;
 	env?: Record<string, string>;
 };
