@@ -319,14 +319,8 @@ function MarkdownHistoricalViewLoaded({
 }) {
 	const revisionMode = editorRevisionMode(editorRevision);
 	const checkpointDiffFile = useMemo(
-		() =>
-			checkpointDiffFileForRevision(
-				checkpointDiff,
-				fileId,
-				filePath ?? fileRow?.path,
-				editorRevision,
-			),
-		[checkpointDiff, editorRevision, fileId, filePath, fileRow?.path],
+		() => checkpointDiffFileForRevision(checkpointDiff, fileId, editorRevision),
+		[checkpointDiff, editorRevision, fileId],
 	);
 	const beforeSnapshot = useHistoricalFileSnapshot(
 		fileId,
@@ -848,10 +842,9 @@ function visibleHistoricalSnapshot(
 function checkpointDiffFileForRevision(
 	checkpointDiff: CheckpointDiff | null | undefined,
 	fileId: string,
-	filePath: string | undefined,
 	revision: EditorRevisionState,
 ): CheckpointDiffFile | null {
-	if (!checkpointDiff || !filePath) return null;
+	if (!checkpointDiff) return null;
 	return (
 		checkpointDiff.files.find((file) => {
 			const afterCommitId = checkpointDiff.afterIsActiveHead
@@ -859,7 +852,6 @@ function checkpointDiffFileForRevision(
 				: file.afterCommitId;
 			return (
 				file.fileId === fileId &&
-				file.path === filePath &&
 				file.beforeCommitId === revision.beforeCommitId &&
 				afterCommitId === revision.afterCommitId
 			);

@@ -963,7 +963,6 @@ async function documentSlotViolationsFromUi(page: Page): Promise<string[]> {
 		});
 		type ViewState = {
 			readonly fileId?: unknown;
-			readonly filePath?: unknown;
 		};
 		type View = {
 			readonly instance?: unknown;
@@ -987,12 +986,10 @@ async function documentSlotViolationsFromUi(page: Page): Promise<string[]> {
 		const violations: string[] = [];
 		const isDocumentView = (view: View): boolean => {
 			const fileId = view.state?.fileId;
-			const filePath = view.state?.filePath;
 			return (
 				typeof view.kind === "string" &&
 				typeof view.instance === "string" &&
 				typeof fileId === "string" &&
-				typeof filePath === "string" &&
 				view.instance === `${view.kind}:${fileId}`
 			);
 		};

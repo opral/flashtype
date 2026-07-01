@@ -509,9 +509,9 @@ describe("V2LayoutShell central file views", () => {
 
 		await waitFor(async () => {
 			const uiState = await readPersistedUiState(lix);
-			expect(panelDocumentFilePaths(uiState)).toEqual({
+			expect(panelDocumentFileIds(uiState)).toEqual({
 				left: [],
-				central: ["/central.md"],
+				central: ["file_central"],
 				right: [],
 			});
 			expect(uiState?.panels.left.views.map((view) => view.instance)).toEqual([
@@ -540,6 +540,32 @@ describe("V2LayoutShell central file views", () => {
 			expect(uiState?.panels.central).toEqual({
 				views: [],
 				activeInstance: null,
+			});
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps persisted central documents keyed only by file id", async () => {
+		installDesktopMock();
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(centralFileIdOnlyDocumentState())],
+		});
+		await writeReviewFile(lix, "file_id_only", "/id-only.md", "# Id only");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(async () => {
+			const uiState = await readPersistedUiState(lix);
+			expect(uiState?.panels.central.views).toHaveLength(1);
+			expect(uiState?.panels.central.views[0]?.state?.fileId).toBe(
+				"file_id_only",
+			);
+			expect(panelDocumentFileIds(uiState)).toEqual({
+				left: [],
+				central: ["file_id_only"],
+				right: [],
 			});
 		});
 
@@ -596,9 +622,9 @@ describe("V2LayoutShell central file views", () => {
 
 		await waitForPersistedActiveState(lix, "file_b", "/b.md");
 		await waitFor(async () => {
-			expect(panelDocumentFilePaths(await readPersistedUiState(lix))).toEqual({
+			expect(panelDocumentFileIds(await readPersistedUiState(lix))).toEqual({
 				left: [],
-				central: ["/b.md"],
+				central: ["file_b"],
 				right: [],
 			});
 		});
@@ -1294,6 +1320,34 @@ function centralNonDocumentState(): FlashtypeUiState {
 	};
 }
 
+function centralFileIdOnlyDocumentState(): FlashtypeUiState {
+	const instance = fileExtensionInstanceForKind(
+		FILE_EXTENSION_KIND,
+		"file_id_only",
+	);
+	return {
+		focusedPanel: "central",
+		panels: {
+			left: {
+				views: [{ instance: "files-left", kind: FILES_EXTENSION_KIND }],
+				activeInstance: "files-left",
+			},
+			central: {
+				views: [
+					{
+						instance,
+						kind: FILE_EXTENSION_KIND,
+						state: { fileId: "file_id_only" },
+					},
+				],
+				activeInstance: instance,
+			},
+			right: { views: [], activeInstance: null },
+		},
+		layout: { sizes: { left: 20, central: 50, right: 30 } },
+	};
+}
+
 function multipleCentralFilesState(): FlashtypeUiState {
 	const active = openFileState("file_active", "/active.md");
 	const staleInstance = fileExtensionInstanceForKind(
@@ -1347,27 +1401,24 @@ function centralFilePaths(uiState: FlashtypeUiState | undefined): string[] {
 	);
 }
 
-function panelDocumentFilePaths(
+function panelDocumentFileIds(
 	uiState: FlashtypeUiState | undefined,
 ): Record<"left" | "central" | "right", string[]> {
-	const pathsForPanel = (side: "left" | "central" | "right") =>
+	const idsForPanel = (side: "left" | "central" | "right") =>
 		uiState?.panels[side].views
 			.filter((entry) => {
 				const fileId = entry.state?.fileId;
-				const filePath = entry.state?.filePath;
 				return (
 					typeof fileId === "string" &&
-					typeof filePath === "string" &&
 					entry.instance === fileExtensionInstanceForKind(entry.kind, fileId)
 				);
 			})
-			.map((entry) => entry.state?.filePath)
-			.filter((filePath): filePath is string => typeof filePath === "string") ??
-		[];
+			.map((entry) => entry.state?.fileId)
+			.filter((fileId): fileId is string => typeof fileId === "string") ?? [];
 	return {
-		left: pathsForPanel("left"),
-		central: pathsForPanel("central"),
-		right: pathsForPanel("right"),
+		left: idsForPanel("left"),
+		central: idsForPanel("central"),
+		right: idsForPanel("right"),
 	};
 }
 

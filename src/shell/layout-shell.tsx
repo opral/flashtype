@@ -74,7 +74,7 @@ import {
 	fileExtensionInstanceForKind,
 	FILE_EXTENSION_KIND,
 	TERMINAL_EXTENSION_KIND,
-	activeMarkdownFileIdFromExtensionInstance,
+	activeFileIdFromExtensionInstance,
 } from "../extension-runtime/extension-instance-helpers";
 import {
 	fileExtensionFromPath,
@@ -235,7 +235,6 @@ const isDocumentView = (view: ExtensionInstance): boolean => {
 	const fileId =
 		typeof view.state?.fileId === "string" ? view.state.fileId : "";
 	if (!fileId) return false;
-	if (typeof view.state?.filePath !== "string") return false;
 	return view.instance === fileExtensionInstanceForKind(view.kind, fileId);
 };
 
@@ -499,15 +498,9 @@ function checkpointDiffFileForView(
 	if (!checkpointDiff) return null;
 	const fileId =
 		typeof view.state?.fileId === "string" ? view.state.fileId : "";
-	const filePath =
-		typeof view.state?.filePath === "string" ? view.state.filePath : "";
-	const normalizedFilePath = normalizeLixFileOpenPath(filePath) ?? filePath;
 	return (
 		checkpointDiffEditorFiles(checkpointDiff).find(
-			(file) =>
-				file.fileId === fileId ||
-				(normalizeLixFileOpenPath(file.path) ?? file.path) ===
-					normalizedFilePath,
+			(file) => file.fileId === fileId,
 		) ?? null
 	);
 }
@@ -521,21 +514,15 @@ function isCheckpointEditorRevisionView(
 	}
 	const fileId =
 		typeof view.state?.fileId === "string" ? view.state.fileId : "";
-	const filePath =
-		typeof view.state?.filePath === "string" ? view.state.filePath : "";
 	const revision = normalizeEditorRevisionState(view.state);
 	const afterCommitId = checkpointDiff.afterIsActiveHead
 		? null
 		: checkpointDiff.afterCommitId;
-	const normalizedFilePath = normalizeLixFileOpenPath(filePath) ?? filePath;
 	return (
 		revision.beforeCommitId === checkpointDiff.beforeCommitId &&
 		revision.afterCommitId === afterCommitId &&
 		checkpointDiffEditorFiles(checkpointDiff).some(
-			(file) =>
-				file.fileId === fileId ||
-				(normalizeLixFileOpenPath(file.path) ?? file.path) ===
-					normalizedFilePath,
+			(file) => file.fileId === fileId,
 		)
 	);
 }
@@ -1612,7 +1599,7 @@ function LayoutShellLoadedContent({
 		}) => {
 			if (panel === "central") {
 				const candidate: ExtensionInstance = {
-					instance: instance ?? createExtensionInstanceId(kind),
+					instance: instance ?? "",
 					kind,
 					state,
 					launchArgs,
@@ -2179,7 +2166,6 @@ function LayoutShellLoadedContent({
 				: (["central", "left", "right"] as PanelSide[]);
 			const matchesFileView = (entry: ExtensionInstance) => {
 				if (entry.state?.fileId !== fileId) return false;
-				if (typeof entry.state.filePath !== "string") return false;
 				return (
 					entry.instance === fileExtensionInstanceForKind(entry.kind, fileId)
 				);
@@ -2519,7 +2505,7 @@ function LayoutShellLoadedContent({
 	}, [handleNativeCloseFile]);
 
 	const activeCentralFileId =
-		activeMarkdownFileIdFromExtensionInstance(activeCentralEntry);
+		activeFileIdFromExtensionInstance(activeCentralEntry);
 
 	useEffect(() => {
 		if (!activeCentralFileId) return;

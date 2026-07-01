@@ -1,4 +1,3 @@
-import { isMarkdownFilePath } from "./file-handlers";
 import type { ExtensionKind } from "./types";
 import type { ExtensionInstance } from "./types";
 
@@ -46,12 +45,14 @@ export function buildFileExtensionProps(args: {
 		: { fileId: args.fileId, flashtype: { label } };
 }
 
-export function activeMarkdownFileIdFromExtensionInstance(
+export function activeFileIdFromExtensionInstance(
 	entry: ExtensionInstance | null | undefined,
 ): string | null {
-	if (entry?.kind !== FILE_EXTENSION_KIND) return null;
-	if (typeof entry.state?.fileId !== "string") return null;
-	if (typeof entry.state.filePath !== "string") return null;
-	if (!isMarkdownFilePath(entry.state.filePath)) return null;
-	return entry.state.fileId;
+	const fileId =
+		typeof entry?.state?.fileId === "string" ? entry.state.fileId : "";
+	if (!entry || !fileId) return null;
+	if (entry.instance !== fileExtensionInstanceForKind(entry.kind, fileId)) {
+		return null;
+	}
+	return fileId;
 }

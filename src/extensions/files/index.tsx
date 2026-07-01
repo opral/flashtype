@@ -89,18 +89,15 @@ function FilesViewContent({
 			),
 		[context?.checkpointDiff?.files, context?.checkpointDiff?.visibleFiles],
 	);
-	const combinedEntries = useMemo(
-		() => {
-			if (context?.checkpointDiff) return checkpointDiffEntries;
-			return unionFilesystemEntries(entries ?? [], visibleWatchedEntries);
-		},
-		[
-			context?.checkpointDiff,
-			entries,
-			visibleWatchedEntries,
-			checkpointDiffEntries,
-		],
-	);
+	const combinedEntries = useMemo(() => {
+		if (context?.checkpointDiff) return checkpointDiffEntries;
+		return unionFilesystemEntries(entries ?? [], visibleWatchedEntries);
+	}, [
+		context?.checkpointDiff,
+		entries,
+		visibleWatchedEntries,
+		checkpointDiffEntries,
+	]);
 	const nodes = useMemo(
 		() => buildFilesystemTree(combinedEntries),
 		[combinedEntries],
@@ -109,15 +106,13 @@ function FilesViewContent({
 	const checkpointReviewStatuses = useMemo(
 		() =>
 			new Map(
-				(context?.checkpointDiff?.files ?? []).map((file) =>
-					[normalizeFilePath(file.path), file.status] as const,
+				(context?.checkpointDiff?.files ?? []).map(
+					(file) => [normalizeFilePath(file.path), file.status] as const,
 				),
 			),
 		[context?.checkpointDiff?.files],
 	);
-	const reviewPaths = context?.checkpointDiff
-		? undefined
-		: pendingReviewPaths;
+	const reviewPaths = context?.checkpointDiff ? undefined : pendingReviewPaths;
 	const reviewStatuses = context?.checkpointDiff
 		? checkpointReviewStatuses
 		: undefined;
@@ -593,16 +588,13 @@ function FilesViewContent({
 
 	const handleOpenFile = useCallback(
 		(fileId: string, path: string) => {
-			const normalizedPath = normalizeFilePath(path);
 			setSelectedPath(path);
 			setSelectedFileId(fileId);
 			setSelectedKind("file");
 			const checkpointVisibleFile = context?.checkpointDiff
-				? (context.checkpointDiff.visibleFiles ?? context.checkpointDiff.files).find(
-						(file) =>
-							normalizeFilePath(file.path) === normalizedPath ||
-							file.fileId === fileId,
-					)
+				? (
+						context.checkpointDiff.visibleFiles ?? context.checkpointDiff.files
+					).find((file) => file.fileId === fileId)
 				: undefined;
 			setSelectedSource(checkpointVisibleFile ? "checkpoint-diff" : "lix");
 			void context?.openFile?.({
