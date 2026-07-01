@@ -208,6 +208,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 			afterCommitId: null,
 		});
 		await expectEditableMarkdown(page);
+		await expectSingleCentralDocumentSlot(page);
 
 		await clickCheckpointRow(page, 0);
 		await expectCheckpointRowSelected(page, 0);
@@ -225,6 +226,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 		await expectMarkdownDiff(page, {
 			added: ["Modified at first checkpoint"],
 		});
+		await expectSingleCentralDocumentSlot(page);
 		await expectFileTreeStatuses(
 			page,
 			{
@@ -254,6 +256,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 			added: ["second"],
 			removed: ["first"],
 		});
+		await expectSingleCentralDocumentSlot(page);
 		await expectFileTreeStatuses(
 			page,
 			{
@@ -290,6 +293,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 			added: ["HEAD"],
 			removed: ["second"],
 		});
+		await expectSingleCentralDocumentSlot(page);
 		await expectFileTreeStatuses(
 			page,
 			{
@@ -322,6 +326,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 				afterCommitId: null,
 			});
 		await expectReadonlyMarkdown(page);
+		await expectSingleCentralDocumentSlot(page);
 
 		await clickCheckpointRow(page, 2);
 		await expectCheckpointRowSelected(page, 2);
@@ -331,6 +336,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 			afterCommitId: null,
 		});
 		await expectEditableMarkdown(page);
+		await expectSingleCentralDocumentSlot(page);
 
 		await clickCheckpointRow(page, 2);
 		await expectCheckpointRowSelected(page, 2);
@@ -346,6 +352,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 				afterCommitId: null,
 			});
 		await expectReadonlyMarkdown(page);
+		await expectSingleCentralDocumentSlot(page);
 
 		await openMarkdownFileFromTree(page, "/modified.md");
 		await expectActiveCentralFile(page, "/modified.md");
@@ -363,6 +370,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 			added: ["HEAD"],
 			removed: ["second"],
 		});
+		await expectSingleCentralDocumentSlot(page);
 
 		await clickCheckpointRow(page, 2);
 		await expectCheckpointRowSelected(page, 2);
@@ -372,6 +380,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 			afterCommitId: null,
 		});
 		await expectEditableMarkdown(page);
+		await expectSingleCentralDocumentSlot(page);
 		await expectFileTreeStatuses(
 			page,
 			{
@@ -934,6 +943,83 @@ async function expectActiveEditorRevisionState(
 	await expect
 		.poll(async () => await activeEditorRevisionStateFromUi(page))
 		.toEqual(expected);
+}
+
+async function expectSingleCentralDocumentSlot(page: Page): Promise<void> {
+	await expect
+		.poll(async () => await documentSlotViolationsFromUi(page), {
+			message:
+				"document views should only exist as the single active central view",
+			timeout: 3000,
+		})
+		.toEqual([]);
+}
+
+async function documentSlotViolationsFromUi(page: Page): Promise<string[]> {
+	return await page.evaluate(async () => {
+		const result = await window.flashtypeDesktop?.lix.execute({
+			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
+			params: ["flashtype_ui_state", "global"],
+		});
+		type ViewState = {
+			readonly fileId?: unknown;
+			readonly filePath?: unknown;
+		};
+		type View = {
+			readonly instance?: unknown;
+			readonly kind?: unknown;
+			readonly state?: ViewState;
+		};
+		type Panel = {
+			readonly activeInstance?: unknown;
+			readonly views?: View[];
+		};
+		const state = result?.rows?.[0]?.[0] as
+			| {
+					panels?: {
+						left?: Panel;
+						central?: Panel;
+						right?: Panel;
+					};
+			  }
+			| undefined;
+		const panels = state?.panels ?? {};
+		const violations: string[] = [];
+		const isDocumentView = (view: View): boolean => {
+			const fileId = view.state?.fileId;
+			const filePath = view.state?.filePath;
+			return (
+				typeof view.kind === "string" &&
+				typeof view.instance === "string" &&
+				typeof fileId === "string" &&
+				typeof filePath === "string" &&
+				view.instance === `${view.kind}:${fileId}`
+			);
+		};
+		for (const side of ["left", "right"] as const) {
+			const documentViews = panels[side]?.views?.filter(isDocumentView) ?? [];
+			if (documentViews.length > 0) {
+				violations.push(`${side} has ${documentViews.length} document view(s)`);
+			}
+		}
+		const central = panels.central;
+		const centralViews = central?.views ?? [];
+		if (centralViews.length > 1) {
+			violations.push(`central has ${centralViews.length} views`);
+		}
+		const centralView = centralViews[0];
+		if (centralView && !isDocumentView(centralView)) {
+			violations.push("central view is not a document view");
+		}
+		if (
+			centralView &&
+			typeof centralView.instance === "string" &&
+			central?.activeInstance !== centralView.instance
+		) {
+			violations.push("central document view is not active");
+		}
+		return violations;
+	});
 }
 
 async function activeEditorRevisionStateFromUi(page: Page): Promise<{

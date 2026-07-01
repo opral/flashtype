@@ -227,19 +227,82 @@ const isLegacyCheckpointDiffView = (view: ExtensionInstance): boolean => {
 		view.instance.startsWith(LEGACY_CHECKPOINT_DIFF_INSTANCE_PREFIX) ||
 		typeof view.state?.[LEGACY_CHECKPOINT_DIFF_REVIEW_ID_STATE_KEY] ===
 			"string" ||
-		typeof view.state?.[LEGACY_CHECKPOINT_DIFF_BRANCH_ID_STATE_KEY] ===
-			"string"
+		typeof view.state?.[LEGACY_CHECKPOINT_DIFF_BRANCH_ID_STATE_KEY] === "string"
 	);
 };
 
-const collapsePanelToActiveView = (panel: PanelState): PanelState => {
-	const activeEntry = activeEntryFromPanel(panel);
-	if (!activeEntry) return { views: [], activeInstance: null };
-	return {
-		views: [activeEntry],
-		activeInstance: activeEntry.instance,
-	};
+const isDocumentView = (view: ExtensionInstance): boolean => {
+	const fileId =
+		typeof view.state?.fileId === "string" ? view.state.fileId : "";
+	if (!fileId) return false;
+	if (typeof view.state?.filePath !== "string") return false;
+	return view.instance === fileExtensionInstanceForKind(view.kind, fileId);
 };
+
+const canPlaceViewInPanel = (
+	view: ExtensionInstance,
+	side: PanelSide,
+): boolean =>
+	side === "central" ? isDocumentView(view) : !isDocumentView(view);
+
+const activeEntryForDocumentSlot = (
+	panel: PanelState,
+): ExtensionInstance | null => {
+	if (panel.activeInstance) {
+		const active = panel.views.find(
+			(entry) => entry.instance === panel.activeInstance,
+		);
+		if (active) return active;
+	}
+	return panel.views[0] ?? null;
+};
+
+const normalizePanelForDocumentSlot = (
+	side: PanelSide,
+	panel: PanelState,
+): PanelState => {
+	if (side === "central") {
+		const activeEntry = activeEntryForDocumentSlot(panel);
+		if (!activeEntry || !isDocumentView(activeEntry)) {
+			return panel.views.length === 0 && panel.activeInstance === null
+				? panel
+				: { views: [], activeInstance: null };
+		}
+		if (
+			panel.views.length === 1 &&
+			panel.views[0] === activeEntry &&
+			panel.activeInstance === activeEntry.instance
+		) {
+			return panel;
+		}
+		return {
+			views: [activeEntry],
+			activeInstance: activeEntry.instance,
+		};
+	}
+
+	const views = panel.views.filter((view) => !isDocumentView(view));
+	const activeInstance = views.some(
+		(view) => view.instance === panel.activeInstance,
+	)
+		? panel.activeInstance
+		: (views[views.length - 1]?.instance ?? null);
+	if (
+		views.length === panel.views.length &&
+		activeInstance === panel.activeInstance
+	) {
+		return panel;
+	}
+	return { views, activeInstance };
+};
+
+const normalizePanelsForDocumentSlot = (
+	panels: Record<PanelSide, PanelState>,
+): Record<PanelSide, PanelState> => ({
+	left: normalizePanelForDocumentSlot("left", panels.left),
+	central: normalizePanelForDocumentSlot("central", panels.central),
+	right: normalizePanelForDocumentSlot("right", panels.right),
+});
 
 const newFileDraftHandlerKey = (
 	registration: NewFileDraftHandlerRegistration,
@@ -323,9 +386,11 @@ const sanitizePanels = (
 		return { views, activeInstance };
 	};
 	return {
-		left: sanitizePanel(panels.left),
-		central: sanitizePanel(panels.central),
-		right: sanitizePanel(panels.right),
+		...normalizePanelsForDocumentSlot({
+			left: sanitizePanel(panels.left),
+			central: sanitizePanel(panels.central),
+			right: sanitizePanel(panels.right),
+		}),
 	};
 };
 
@@ -356,6 +421,17 @@ const hydratePanel = (
 
 export const hydratePanelForExtensions = hydratePanel;
 
+const hydratePanelForDocumentSlot = (
+	side: PanelSide,
+	panel: PanelState,
+	extensionMap: Map<ExtensionKind, ExtensionDefinition>,
+	options: { preserveUnknownKinds?: boolean } = {},
+): PanelState =>
+	normalizePanelForDocumentSlot(
+		side,
+		hydratePanel(panel, extensionMap, options),
+	);
+
 async function readCurrentLixFileIds(lix: Lix): Promise<ReadonlySet<string>> {
 	const rows = await qb(lix).selectFrom("lix_file").select(["id"]).execute();
 	return new Set(rows.map((row) => String(row.id)));
@@ -377,7 +453,9 @@ function transitionCheckpointEditorRevisionPanel(args: {
 		let nextView = view;
 		if (isCheckpointEditorRevisionView(nextView, args.previousDiff)) {
 			const fileId =
-				typeof nextView.state?.fileId === "string" ? nextView.state.fileId : null;
+				typeof nextView.state?.fileId === "string"
+					? nextView.state.fileId
+					: null;
 			if (!fileId || !args.currentFileIds.has(fileId)) {
 				changed = true;
 				continue;
@@ -419,7 +497,8 @@ function checkpointDiffFileForView(
 	checkpointDiff: CheckpointDiff | null,
 ): CheckpointDiffVisibleFile | null {
 	if (!checkpointDiff) return null;
-	const fileId = typeof view.state?.fileId === "string" ? view.state.fileId : "";
+	const fileId =
+		typeof view.state?.fileId === "string" ? view.state.fileId : "";
 	const filePath =
 		typeof view.state?.filePath === "string" ? view.state.filePath : "";
 	const normalizedFilePath = normalizeLixFileOpenPath(filePath) ?? filePath;
@@ -440,7 +519,8 @@ function isCheckpointEditorRevisionView(
 	if (!checkpointDiff || !hasHistoricalEditorRevisionState(view.state)) {
 		return false;
 	}
-	const fileId = typeof view.state?.fileId === "string" ? view.state.fileId : "";
+	const fileId =
+		typeof view.state?.fileId === "string" ? view.state.fileId : "";
 	const filePath =
 		typeof view.state?.filePath === "string" ? view.state.filePath : "";
 	const revision = normalizeEditorRevisionState(view.state);
@@ -835,29 +915,38 @@ function LayoutShellLoadedContent({
 
 	const initialLayoutSizes = normalizeLayoutSizes(uiState.layout?.sizes);
 	const sanitizedPersistedPanels = useMemo(() => {
-		const panels = sanitizePanels(uiState.panels);
-		return {
-			...panels,
-			central: collapsePanelToActiveView(panels.central),
-		};
+		return sanitizePanels(uiState.panels);
 	}, [uiState]);
 
 	const [leftPanel, setLeftPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.left, extensionMap, {
-			preserveUnknownKinds: true,
-		}),
+		hydratePanelForDocumentSlot(
+			"left",
+			sanitizedPersistedPanels.left,
+			extensionMap,
+			{
+				preserveUnknownKinds: true,
+			},
+		),
 	);
 	const [centralPanel, setCentralPanel] = useState<PanelState>(() =>
-		collapsePanelToActiveView(
-			hydratePanel(sanitizedPersistedPanels.central, extensionMap, {
+		hydratePanelForDocumentSlot(
+			"central",
+			sanitizedPersistedPanels.central,
+			extensionMap,
+			{
 				preserveUnknownKinds: true,
-			}),
+			},
 		),
 	);
 	const [rightPanel, setRightPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.right, extensionMap, {
-			preserveUnknownKinds: true,
-		}),
+		hydratePanelForDocumentSlot(
+			"right",
+			sanitizedPersistedPanels.right,
+			extensionMap,
+			{
+				preserveUnknownKinds: true,
+			},
+		),
 	);
 	const [focusedPanel, setFocusedPanel] = useState<PanelSide>(
 		() => uiState.focusedPanel,
@@ -1244,7 +1333,8 @@ function LayoutShellLoadedContent({
 		setLeftPanel((prev) =>
 			prev === sanitizedPersistedPanels.left
 				? prev
-				: hydratePanel(
+				: hydratePanelForDocumentSlot(
+						"left",
 						sanitizedPersistedPanels.left,
 						extensionMap,
 						hydrateOptions,
@@ -1253,18 +1343,18 @@ function LayoutShellLoadedContent({
 		setCentralPanel((prev) =>
 			prev === sanitizedPersistedPanels.central
 				? prev
-				: collapsePanelToActiveView(
-						hydratePanel(
-							sanitizedPersistedPanels.central,
-							extensionMap,
-							hydrateOptions,
-						),
+				: hydratePanelForDocumentSlot(
+						"central",
+						sanitizedPersistedPanels.central,
+						extensionMap,
+						hydrateOptions,
 					),
 		);
 		setRightPanel((prev) =>
 			prev === sanitizedPersistedPanels.right
 				? prev
-				: hydratePanel(
+				: hydratePanelForDocumentSlot(
+						"right",
 						sanitizedPersistedPanels.right,
 						extensionMap,
 						hydrateOptions,
@@ -1304,15 +1394,28 @@ function LayoutShellLoadedContent({
 			preserveUnknownKinds: !hasLoadedInstalledExtensions,
 		};
 		setLeftPanel((current) =>
-			hydratePanel(current, extensionMap, hydrateOptions),
+			hydratePanelForDocumentSlot(
+				"left",
+				current,
+				extensionMap,
+				hydrateOptions,
+			),
 		);
 		setCentralPanel((current) =>
-			collapsePanelToActiveView(
-				hydratePanel(current, extensionMap, hydrateOptions),
+			hydratePanelForDocumentSlot(
+				"central",
+				current,
+				extensionMap,
+				hydrateOptions,
 			),
 		);
 		setRightPanel((current) =>
-			hydratePanel(current, extensionMap, hydrateOptions),
+			hydratePanelForDocumentSlot(
+				"right",
+				current,
+				extensionMap,
+				hydrateOptions,
+			),
 		);
 	}, [extensionMap, hasLoadedInstalledExtensions]);
 
@@ -1362,14 +1465,14 @@ function LayoutShellLoadedContent({
 			const applyReducer = (prev: PanelState) => {
 				const next = hydratePanel(
 					reducer(
-						hydratePanel(prev, extensionMap, {
+						hydratePanelForDocumentSlot(side, prev, extensionMap, {
 							preserveUnknownKinds: !hasLoadedInstalledExtensions,
 						}),
 					),
 					extensionMap,
 					{ preserveUnknownKinds: !hasLoadedInstalledExtensions },
 				);
-				return side === "central" ? collapsePanelToActiveView(next) : next;
+				return normalizePanelForDocumentSlot(side, next);
 			};
 			if (side === "left") {
 				setLeftPanel(applyReducer);
@@ -1405,16 +1508,21 @@ function LayoutShellLoadedContent({
 				const currentFileIds = args.previousDiff
 					? await readCurrentLixFileIds(lix)
 					: new Set<string>();
-				const transitionPanel = (panel: PanelState) =>
-					transitionCheckpointEditorRevisionPanel({
-						panel,
-						previousDiff: args.previousDiff,
-						nextDiff: args.nextDiff,
-						currentFileIds,
-					});
-				setLeftPanel(transitionPanel);
-				setCentralPanel(transitionPanel);
-				setRightPanel(transitionPanel);
+				const transitionPanel =
+					(side: PanelSide) =>
+					(panel: PanelState): PanelState =>
+						normalizePanelForDocumentSlot(
+							side,
+							transitionCheckpointEditorRevisionPanel({
+								panel,
+								previousDiff: args.previousDiff,
+								nextDiff: args.nextDiff,
+								currentFileIds,
+							}),
+						);
+				setLeftPanel(transitionPanel("left"));
+				setCentralPanel(transitionPanel("central"));
+				setRightPanel(transitionPanel("right"));
 			})().catch((error: unknown) => {
 				onError?.(error);
 			});
@@ -1502,6 +1610,16 @@ function LayoutShellLoadedContent({
 			instance?: string;
 			pending?: boolean;
 		}) => {
+			if (panel === "central") {
+				const candidate: ExtensionInstance = {
+					instance: instance ?? createExtensionInstanceId(kind),
+					kind,
+					state,
+					launchArgs,
+					isPending: pending || undefined,
+				};
+				if (!isDocumentView(candidate)) return;
+			}
 			ensurePanelExpanded(panel);
 			setPanelState(
 				panel,
@@ -1579,7 +1697,7 @@ function LayoutShellLoadedContent({
 
 	const openResolvedFileView = useCallback(
 		({
-			panel,
+			panel: _requestedPanel,
 			fileId,
 			filePath,
 			instance,
@@ -1625,7 +1743,7 @@ function LayoutShellLoadedContent({
 				});
 			}
 			handleOpenView({
-				panel,
+				panel: "central",
 				kind,
 				instance: instance ?? fileExtensionInstanceForKind(kind, fileId),
 				state: {
@@ -2257,6 +2375,7 @@ function LayoutShellLoadedContent({
 			const movedView = cloneExtensionInstance(sourcePanel, instance);
 
 			if (!movedView) return;
+			if (!canPlaceViewInPanel(movedView, toPanel)) return;
 
 			setPanelState(fromPanel, (panel) => {
 				const remaining = panel.views.filter(
@@ -2526,6 +2645,7 @@ function LayoutShellLoadedContent({
 
 			const sourcePanel = viewToMove.sourcePanel;
 			if (sourcePanel === targetPanel) return;
+			if (!canPlaceViewInPanel(viewToMove, targetPanel)) return;
 
 			// Remove from source panel
 			setPanelState(sourcePanel, (panel) => {
