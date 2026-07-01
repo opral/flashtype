@@ -384,6 +384,50 @@ describe("V2LayoutShell checkpoint footer", () => {
 		await unmountShell(utils);
 		await lix.close();
 	});
+
+	test("clicking the footer count toggles current checkpoint review", async () => {
+		const lix = await openLix();
+		await writeReviewFile(lix, "file_doc", "/doc.md", "# Before\n");
+		await lix.createBranch({ name: "a-previous" });
+		await writeReviewFile(lix, "file_doc", "/doc.md", "# After\n");
+
+		const utils = await renderShell(lix);
+		const footerButton = await screen.findByRole("button", {
+			name: "1 file changed since last checkpoint",
+		});
+		expect(footerButton).toHaveAttribute("aria-pressed", "false");
+
+		await act(async () => {
+			fireEvent.click(footerButton);
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", {
+					name: "1 file changed since last checkpoint",
+				}),
+			).toHaveAttribute("aria-pressed", "true");
+		});
+
+		await act(async () => {
+			fireEvent.click(
+				screen.getByRole("button", {
+					name: "1 file changed since last checkpoint",
+				}),
+			);
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", {
+					name: "1 file changed since last checkpoint",
+				}),
+			).toHaveAttribute("aria-pressed", "false");
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
 });
 
 describe("V2LayoutShell native New File", () => {

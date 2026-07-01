@@ -21,7 +21,7 @@ import {
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
-import { useLix, useQuery, useQueryTakeFirstOrThrow } from "@/lib/lix-react";
+import { useLix } from "@/lib/lix-react";
 import type { Lix } from "@/lib/lix-types";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import { SidePanel } from "./side-panel";
@@ -771,34 +771,104 @@ export async function resolveLixFileForOpen({
 	return selectLixFileForOpen(lix, normalizedPath);
 }
 
-function useCurrentCheckpointChangedFileCount(lix: Lix): number | null {
-	const branches = useQuery<CheckpointDiffBranchRow>((lix) =>
-		qb(lix)
-			.selectFrom("lix_branch")
-			.select(["id", "name", "commit_id"])
-			.where(
-				() =>
-					sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
-			)
-			.orderBy("name", "asc"),
-	);
-	const activeBranch = useQueryTakeFirstOrThrow<{ value: string }>((lix) =>
-		qb(lix)
-			.selectFrom("lix_key_value")
-			.where("key", "=", "lix_workspace_branch_id")
-			.select(["value"]),
-	);
+type CurrentCheckpointChangeState = {
+	readonly branchId: string;
+	readonly branches: readonly CheckpointDiffBranchRow[];
+	readonly count: number | null;
+};
+
+type CurrentCheckpointBranchState = {
+	readonly key: string;
+	readonly branchId: string;
+	readonly branches: readonly CheckpointDiffBranchRow[];
+};
+
+function useCurrentCheckpointChangeState(
+	lix: Lix,
+): CurrentCheckpointChangeState {
+	const [branchState, setBranchState] =
+		useState<CurrentCheckpointBranchState | null>(null);
 	const [changedFileCount, setChangedFileCount] = useState<number | null>(null);
 
 	useEffect(() => {
 		let closed = false;
-		const branchId = activeBranch.value;
-		setChangedFileCount(null);
-		if (!branches.some((branch) => branch.id === branchId)) {
+		let loadRunId = 0;
+		const load = async () => {
+			const runId = loadRunId + 1;
+			loadRunId = runId;
+			try {
+				const [branches, branchId] = await Promise.all([
+					loadVisibleCheckpointBranches(lix),
+					loadActiveCheckpointBranchId(lix),
+				]);
+				if (closed || loadRunId !== runId) return;
+				const nextState =
+					branchId && branches.some((branch) => branch.id === branchId)
+						? {
+								key: checkpointDiffCacheKey(branches, branchId),
+								branchId,
+								branches,
+							}
+						: null;
+				setBranchState((previous) =>
+					previous?.key === nextState?.key ? previous : nextState,
+				);
+			} catch (error: unknown) {
+				if (closed) return;
+				console.warn("Failed to load checkpoint footer state", error);
+				setBranchState(null);
+			}
+		};
+
+		void load();
+
+		const branchesQuery = visibleCheckpointBranchesQuery(lix).compile();
+		const activeBranchQuery = activeCheckpointBranchQuery(lix).compile();
+		const branchEvents = lix.observe(
+			branchesQuery.sql,
+			branchesQuery.parameters,
+		);
+		const activeBranchEvents = lix.observe(
+			activeBranchQuery.sql,
+			activeBranchQuery.parameters,
+		);
+		const observe = async (events: typeof branchEvents) => {
+			try {
+				while (!closed) {
+					const event = await events.next();
+					if (closed || !event) break;
+					void load();
+				}
+			} catch (error: unknown) {
+				if (!closed) {
+					console.warn("Failed to observe checkpoint footer state", error);
+				}
+			}
+		};
+
+		void observe(branchEvents);
+		void observe(activeBranchEvents);
+
+		return () => {
+			closed = true;
+			branchEvents.close();
+			activeBranchEvents.close();
+		};
+	}, [lix]);
+
+	useEffect(() => {
+		if (!branchState) {
 			setChangedFileCount(0);
 			return;
 		}
-		void resolveCheckpointDiff({ lix, branches, branchId })
+
+		let closed = false;
+		setChangedFileCount(null);
+		void resolveCheckpointDiff({
+			lix,
+			branches: branchState.branches,
+			branchId: branchState.branchId,
+		})
 			.then((diff) => {
 				if (closed) return;
 				setChangedFileCount(diff?.files.length ?? 0);
@@ -811,13 +881,103 @@ function useCurrentCheckpointChangedFileCount(lix: Lix): number | null {
 		return () => {
 			closed = true;
 		};
-	}, [activeBranch.value, branches, lix]);
+	}, [branchState, lix]);
 
-	return changedFileCount;
+	return {
+		branchId: branchState?.branchId ?? "",
+		branches: branchState?.branches ?? [],
+		count: branchState ? changedFileCount : null,
+	};
+}
+
+function visibleCheckpointBranchesQuery(lix: Lix) {
+	return qb(lix)
+		.selectFrom("lix_branch")
+		.select(["id", "name", "commit_id"])
+		.where(
+			() =>
+				sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+		)
+		.orderBy("name", "asc");
+}
+
+async function loadVisibleCheckpointBranches(
+	lix: Lix,
+): Promise<CheckpointDiffBranchRow[]> {
+	return (await visibleCheckpointBranchesQuery(
+		lix,
+	).execute()) as CheckpointDiffBranchRow[];
+}
+
+function activeCheckpointBranchQuery(lix: Lix) {
+	return qb(lix)
+		.selectFrom("lix_key_value")
+		.where("key", "=", "lix_workspace_branch_id")
+		.select(["value"]);
+}
+
+async function loadActiveCheckpointBranchId(lix: Lix): Promise<string | null> {
+	const row = await activeCheckpointBranchQuery(lix).executeTakeFirst();
+	return typeof row?.value === "string" && row.value.length > 0
+		? row.value
+		: null;
+}
+
+function checkpointDiffCacheKey(
+	branches: readonly CheckpointDiffBranchRow[],
+	branchId: string,
+): string {
+	return [
+		branchId,
+		...branches.map((branch) =>
+			[branch.id, branch.name, branch.commit_id ?? ""].join(":"),
+		),
+	].join("|");
 }
 
 function formatChangedFileCount(count: number): string {
 	return `${count} ${count === 1 ? "file" : "files"} changed since last checkpoint`;
+}
+
+function CurrentCheckpointFooterReviewButton({
+	lix,
+	checkpointDiff,
+	showCheckpointDiff,
+	clearCheckpointDiff,
+}: {
+	readonly lix: Lix;
+	readonly checkpointDiff: CheckpointDiff | null;
+	readonly showCheckpointDiff: (
+		args: ShowCheckpointDiffArgs,
+	) => Promise<CheckpointDiff | null>;
+	readonly clearCheckpointDiff: () => void;
+}) {
+	const currentCheckpointChange = useCurrentCheckpointChangeState(lix);
+	if (currentCheckpointChange.count === null) return null;
+	const status = formatChangedFileCount(currentCheckpointChange.count);
+	const isReviewingCurrentCheckpoint =
+		checkpointDiff?.branchId === currentCheckpointChange.branchId;
+
+	return (
+		<button
+			type="button"
+			className="min-w-0 cursor-pointer truncate rounded-[5px] border-0 bg-transparent px-1 py-0.5 text-left font-[inherit] text-inherit hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
+			data-attr="checkpoint-footer-review"
+			aria-pressed={isReviewingCurrentCheckpoint}
+			onClick={() => {
+				if (isReviewingCurrentCheckpoint) {
+					clearCheckpointDiff();
+					return;
+				}
+				void showCheckpointDiff({
+					branchId: currentCheckpointChange.branchId,
+					branches: currentCheckpointChange.branches,
+				});
+			}}
+		>
+			{status}
+		</button>
+	);
 }
 
 function documentOpenAttemptTelemetryProperties({
@@ -946,12 +1106,6 @@ function LayoutShellLoadedContent({
 		useState(false);
 	const { extensionMap, replaceInstalledExtensions, clearInstalledExtensions } =
 		useExtensionRegistry();
-	const currentCheckpointChangedFileCount =
-		useCurrentCheckpointChangedFileCount(lix);
-	const checkpointFooterStatus =
-		currentCheckpointChangedFileCount === null
-			? null
-			: formatChangedFileCount(currentCheckpointChangedFileCount);
 	const uiState = useMemo(
 		() => coerceFlashtypeUiState(uiStateKV ?? DEFAULT_FLASHTYPE_UI_STATE),
 		[uiStateKV],
@@ -3046,7 +3200,14 @@ function LayoutShellLoadedContent({
 					</PanelGroup>
 				</div>
 				<StatusBar
-					left={<span className="truncate">{checkpointFooterStatus}</span>}
+					left={
+						<CurrentCheckpointFooterReviewButton
+							lix={lix}
+							checkpointDiff={checkpointDiff}
+							showCheckpointDiff={showCheckpointDiff}
+							clearCheckpointDiff={clearCheckpointDiff}
+						/>
+					}
 				/>
 			</div>
 			<DragOverlay>
