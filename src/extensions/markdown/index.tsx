@@ -376,7 +376,11 @@ function MarkdownHistoricalViewLoaded({
 
 	let content: ReactNode;
 	if (!historicalSnapshotsLoaded) {
-		content = <MarkdownReviewOverlayFallback />;
+		content = (
+			<div className="relative min-h-0 flex-1">
+				<MarkdownReviewOverlayFallback />
+			</div>
+		);
 	} else if (!effectiveFileRow) {
 		content = (
 			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">
@@ -632,12 +636,10 @@ function enrichMarkdownReviewDiff(
 
 function MarkdownReviewOverlayFallback() {
 	return (
-		<div className="markdown-review-overlay">
-			<div className="markdown-review-surface">
-				<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-					<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
-					<span>Loading review…</span>
-				</div>
+		<div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+			<div className="inline-flex items-center rounded-md border border-[var(--color-border-panel)] bg-[var(--color-bg-panel)] px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] shadow-sm">
+				<Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden />
+				<span>Loading review…</span>
 			</div>
 		</div>
 	);
