@@ -337,6 +337,55 @@ describe("V2LayoutShell branch status", () => {
 	});
 });
 
+describe("V2LayoutShell checkpoint footer", () => {
+	test("renders the current file count changed since the previous checkpoint", async () => {
+		const lix = await openLix();
+		await writeReviewFile(lix, "file_a", "/a.md", "# A before\n");
+		await lix.createBranch({ name: "a-previous" });
+		await writeReviewFile(lix, "file_a", "/a.md", "# A after\n");
+		await writeReviewFile(lix, "file_b", "/b.md", "# B added\n");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() => {
+			expect(
+				screen.getByText("2 files changed since last checkpoint"),
+			).toBeInTheDocument();
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("uses the initial commit and singular text when there is no previous checkpoint", async () => {
+		const lix = await openLix();
+		await writeReviewFile(lix, "file_current", "/current.md", "# Current\n");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() => {
+			expect(
+				screen.getByText("1 file changed since last checkpoint"),
+			).toBeInTheDocument();
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("renders zero changed files when the current checkpoint matches the initial commit", async () => {
+		const lix = await openLix();
+		const utils = await renderShell(lix);
+
+		expect(
+			await screen.findByText("0 files changed since last checkpoint"),
+		).toBeInTheDocument();
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+});
+
 describe("V2LayoutShell native New File", () => {
 	test("routes to the active FilesView draft before creating directly", async () => {
 		const desktop = installDesktopMock();

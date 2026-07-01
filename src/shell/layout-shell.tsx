@@ -21,16 +21,18 @@ import {
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
-import { useLix } from "@/lib/lix-react";
+import { useLix, useQuery, useQueryTakeFirstOrThrow } from "@/lib/lix-react";
 import type { Lix } from "@/lib/lix-types";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
 import { SidePanel } from "./side-panel";
 import { CentralPanel } from "./central-panel";
 import { TopBar } from "./top-bar";
 import { FlashtypeMenu } from "./top-bar/flashtype-menu";
+import { StatusBar } from "./status-bar";
 import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
 import type {
 	CheckpointDiff,
+	CheckpointDiffBranchRow,
 	CheckpointDiffVisibleFile,
 	ShowCheckpointDiffArgs,
 } from "@/extension-runtime/checkpoint-diff";
@@ -40,7 +42,7 @@ import {
 	stripEditorRevisionState,
 } from "@/extension-runtime/editor-revision-state";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
-import { qb } from "@/lib/lix-kysely";
+import { qb, sql } from "@/lib/lix-kysely";
 import {
 	captureTelemetry,
 	fileExtensionProperty,
@@ -769,6 +771,55 @@ export async function resolveLixFileForOpen({
 	return selectLixFileForOpen(lix, normalizedPath);
 }
 
+function useCurrentCheckpointChangedFileCount(lix: Lix): number | null {
+	const branches = useQuery<CheckpointDiffBranchRow>((lix) =>
+		qb(lix)
+			.selectFrom("lix_branch")
+			.select(["id", "name", "commit_id"])
+			.where(
+				() =>
+					sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+			)
+			.orderBy("name", "asc"),
+	);
+	const activeBranch = useQueryTakeFirstOrThrow<{ value: string }>((lix) =>
+		qb(lix)
+			.selectFrom("lix_key_value")
+			.where("key", "=", "lix_workspace_branch_id")
+			.select(["value"]),
+	);
+	const [changedFileCount, setChangedFileCount] = useState<number | null>(null);
+
+	useEffect(() => {
+		let closed = false;
+		const branchId = activeBranch.value;
+		setChangedFileCount(null);
+		if (!branches.some((branch) => branch.id === branchId)) {
+			setChangedFileCount(0);
+			return;
+		}
+		void resolveCheckpointDiff({ lix, branches, branchId })
+			.then((diff) => {
+				if (closed) return;
+				setChangedFileCount(diff?.files.length ?? 0);
+			})
+			.catch((error: unknown) => {
+				if (closed) return;
+				console.warn("Failed to resolve checkpoint footer count", error);
+				setChangedFileCount(0);
+			});
+		return () => {
+			closed = true;
+		};
+	}, [activeBranch.value, branches, lix]);
+
+	return changedFileCount;
+}
+
+function formatChangedFileCount(count: number): string {
+	return `${count} ${count === 1 ? "file" : "files"} changed since last checkpoint`;
+}
+
 function documentOpenAttemptTelemetryProperties({
 	filePath,
 	handler,
@@ -895,6 +946,12 @@ function LayoutShellLoadedContent({
 		useState(false);
 	const { extensionMap, replaceInstalledExtensions, clearInstalledExtensions } =
 		useExtensionRegistry();
+	const currentCheckpointChangedFileCount =
+		useCurrentCheckpointChangedFileCount(lix);
+	const checkpointFooterStatus =
+		currentCheckpointChangedFileCount === null
+			? null
+			: formatChangedFileCount(currentCheckpointChangedFileCount);
 	const uiState = useMemo(
 		() => coerceFlashtypeUiState(uiStateKV ?? DEFAULT_FLASHTYPE_UI_STATE),
 		[uiStateKV],
@@ -2988,6 +3045,9 @@ function LayoutShellLoadedContent({
 						</Panel>
 					</PanelGroup>
 				</div>
+				<StatusBar
+					left={<span className="truncate">{checkpointFooterStatus}</span>}
+				/>
 			</div>
 			<DragOverlay>
 				{activeId && activeDragView ? (
