@@ -2788,6 +2788,7 @@ function LayoutShellLoadedContent({
 				<TopBar
 					workspaceName={workspaceName}
 					activeFileName={activeFileName}
+					isReviewingCheckpoint={Boolean(checkpointDiff)}
 					onWorkspaceTitleClick={onOpenWorkspace}
 					menu={<FlashtypeMenu />}
 					onToggleLeftSidebar={toggleLeftSidebar}
