@@ -8,11 +8,27 @@ import {
 	type Item,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
-import { LixProvider, useQueryTakeFirst } from "@/lib/lix-react";
+import { LixProvider, useLix, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
-import { decodeFileDataToText } from "@/lib/decode-file-data";
+import {
+	decodeFileDataToBytes,
+	decodeFileDataToText,
+} from "@/lib/decode-file-data";
 import { ExternalWriteReviewControls } from "@/extension-runtime/external-write-review-controls";
-import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import type {
+	ExternalWriteReview,
+	ExternalWriteReviewData,
+} from "@/extension-runtime/external-write-review";
+import type {
+	CheckpointDiff,
+	CheckpointDiffFile,
+} from "@/extension-runtime/checkpoint-diff";
+import {
+	editorRevisionMode,
+	editorRevisionReviewId,
+	normalizeEditorRevisionState,
+	type EditorRevisionState,
+} from "@/extension-runtime/editor-revision-state";
 import {
 	useExternalWriteReview,
 	useExternalWriteReviewData,
@@ -25,8 +41,12 @@ import "./style.css";
 
 type CsvViewProps = {
 	readonly fileId: string;
+	readonly filePath?: string;
 	readonly isActiveView?: boolean;
 	readonly isPanelFocused?: boolean;
+	readonly checkpointDiff?: CheckpointDiff | null;
+	readonly beforeCommitId?: string | null;
+	readonly afterCommitId?: string | null;
 	readonly registerExternalWriteReview?: (
 		review: ExternalWriteReview,
 	) => () => void;
@@ -68,10 +88,41 @@ type CsvFileRow = {
 	readonly data: Uint8Array;
 };
 
+type HistoricalFileSnapshotRow = {
+	readonly id: string;
+	readonly path: string;
+	readonly data: unknown;
+};
+
+type RawHistoricalFileSnapshotRow = {
+	readonly id: string;
+	readonly path: string | null;
+	readonly data: unknown | null;
+};
+
+type HistoricalFileSnapshotState = {
+	readonly commitId: string | null;
+	readonly loaded: boolean;
+	readonly snapshot: HistoricalFileSnapshotRow | undefined;
+};
+
+type HistoricalCsvFile = {
+	readonly fileRow: CsvFileRow;
+	readonly review: ExternalWriteReview | null;
+	readonly reviewData: ExternalWriteReviewData | undefined;
+	readonly controls: "review" | "none";
+};
+
+const EMPTY_FILE_DATA = new Uint8Array();
+
 export function CsvView({
 	fileId,
+	filePath,
 	isActiveView = true,
 	isPanelFocused = true,
+	checkpointDiff,
+	beforeCommitId,
+	afterCommitId,
 	registerExternalWriteReview,
 	onAcceptReview,
 	onRejectReview,
@@ -80,8 +131,12 @@ export function CsvView({
 		<Suspense fallback={<CsvLoadingSpinner />}>
 			<CsvViewContent
 				fileId={fileId}
+				filePath={filePath}
 				isActiveView={isActiveView}
 				isPanelFocused={isPanelFocused}
+				checkpointDiff={checkpointDiff}
+				beforeCommitId={beforeCommitId}
+				afterCommitId={afterCommitId}
 				registerExternalWriteReview={registerExternalWriteReview}
 				onAcceptReview={onAcceptReview}
 				onRejectReview={onRejectReview}
@@ -100,26 +155,50 @@ function CsvViewContent({ fileId, ...props }: CsvViewProps) {
 			.where("id", "=", fileId)
 			.limit(1),
 	);
-	return <CsvViewData fileRow={fileRow} {...props} />;
+	return <CsvViewData fileId={fileId} fileRow={fileRow} {...props} />;
 }
 
 function CsvViewData({
+	fileId,
+	filePath,
 	fileRow,
+	checkpointDiff,
+	beforeCommitId,
+	afterCommitId,
 	registerExternalWriteReview,
 	...props
-}: Omit<CsvViewProps, "fileId"> & {
+}: CsvViewProps & {
 	readonly fileRow?: CsvFileRow | undefined;
 }) {
+	const editorRevision = normalizeEditorRevisionState({
+		beforeCommitId,
+		afterCommitId,
+	});
+	const revisionMode = editorRevisionMode(editorRevision);
+	if (revisionMode !== "editor") {
+		return (
+			<CsvHistoricalViewData
+				fileId={fileId}
+				filePath={filePath}
+				fileRow={fileRow}
+				checkpointDiff={checkpointDiff}
+				editorRevision={editorRevision}
+				{...props}
+			/>
+		);
+	}
+
+	const effectiveFileRow = fileRow;
 	const externalWriteReview = useExternalWriteReview({
-		fileId: fileRow?.id,
-		path: fileRow?.path,
+		fileId: effectiveFileRow?.id,
+		path: effectiveFileRow?.path,
 	});
 	useEffect(() => {
 		if (!externalWriteReview) return;
 		return registerExternalWriteReview?.(externalWriteReview);
 	}, [externalWriteReview, registerExternalWriteReview]);
 
-	if (!fileRow) {
+	if (!effectiveFileRow) {
 		return (
 			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">
 				File not found in the workspace.
@@ -129,8 +208,85 @@ function CsvViewData({
 
 	return (
 		<CsvViewLoaded
-			fileRow={fileRow}
+			fileRow={effectiveFileRow}
 			externalWriteReview={externalWriteReview}
+			reviewControls="review"
+			{...props}
+		/>
+	);
+}
+
+function CsvHistoricalViewData({
+	fileId,
+	filePath,
+	fileRow,
+	checkpointDiff,
+	editorRevision,
+	...props
+}: Omit<CsvViewProps, "fileId"> & {
+	readonly fileId: string;
+	readonly fileRow?: CsvFileRow | undefined;
+	readonly editorRevision: EditorRevisionState;
+}) {
+	const checkpointDiffFile = useMemo(
+		() => checkpointDiffFileForRevision(checkpointDiff, fileId, editorRevision),
+		[checkpointDiff, editorRevision, fileId],
+	);
+	const beforeSnapshot = useHistoricalFileSnapshot(
+		fileId,
+		checkpointDiffFile ? null : editorRevision.beforeCommitId,
+	);
+	const afterSnapshot = useHistoricalFileSnapshot(
+		fileId,
+		checkpointDiffFile ? null : editorRevision.afterCommitId,
+	);
+	const historicalSnapshotsLoaded =
+		Boolean(checkpointDiffFile) ||
+		((!editorRevision.beforeCommitId || beforeSnapshot.loaded) &&
+			(!editorRevision.afterCommitId || afterSnapshot.loaded));
+	const historicalFile = useMemo(
+		() =>
+			historicalSnapshotsLoaded
+				? buildHistoricalCsvFile({
+						fileId,
+						filePath,
+						fileRow,
+						revision: editorRevision,
+						checkpointDiffFile,
+						beforeSnapshot: beforeSnapshot.snapshot,
+						afterSnapshot: afterSnapshot.snapshot,
+					})
+				: null,
+		[
+			beforeSnapshot.snapshot,
+			checkpointDiffFile,
+			editorRevision,
+			fileId,
+			filePath,
+			fileRow,
+			historicalSnapshotsLoaded,
+			afterSnapshot.snapshot,
+		],
+	);
+
+	if (!historicalSnapshotsLoaded) {
+		return <CsvLoadingSpinner />;
+	}
+
+	if (!historicalFile?.fileRow) {
+		return (
+			<div className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">
+				File not found in the workspace.
+			</div>
+		);
+	}
+
+	return (
+		<CsvViewLoaded
+			fileRow={historicalFile.fileRow}
+			externalWriteReview={historicalFile.review}
+			reviewDataOverride={historicalFile.reviewData}
+			reviewControls={historicalFile.controls}
 			{...props}
 		/>
 	);
@@ -139,6 +295,8 @@ function CsvViewData({
 function CsvViewLoaded({
 	fileRow,
 	externalWriteReview,
+	reviewDataOverride,
+	reviewControls = "review",
 	isActiveView = true,
 	isPanelFocused = true,
 	onAcceptReview,
@@ -146,14 +304,12 @@ function CsvViewLoaded({
 }: Omit<CsvViewProps, "fileId"> & {
 	readonly fileRow: CsvFileRow;
 	readonly externalWriteReview: ExternalWriteReview | null;
+	readonly reviewDataOverride?: ExternalWriteReviewData;
+	readonly reviewControls?: "review" | "none";
 }) {
 	const parsed = useMemo<CsvParseResult>(() => {
 		return parseCsv(decodeFileDataToText(fileRow.data));
 	}, [fileRow]);
-
-	if (parsed.columns.length === 0) {
-		return <CsvEmptyState filePath={fileRow.path} />;
-	}
 
 	return (
 		<div className="csv-view flex min-h-0 flex-1 flex-col bg-background">
@@ -164,14 +320,20 @@ function CsvViewLoaded({
 				</div>
 			) : null}
 			<div className="relative min-h-0 flex-1 overflow-hidden">
-				<CsvTable parsed={parsed} isActiveView={isActiveView} />
+				{parsed.columns.length === 0 ? (
+					<CsvEmptyState filePath={fileRow.path} />
+				) : (
+					<CsvTable parsed={parsed} isActiveView={isActiveView} />
+				)}
 				{externalWriteReview ? (
 					<CsvReviewOverlay
 						fileId={fileRow.id}
 						review={externalWriteReview}
+						reviewDataOverride={reviewDataOverride}
 						isActive={isActiveView && isPanelFocused}
 						onAccept={onAcceptReview}
 						onReject={onRejectReview}
+						controls={reviewControls}
 					/>
 				) : null}
 			</div>
@@ -182,13 +344,17 @@ function CsvViewLoaded({
 function CsvReviewOverlay({
 	fileId,
 	review,
+	reviewDataOverride,
 	isActive,
+	controls = "review",
 	onAccept,
 	onReject,
 }: {
 	readonly fileId: string;
 	readonly review: ExternalWriteReview;
+	readonly reviewDataOverride?: ExternalWriteReviewData;
 	readonly isActive: boolean;
+	readonly controls?: "review" | "none";
 	readonly onAccept?: (args: {
 		readonly fileId: string;
 		readonly reviewId: string;
@@ -200,7 +366,10 @@ function CsvReviewOverlay({
 		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
 }) {
-	const reviewData = useExternalWriteReviewData(review);
+	const externalReviewData = useExternalWriteReviewData(
+		reviewDataOverride ? null : review,
+	);
+	const reviewData = reviewDataOverride ?? externalReviewData;
 	const diffHtml = useMemo(
 		() => (reviewData ? renderCsvReviewDiffHtml(reviewData) : null),
 		[reviewData],
@@ -221,13 +390,15 @@ function CsvReviewOverlay({
 					<span>Loading review…</span>
 				</div>
 			)}
-			<ExternalWriteReviewControls
-				isActive={isActive}
-				onAccept={() =>
-					void onAccept?.({ fileId, reviewId: review.reviewId, review })
-				}
-				onReject={rejectReview}
-			/>
+			{controls === "review" ? (
+				<ExternalWriteReviewControls
+					isActive={isActive}
+					onAccept={() =>
+						void onAccept?.({ fileId, reviewId: review.reviewId, review })
+					}
+					onReject={rejectReview}
+				/>
+			) : null}
 		</div>
 	);
 }
@@ -421,6 +592,188 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+function useHistoricalFileSnapshot(
+	fileId: string,
+	commitId: string | null,
+): HistoricalFileSnapshotState {
+	const lix = useLix();
+	const [snapshotState, setSnapshotState] =
+		useState<HistoricalFileSnapshotState>({
+			commitId: null,
+			loaded: true,
+			snapshot: undefined,
+		});
+	useEffect(() => {
+		if (!commitId) {
+			setSnapshotState({
+				commitId: null,
+				loaded: true,
+				snapshot: undefined,
+			});
+			return;
+		}
+		let cancelled = false;
+		setSnapshotState({
+			commitId,
+			loaded: false,
+			snapshot: undefined,
+		});
+		void qb(lix)
+			.selectFrom("lix_file_history")
+			.select(["id", "path", "data"])
+			.where("id", "=", fileId)
+			.where("lixcol_start_commit_id", "=", commitId)
+			.orderBy("lixcol_depth", "asc")
+			.limit(1)
+			.executeTakeFirst()
+			.then((row) => {
+				if (!cancelled) {
+					setSnapshotState({
+						commitId,
+						loaded: true,
+						snapshot: visibleHistoricalSnapshot(row),
+					});
+				}
+			})
+			.catch((error: unknown) => {
+				if (!cancelled) {
+					console.warn("Failed to load historical CSV snapshot", error);
+					setSnapshotState({
+						commitId,
+						loaded: true,
+						snapshot: undefined,
+					});
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [commitId, fileId, lix]);
+	if (snapshotState.commitId !== commitId) {
+		return {
+			commitId,
+			loaded: commitId === null,
+			snapshot: undefined,
+		};
+	}
+	return snapshotState;
+}
+
+function visibleHistoricalSnapshot(
+	row: RawHistoricalFileSnapshotRow | undefined,
+): HistoricalFileSnapshotRow | undefined {
+	if (!row || typeof row.path !== "string" || row.data === null) {
+		return undefined;
+	}
+	return {
+		id: row.id,
+		path: row.path,
+		data: row.data,
+	};
+}
+
+function checkpointDiffFileForRevision(
+	checkpointDiff: CheckpointDiff | null | undefined,
+	fileId: string,
+	revision: EditorRevisionState,
+): CheckpointDiffFile | null {
+	if (!checkpointDiff) return null;
+	return (
+		checkpointDiff.files.find((file) => {
+			const afterCommitId = checkpointDiff.afterIsActiveHead
+				? null
+				: file.afterCommitId;
+			return (
+				file.fileId === fileId &&
+				file.beforeCommitId === revision.beforeCommitId &&
+				afterCommitId === revision.afterCommitId
+			);
+		}) ?? null
+	);
+}
+
+function buildHistoricalCsvFile(args: {
+	readonly fileId: string;
+	readonly filePath: string | undefined;
+	readonly fileRow: CsvFileRow | undefined;
+	readonly revision: EditorRevisionState;
+	readonly checkpointDiffFile: CheckpointDiffFile | null;
+	readonly beforeSnapshot: HistoricalFileSnapshotRow | undefined;
+	readonly afterSnapshot: HistoricalFileSnapshotRow | undefined;
+}): HistoricalCsvFile | null {
+	const mode = editorRevisionMode(args.revision);
+	if (mode === "editor") return null;
+	const path =
+		args.checkpointDiffFile?.path ??
+		args.afterSnapshot?.path ??
+		args.beforeSnapshot?.path ??
+		args.fileRow?.path ??
+		args.filePath;
+	if (!path) return null;
+
+	if (mode === "snapshot") {
+		const data = args.checkpointDiffFile
+			? args.checkpointDiffFile.afterData
+			: args.afterSnapshot
+				? decodeFileDataToBytes(args.afterSnapshot.data)
+				: null;
+		if (!data) return null;
+		return {
+			fileRow: {
+				id: args.fileId,
+				path,
+				data,
+			},
+			review: null,
+			reviewData: undefined,
+			controls: "none",
+		};
+	}
+
+	const beforeData =
+		args.checkpointDiffFile?.beforeData ??
+		(args.beforeSnapshot
+			? decodeFileDataToBytes(args.beforeSnapshot.data)
+			: EMPTY_FILE_DATA);
+	const afterData =
+		args.checkpointDiffFile?.afterData ??
+		(args.revision.afterCommitId
+			? args.afterSnapshot
+				? decodeFileDataToBytes(args.afterSnapshot.data)
+				: EMPTY_FILE_DATA
+			: args.fileRow
+				? decodeFileDataToBytes(args.fileRow.data)
+				: EMPTY_FILE_DATA);
+
+	return {
+		fileRow: {
+			id: args.fileId,
+			path,
+			data: afterData,
+		},
+		review: {
+			fileId: args.fileId,
+			path,
+			reviewId:
+				args.checkpointDiffFile?.reviewId ??
+				editorRevisionReviewId({
+					fileId: args.fileId,
+					path,
+					beforeCommitId: args.revision.beforeCommitId,
+					afterCommitId: args.revision.afterCommitId,
+				}),
+			beforeCommitId: args.revision.beforeCommitId ?? "",
+			afterCommitId: args.revision.afterCommitId ?? "",
+			agentTurnRangeIds: [],
+		},
+		reviewData: {
+			beforeData,
+			afterData,
+		},
+		controls: "none",
+	};
+}
+
 function assertFileId(fileId: unknown): asserts fileId is string {
 	if (typeof fileId !== "string" || fileId.length === 0) {
 		throw new Error("CsvView requires a non-empty fileId.");
@@ -437,6 +790,18 @@ export const extension = createReactExtensionDefinition({
 		<LixProvider lix={context.lix}>
 			<CsvView
 				fileId={instance.state?.fileId as string}
+				filePath={instance.state?.filePath as string | undefined}
+				checkpointDiff={context.checkpointDiff}
+				beforeCommitId={
+					typeof instance.state?.beforeCommitId === "string"
+						? instance.state.beforeCommitId
+						: null
+				}
+				afterCommitId={
+					typeof instance.state?.afterCommitId === "string"
+						? instance.state.afterCommitId
+						: null
+				}
 				onAcceptReview={context.acceptExternalWriteReview}
 				onRejectReview={context.rejectExternalWriteReview}
 				registerExternalWriteReview={context.registerExternalWriteReview}

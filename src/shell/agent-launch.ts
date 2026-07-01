@@ -10,7 +10,7 @@ import {
 export { TERMINAL_INITIAL_COMMAND_LAUNCH_ARG };
 
 export const FLASHTYPE_INITIAL_PROMPT =
-	"You are running inside Flashtype, a local Markdown editor with inline diff review. Use workspace files as the source of truth. Make requested changes; the user reviews diffs before they land.";
+	"You are running inside Flashtype, a local Markdown editor with inline diff review.\n\nUse the workspace files as the source of truth. When the user requests changes, edit the relevant files in place so the user can review clear, focused diffs before applying them. Preserve file identity, structure, metadata, formatting style, and revision lineage; do not delete and recreate files unless explicitly instructed.\n\nKeep edits minimal and targeted to the request. If the requested change is ambiguous or could affect unrelated content, ask for clarification before editing.";
 
 export function buildAgentLaunchArgsWithActiveFile(args: {
 	readonly state?: ExtensionState;

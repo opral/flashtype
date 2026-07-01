@@ -12,6 +12,8 @@ export type TopBarProps = {
 	readonly workspaceName?: string | null;
 	/** Active document name, shown after the workspace as a breadcrumb. */
 	readonly activeFileName?: string | null;
+	/** Whether the active document is being shown as a checkpoint diff. */
+	readonly isReviewingCheckpoint?: boolean;
 	/** Leading slot, e.g. the Flashtype menu. Must not require lix. */
 	readonly menu?: ReactNode;
 	/** Clicking the proxy title opens the directory picker to switch workspaces. */
@@ -35,6 +37,7 @@ export type TopBarProps = {
 export function TopBar({
 	workspaceName = null,
 	activeFileName = null,
+	isReviewingCheckpoint = false,
 	menu,
 	onWorkspaceTitleClick,
 	onToggleLeftSidebar,
@@ -130,6 +133,11 @@ export function TopBar({
 								<span className="ph-mask max-w-60 truncate px-1 font-semibold text-[var(--color-text-primary)]">
 									{activeFileName}
 								</span>
+								{isReviewingCheckpoint ? (
+									<span className="ml-1 shrink-0 rounded-[5px] border border-[var(--color-border-panel)] px-1.5 py-0.5 text-[10.5px] leading-none font-semibold tracking-normal text-[var(--color-text-tertiary)]">
+										Reviewing
+									</span>
+								) : null}
 							</>
 						) : null}
 					</div>

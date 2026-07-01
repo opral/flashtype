@@ -72,6 +72,177 @@ describe("MarkdownView", () => {
 		});
 	});
 
+	test("renders a read-only historical snapshot from afterCommitId", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_snapshot",
+				path: "/snapshot.md",
+				data: new TextEncoder().encode("# Snapshot version"),
+			})
+			.execute();
+		const snapshotCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("# Head version") })
+			.where("id", "=", "file_snapshot")
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_snapshot"
+								filePath="/snapshot.md"
+								afterCommitId={snapshotCommitId}
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.container).toHaveTextContent("Snapshot version");
+		});
+		expect(utils!.container).not.toHaveTextContent("Head version");
+		expect(screen.queryByTestId("tiptap-editor")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+		await lix.close();
+	});
+
+	test("renders a read-only diff from beforeCommitId to HEAD", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_head_diff",
+				path: "/head-diff.md",
+				data: new TextEncoder().encode("# Before version"),
+			})
+			.execute();
+		const beforeCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("# Head version") })
+			.where("id", "=", "file_head_diff")
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_head_diff"
+								filePath="/head-diff.md"
+								beforeCommitId={beforeCommitId}
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(
+				utils!.container.querySelector(".markdown-review-overlay"),
+			).toBeInTheDocument();
+			expect(
+				utils!.container.querySelector("[data-diff-status]"),
+			).toBeInTheDocument();
+		});
+		await waitFor(() => {
+			expect(screen.getByText("Before")).toBeInTheDocument();
+			expect(screen.getByText("Head")).toBeInTheDocument();
+			expect(utils!.container).toHaveTextContent("version");
+		});
+		expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+		await lix.close();
+	});
+
+	test("does not mark unchanged before-to-HEAD files as fully added", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_unchanged_head_diff",
+				path: "/unchanged-head-diff.md",
+				data: new TextEncoder().encode("# Stable version"),
+			})
+			.execute();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_other_head_diff",
+				path: "/other-head-diff.md",
+				data: new TextEncoder().encode("# Other before"),
+			})
+			.execute();
+		const beforeCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("# Other after") })
+			.where("id", "=", "file_other_head_diff")
+			.execute();
+
+		let utils: ReturnType<typeof render> | undefined;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_unchanged_head_diff"
+								filePath="/unchanged-head-diff.md"
+								beforeCommitId={beforeCommitId}
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.container).toHaveTextContent("Stable version");
+		});
+		expect(
+			utils!.container.querySelector("[data-diff-status='added']"),
+		).toBeNull();
+		expect(
+			utils!.container.querySelector("[data-diff-status='removed']"),
+		).toBeNull();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+		await lix.close();
+	});
+
 	test("shows an autosave hint when pressing Cmd+S", async () => {
 		const lix = await openLix();
 		await qb(lix)
@@ -420,6 +591,89 @@ describe("MarkdownView", () => {
 		await act(async () => {
 			utils?.unmount();
 		});
+	});
+
+	test("renders checkpoint diffs without review controls for missing active files", async () => {
+		const lix = await openLix();
+		let utils: ReturnType<typeof render> | undefined;
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_checkpoint",
+				path: "/checkpoint.md",
+				data: new TextEncoder().encode("# Before"),
+			})
+			.execute();
+		const beforeCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("# After") })
+			.where("id", "=", "file_checkpoint")
+			.execute();
+		const afterCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.deleteFrom("lix_file")
+			.where("id", "=", "file_checkpoint")
+			.execute();
+
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
+						<Suspense fallback={null}>
+							<MarkdownView
+								fileId="file_checkpoint"
+								filePath="/checkpoint.md"
+								isActiveView
+								isPanelFocused
+								syncActiveFile={false}
+								beforeCommitId={beforeCommitId}
+								afterCommitId={afterCommitId}
+								checkpointDiff={{
+									branchId: "checkpoint-after",
+									branchName: "After",
+									beforeBranchId: "checkpoint-before",
+									beforeBranchName: "Before",
+									beforeCommitId,
+									afterCommitId,
+									files: [
+										{
+											fileId: "file_checkpoint",
+											path: "/checkpoint.md",
+											beforePath: "/checkpoint.md",
+											afterPath: "/checkpoint.md",
+											beforeData: new TextEncoder().encode("# Before"),
+											afterData: new TextEncoder().encode("# After"),
+											beforeCommitId,
+											afterCommitId,
+											reviewId: "checkpoint:markdown",
+											status: "modified",
+										},
+									],
+								}}
+							/>
+						</Suspense>
+					</KeyValueProvider>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(
+				utils!.container.querySelector(".markdown-review-overlay"),
+			).toBeInTheDocument();
+			expect(
+				utils!.container.querySelector("[data-diff-status]"),
+			).toBeInTheDocument();
+		});
+		expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+		expect(screen.queryByTestId("tiptap-editor")).not.toBeInTheDocument();
+
+		await act(async () => {
+			utils?.unmount();
+		});
+		await lix.close();
 	});
 
 	test("shows a not found message when the file is missing", async () => {

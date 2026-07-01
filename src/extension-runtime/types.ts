@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { Lix } from "@/lib/lix-types";
+import type { CheckpointDiff, ShowCheckpointDiffArgs } from "./checkpoint-diff";
 import type { ExternalWriteReview } from "./external-write-review";
 
 /**
@@ -155,6 +156,11 @@ export interface ExtensionContext {
 	readonly registerExternalWriteReview?: (
 		review: ExternalWriteReview,
 	) => () => void;
+	readonly checkpointDiff?: CheckpointDiff | null;
+	readonly showCheckpointDiff?: (
+		args: ShowCheckpointDiffArgs,
+	) => Promise<CheckpointDiff | null>;
+	readonly clearCheckpointDiff?: () => void;
 	readonly closeExtension?: (args: {
 		readonly panel?: PanelSide;
 		readonly instance?: string;

@@ -93,6 +93,38 @@ export async function ensureFilesViewOpenInLeftPanel(
 	await expect(filesTab).toHaveAttribute("data-focused", "true");
 }
 
+export async function ensureHistoryViewOpenInLeftPanel(
+	page: Page,
+): Promise<void> {
+	const leftPanel = page.locator("aside").first();
+	let historyTab = leftPanel
+		.locator('[data-view-key="flashtype_history"]')
+		.first();
+
+	if ((await historyTab.count()) === 0) {
+		const addViewButton = leftPanel.getByLabel("Add view").first();
+		if ((await panelSize(addViewButton)) <= 1) {
+			await page.getByLabel("Toggle left panel").click();
+		}
+		await expect.poll(() => panelSize(addViewButton)).toBeGreaterThan(1);
+		await expect(addViewButton).toBeVisible();
+		await addViewButton.click();
+		await page.getByRole("menuitem", { name: "History", exact: true }).click();
+		historyTab = leftPanel
+			.locator('[data-view-key="flashtype_history"]')
+			.first();
+	}
+
+	if ((await panelSize(historyTab)) <= 1) {
+		await page.getByLabel("Toggle left panel").click();
+	}
+
+	await expect.poll(() => panelSize(historyTab)).toBeGreaterThan(1);
+	await expect(historyTab).toBeVisible();
+	await historyTab.click();
+	await expect(historyTab).toHaveAttribute("data-focused", "true");
+}
+
 export function fileTreeFiles(page: Page): Locator {
 	return page.locator(
 		'[data-type="item"][data-item-type="file"][data-item-path]',

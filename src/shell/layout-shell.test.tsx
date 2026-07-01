@@ -1,5 +1,12 @@
 import { Suspense, act } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	within,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { LixProvider } from "@/lib/lix-react";
 import { KeyValueProvider } from "@/hooks/key-value/use-key-value";
@@ -11,19 +18,19 @@ import {
 	FILES_EXTENSION_KIND,
 	fileExtensionInstanceForKind,
 } from "@/extension-runtime/extension-instance-helpers";
-import type { WorkspaceContext } from "@/extension-runtime/types";
+import type {
+	ExtensionInstance,
+	WorkspaceContext,
+} from "@/extension-runtime/types";
 import { resolveLixFileForOpen, V2LayoutShell } from "./layout-shell";
 import type { FlashtypeUiState } from "./ui-state";
 import type { Lix } from "@/lib/lix-types";
-import { readCheckpointCommitIds } from "./checkpoints";
 
 type DesktopMock = {
 	readonly emitCloseFile: () => Promise<void>;
 	readonly emitNewFile: () => Promise<void>;
-	readonly emitNewCheckpoint: () => Promise<void>;
 	readonly onCloseFile: ReturnType<typeof vi.fn>;
 	readonly onNewFile: ReturnType<typeof vi.fn>;
-	readonly onNewCheckpoint: ReturnType<typeof vi.fn>;
 	readonly setActiveFilePath: ReturnType<typeof vi.fn>;
 	readonly setOpenFilePaths: ReturnType<typeof vi.fn>;
 };
@@ -284,15 +291,12 @@ describe("V2LayoutShell branch status", () => {
 		const lix = await openLix();
 		const utils = await renderShell(lix);
 
-		const trigger = await screen.findByRole("button", {
-			name: "Select branch",
+		await openHistoryTab();
+		const currentCheckpoint = await screen.findByRole("button", {
+			name: "Current Checkpoint",
 		});
-		expect(trigger).toBeEnabled();
-		expect(trigger).toHaveTextContent("main");
-		expect(trigger).not.toHaveAttribute(
-			"data-attr",
-			"branch-switcher-disabled",
-		);
+		expect(currentCheckpoint).toBeEnabled();
+		expect(currentCheckpoint).toHaveAttribute("aria-current", "true");
 
 		await unmountShell(utils);
 		await lix.close();
@@ -304,32 +308,128 @@ describe("V2LayoutShell branch status", () => {
 			workspace: persistentWorkspace(),
 		});
 
-		const trigger = await screen.findByRole("button", {
-			name: "Select branch",
+		await openHistoryTab();
+		const currentCheckpoint = await screen.findByRole("button", {
+			name: "Current Checkpoint",
 		});
-		expect(trigger).toBeEnabled();
-		expect(trigger).toHaveTextContent("main");
-		expect(trigger).not.toHaveAttribute(
-			"data-attr",
-			"branch-switcher-disabled",
-		);
+		expect(currentCheckpoint).toBeEnabled();
+		expect(currentCheckpoint).toHaveAttribute("aria-current", "true");
 
 		await unmountShell(utils);
 		await lix.close();
 	});
 
-	test("renders disabled branch UI for ephemeral workspaces", async () => {
+	test("renders enabled branch UI for ephemeral workspaces", async () => {
 		const lix = await openLix();
 		const utils = await renderShell(lix, {
 			workspace: ephemeralWorkspace(),
 		});
 
-		const trigger = await screen.findByRole("button", {
-			name: "Select branch",
+		await openHistoryTab();
+		const currentCheckpoint = await screen.findByRole("button", {
+			name: "Current Checkpoint",
 		});
-		expect(trigger).toBeDisabled();
-		expect(trigger).toHaveTextContent("No branch");
-		expect(trigger).toHaveAttribute("data-attr", "branch-switcher-disabled");
+		expect(currentCheckpoint).toBeEnabled();
+		expect(currentCheckpoint).toHaveAttribute("aria-current", "true");
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+});
+
+describe("V2LayoutShell checkpoint footer", () => {
+	test("renders the current file count changed since the previous checkpoint", async () => {
+		const lix = await openLix();
+		await writeReviewFile(lix, "file_a", "/a.md", "# A before\n");
+		await lix.createBranch({ name: "a-previous" });
+		await writeReviewFile(lix, "file_a", "/a.md", "# A after\n");
+		await writeReviewFile(lix, "file_b", "/b.md", "# B added\n");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() => {
+			expect(
+				screen.getByText("2 files changed since last checkpoint"),
+			).toBeInTheDocument();
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("uses the initial commit and singular text when there is no previous checkpoint", async () => {
+		const lix = await openLix();
+		await writeReviewFile(lix, "file_current", "/current.md", "# Current\n");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() => {
+			expect(
+				screen.getByText("1 file changed since last checkpoint"),
+			).toBeInTheDocument();
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("renders zero changed files when the current checkpoint matches the initial commit", async () => {
+		const lix = await openLix();
+		const utils = await renderShell(lix);
+
+		await waitFor(() => {
+			expect(
+				screen.getByText("0 files changed since last checkpoint"),
+			).toBeInTheDocument();
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("clicking the footer count toggles current checkpoint review", async () => {
+		const lix = await openLix();
+		await writeReviewFile(lix, "file_doc", "/doc.md", "# Before\n");
+		await lix.createBranch({ name: "a-previous" });
+		await writeReviewFile(lix, "file_doc", "/doc.md", "# After\n");
+
+		const utils = await renderShell(lix);
+		const footerButton = await screen.findByRole("button", {
+			name: "1 file changed since last checkpoint",
+			hidden: true,
+		});
+		expect(footerButton).toHaveAttribute("aria-pressed", "false");
+
+		await act(async () => {
+			fireEvent.click(footerButton);
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", {
+					name: "1 file changed since last checkpoint",
+					hidden: true,
+				}),
+			).toHaveAttribute("aria-pressed", "true");
+		});
+
+		await act(async () => {
+			fireEvent.click(
+				screen.getByRole("button", {
+					name: "1 file changed since last checkpoint",
+					hidden: true,
+				}),
+			);
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", {
+					name: "1 file changed since last checkpoint",
+					hidden: true,
+				}),
+			).toHaveAttribute("aria-pressed", "false");
+		});
 
 		await unmountShell(utils);
 		await lix.close();
@@ -495,6 +595,83 @@ describe("V2LayoutShell active file sidebar highlight", () => {
 });
 
 describe("V2LayoutShell central file views", () => {
+	test("removes persisted document views from side panels", async () => {
+		installDesktopMock();
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(documentsOutsideCentralState())],
+		});
+		await writeReviewFile(lix, "file_left", "/left.md", "# Left");
+		await writeReviewFile(lix, "file_central", "/central.md", "# Central");
+		await writeReviewFile(lix, "file_right", "/right.md", "# Right");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(async () => {
+			const uiState = await readPersistedUiState(lix);
+			expect(panelDocumentFileIds(uiState)).toEqual({
+				left: [],
+				central: ["file_central"],
+				right: [],
+			});
+			expect(uiState?.panels.left.views.map((view) => view.instance)).toEqual([
+				"files-left",
+			]);
+			expect(uiState?.panels.right.views.map((view) => view.instance)).toEqual([
+				"files-right",
+			]);
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("removes persisted non-document views from the central panel", async () => {
+		installDesktopMock();
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(centralNonDocumentState())],
+		});
+
+		const utils = await renderShell(lix);
+
+		await screen.findByTestId("central-panel-empty-state");
+		await waitFor(async () => {
+			const uiState = await readPersistedUiState(lix);
+			expect(uiState?.panels.central).toEqual({
+				views: [],
+				activeInstance: null,
+			});
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps persisted central documents keyed only by file id", async () => {
+		installDesktopMock();
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(centralFileIdOnlyDocumentState())],
+		});
+		await writeReviewFile(lix, "file_id_only", "/id-only.md", "# Id only");
+
+		const utils = await renderShell(lix);
+
+		await waitFor(async () => {
+			const uiState = await readPersistedUiState(lix);
+			expect(uiState?.panels.central.views).toHaveLength(1);
+			expect(uiState?.panels.central.views[0]?.state?.fileId).toBe(
+				"file_id_only",
+			);
+			expect(panelDocumentFileIds(uiState)).toEqual({
+				left: [],
+				central: ["file_id_only"],
+				right: [],
+			});
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
 	test("collapses stale persisted central files to the active view", async () => {
 		const desktop = installDesktopMock();
 		const lix = await openLix({
@@ -514,6 +691,41 @@ describe("V2LayoutShell central file views", () => {
 			expect(centralFilePaths(await readPersistedUiState(lix))).toEqual([
 				"/active.md",
 			]);
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("opening a second file replaces the existing central document", async () => {
+		installDesktopMock();
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(filesViewOnlyState())],
+		});
+		await writeReviewFile(lix, "file_a", "/a.md", "# A");
+		await writeReviewFile(lix, "file_b", "/b.md", "# B");
+
+		const utils = await renderShell(lix);
+
+		await openFilesTab();
+		const fileA = await findFilesViewTreeItemByPath(utils.container, "a.md");
+		await act(async () => {
+			fireEvent.click(fileA, { bubbles: true, composed: true });
+		});
+		await waitForPersistedActiveState(lix, "file_a", "/a.md");
+
+		const fileB = await findFilesViewTreeItemByPath(utils.container, "b.md");
+		await act(async () => {
+			fireEvent.click(fileB, { bubbles: true, composed: true });
+		});
+
+		await waitForPersistedActiveState(lix, "file_b", "/b.md");
+		await waitFor(async () => {
+			expect(panelDocumentFileIds(await readPersistedUiState(lix))).toEqual({
+				left: [],
+				central: ["file_b"],
+				right: [],
+			});
 		});
 
 		await unmountShell(utils);
@@ -553,23 +765,145 @@ describe("V2LayoutShell central file views", () => {
 	});
 });
 
-describe("V2LayoutShell native New Checkpoint", () => {
-	test("appends the synced active commit id to branch-scoped checkpoints", async () => {
-		const desktop = installDesktopMock();
-		const lix = await openLix();
-		const syncDiskToLix = vi.spyOn(lix, "syncDiskToLix").mockResolvedValue();
-		const commitId = await activeCommitId(lix);
+describe("V2LayoutShell checkpoint editor revisions", () => {
+	test("selecting checkpoint diffs updates the existing file editor instance", async () => {
+		const lix = await openLix({
+			keyValues: [
+				uiStateKeyValue(
+					filesViewWithOpenFileState("file_shared", "/shared.md"),
+				),
+			],
+		});
+		await writeReviewFile(lix, "file_shared", "/shared.md", "# Before\n");
+		const before = await lix.createBranch({ name: "a-previous" });
+		await writeReviewFile(lix, "file_shared", "/shared.md", "# After\n");
+		const after = await lix.createBranch({ name: "b-target" });
 
 		const utils = await renderShell(lix);
-		await waitFor(() => expect(desktop.onNewCheckpoint).toHaveBeenCalled());
 
+		await openHistoryTab();
+		const checkpoint = await screen.findByRole("button", {
+			name: "b-target",
+		});
 		await act(async () => {
-			await desktop.emitNewCheckpoint();
-			await desktop.emitNewCheckpoint();
+			fireEvent.click(checkpoint);
+		});
+		await waitFor(() => {
+			expect(checkpoint).toHaveAttribute("data-selected", "true");
+		});
+		await waitFor(async () => {
+			const uiState = await readPersistedUiState(lix);
+			const centralViews = uiState?.panels.central.views ?? [];
+			expect(centralViews).toHaveLength(1);
+			expect(centralViews[0]?.instance).toBe(
+				fileExtensionInstanceForKind(FILE_EXTENSION_KIND, "file_shared"),
+			);
+			expect(centralViews[0]?.state).toMatchObject({
+				fileId: "file_shared",
+				filePath: "/shared.md",
+				beforeCommitId: before.commitId,
+				afterCommitId: after.commitId,
+			});
 		});
 
-		expect(syncDiskToLix).toHaveBeenCalledTimes(2);
-		expect(await readCheckpointCommitIds(lix)).toEqual([commitId, commitId]);
+		await openFilesTab();
+		const sharedFile = await findFilesViewTreeItemByPath(
+			utils.container,
+			"shared.md",
+		);
+		await waitFor(() => {
+			expect(sharedFile).toHaveAttribute("data-item-git-status", "modified");
+		});
+		await act(async () => {
+			fireEvent.click(sharedFile, { bubbles: true, composed: true });
+		});
+
+		await waitFor(async () => {
+			const uiState = await readPersistedUiState(lix);
+			const centralViews = uiState?.panels.central.views ?? [];
+			expect(centralViews).toHaveLength(1);
+			expect(centralViews[0]?.instance).toBe(
+				fileExtensionInstanceForKind(FILE_EXTENSION_KIND, "file_shared"),
+			);
+			expect(centralViews[0]?.state).toMatchObject({
+				fileId: "file_shared",
+				filePath: "/shared.md",
+				beforeCommitId: before.commitId,
+				afterCommitId: after.commitId,
+			});
+		});
+
+		await openHistoryTab();
+		await act(async () => {
+			fireEvent.click(await screen.findByRole("button", { name: "b-target" }));
+		});
+
+		await waitFor(async () => {
+			const uiState = await readPersistedUiState(lix);
+			const centralViews = uiState?.panels.central.views ?? [];
+			expect(centralViews).toHaveLength(1);
+			expect(centralViews[0]?.state?.fileId).toBe("file_shared");
+			expect(centralViews[0]?.state?.beforeCommitId).toBeUndefined();
+			expect(centralViews[0]?.state?.afterCommitId).toBeUndefined();
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("clearing checkpoint diffs closes historical-only editors", async () => {
+		const lix = await openLix();
+		const before = await lix.createBranch({ name: "a-previous" });
+		await writeReviewFile(lix, "file_added", "/added.md", "# Added\n");
+		const after = await lix.createBranch({ name: "b-target" });
+		await qb(lix)
+			.deleteFrom("lix_file")
+			.where("id", "=", "file_added")
+			.execute();
+
+		const utils = await renderShell(lix);
+
+		await openHistoryTab();
+		const checkpoint = await screen.findByRole("button", {
+			name: "b-target",
+		});
+		await act(async () => {
+			fireEvent.click(checkpoint);
+		});
+		await waitFor(() => {
+			expect(checkpoint).toHaveAttribute("data-selected", "true");
+		});
+
+		await openFilesTab();
+		const addedFile = await findFilesViewTreeItemByPath(
+			utils.container,
+			"added.md",
+		);
+		await waitFor(() => {
+			expect(addedFile).toHaveAttribute("data-item-git-status", "added");
+		});
+		await act(async () => {
+			fireEvent.click(addedFile, { bubbles: true, composed: true });
+		});
+		await waitFor(async () => {
+			const activeView = activeCentralView(await readPersistedUiState(lix));
+			expect(activeView?.state).toMatchObject({
+				fileId: "file_added",
+				filePath: "/added.md",
+				beforeCommitId: before.commitId,
+				afterCommitId: after.commitId,
+			});
+		});
+
+		await openHistoryTab();
+		await act(async () => {
+			fireEvent.click(await screen.findByRole("button", { name: "b-target" }));
+		});
+		await waitFor(async () => {
+			expect(
+				(await readPersistedUiState(lix))?.panels.central.views ?? [],
+			).toEqual([]);
+		});
 
 		await unmountShell(utils);
 		await lix.close();
@@ -720,6 +1054,98 @@ async function renderShell(
 	return result!;
 }
 
+async function openHistoryTab(): Promise<void> {
+	const leftPanel = await waitFor(() => {
+		const panel = document.querySelector("aside");
+		if (!(panel instanceof HTMLElement)) {
+			throw new Error("left panel not found");
+		}
+		return panel;
+	});
+	let historyTab = leftPanel.querySelector<HTMLButtonElement>(
+		'[data-view-key="flashtype_history"]',
+	);
+	if (!historyTab) {
+		const addViewButton = within(leftPanel).getByRole("button", {
+			name: "Add view",
+		});
+		await act(async () => {
+			fireEvent.pointerDown(addViewButton, { button: 0 });
+			fireEvent.pointerUp(addViewButton, { button: 0 });
+		});
+		const historyItem = await screen.findByRole("menuitem", {
+			name: "History",
+		});
+		await act(async () => {
+			fireEvent.click(historyItem);
+		});
+		historyTab = await waitFor(() => {
+			const nextHistoryTab = leftPanel.querySelector<HTMLButtonElement>(
+				'[data-view-key="flashtype_history"]',
+			);
+			if (!nextHistoryTab) {
+				throw new Error("history tab not found");
+			}
+			return nextHistoryTab;
+		});
+	}
+	await act(async () => {
+		fireEvent.click(historyTab);
+	});
+	await waitFor(() => {
+		expect(historyTab).toHaveAttribute("data-focused", "true");
+	});
+}
+
+async function openFilesTab(): Promise<void> {
+	const leftPanel = await waitFor(() => {
+		const panel = document.querySelector("aside");
+		if (!(panel instanceof HTMLElement)) {
+			throw new Error("left panel not found");
+		}
+		return panel;
+	});
+	const filesTab = await waitFor(() => {
+		const tab = leftPanel.querySelector<HTMLButtonElement>(
+			'[data-view-key="flashtype_files"]',
+		);
+		if (!tab) {
+			throw new Error("files tab not found");
+		}
+		return tab;
+	});
+	await act(async () => {
+		fireEvent.click(filesTab);
+	});
+	await waitFor(() => {
+		expect(filesTab).toHaveAttribute("data-focused", "true");
+	});
+}
+
+async function findFilesViewTreeItemByPath(
+	container: HTMLElement,
+	path: string,
+): Promise<HTMLElement> {
+	return waitFor(() => {
+		const item = queryFilesViewTreeItemByPath(container, path);
+		if (!item) {
+			throw new Error(`file tree item not found: ${path}`);
+		}
+		return item;
+	});
+}
+
+function activeCentralView(
+	uiState: FlashtypeUiState | undefined,
+): ExtensionInstance | null {
+	const central = uiState?.panels.central;
+	if (!central) return null;
+	const activeInstance =
+		central.activeInstance ?? central.views[0]?.instance ?? null;
+	if (!activeInstance) return null;
+	return central.views.find((view) => view.instance === activeInstance) ?? null;
+}
+
 async function expectNewFileCreatedAndOpened(lix: Lix) {
 	await waitFor(async () => {
 		expect(await findFilePath(lix, "/new-file.md")).toBeDefined();
@@ -740,7 +1166,6 @@ async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
 function installDesktopMock(): DesktopMock {
 	let newFileListener: (() => void | Promise<void>) | null = null;
 	let closeFileListener: (() => void | Promise<void>) | null = null;
-	let newCheckpointListener: (() => void | Promise<void>) | null = null;
 	const setActiveFilePath = vi.fn();
 	const setOpenFilePaths = vi.fn();
 	const onNewFile = vi.fn((nextListener: () => void | Promise<void>) => {
@@ -751,29 +1176,18 @@ function installDesktopMock(): DesktopMock {
 			}
 		};
 	});
-	const onNewCheckpoint = vi.fn((nextListener: () => void | Promise<void>) => {
-		newCheckpointListener = nextListener;
+	const onCloseFile = vi.fn((nextListener: () => void | Promise<void>) => {
+		closeFileListener = nextListener;
 		return () => {
-			if (newCheckpointListener === nextListener) {
-				newCheckpointListener = null;
+			if (closeFileListener === nextListener) {
+				closeFileListener = null;
 			}
 		};
 	});
-	const onCloseFile = vi.fn(
-		(nextListener: () => void | Promise<void>) => {
-			closeFileListener = nextListener;
-			return () => {
-				if (closeFileListener === nextListener) {
-					closeFileListener = null;
-				}
-			};
-		},
-	);
 	window.flashtypeDesktop = {
 		workspace: {
 			onCloseFile,
 			onNewFile,
-			onNewCheckpoint,
 			setActiveFilePath,
 			setOpenFilePaths,
 		},
@@ -791,15 +1205,8 @@ function installDesktopMock(): DesktopMock {
 			}
 			await newFileListener();
 		},
-		emitNewCheckpoint: async () => {
-			if (!newCheckpointListener) {
-				throw new Error("native New Checkpoint listener was not registered");
-			}
-			await newCheckpointListener();
-		},
 		onCloseFile,
 		onNewFile,
-		onNewCheckpoint,
 		setActiveFilePath,
 		setOpenFilePaths,
 	};
@@ -893,6 +1300,21 @@ function twoFilesViewsState(): FlashtypeUiState {
 	};
 }
 
+function filesViewOnlyState(): FlashtypeUiState {
+	return {
+		focusedPanel: "left",
+		panels: {
+			left: {
+				views: [{ instance: "files-left", kind: FILES_EXTENSION_KIND }],
+				activeInstance: "files-left",
+			},
+			central: { views: [], activeInstance: null },
+			right: { views: [], activeInstance: null },
+		},
+		layout: { sizes: { left: 20, central: 50, right: 30 } },
+	};
+}
+
 function collapsedFilesViewState(): FlashtypeUiState {
 	return {
 		focusedPanel: "left",
@@ -925,24 +1347,96 @@ function filesViewWithOpenFileState(
 	};
 }
 
+function documentView(fileId: string, filePath: string): ExtensionInstance {
+	return {
+		instance: fileExtensionInstanceForKind(FILE_EXTENSION_KIND, fileId),
+		kind: FILE_EXTENSION_KIND,
+		state: {
+			fileId,
+			filePath,
+			flashtype: {
+				label: filePath.split("/").filter(Boolean).pop() ?? filePath,
+			},
+		},
+	};
+}
+
 function openFileState(fileId: string, filePath: string): FlashtypeUiState {
-	const instance = fileExtensionInstanceForKind(FILE_EXTENSION_KIND, fileId);
+	const view = documentView(fileId, filePath);
 	return {
 		focusedPanel: "central",
 		panels: {
 			left: { views: [], activeInstance: null },
 			central: {
+				views: [view],
+				activeInstance: view.instance,
+			},
+			right: { views: [], activeInstance: null },
+		},
+		layout: { sizes: { left: 20, central: 50, right: 30 } },
+	};
+}
+
+function documentsOutsideCentralState(): FlashtypeUiState {
+	const central = documentView("file_central", "/central.md");
+	const left = documentView("file_left", "/left.md");
+	const right = documentView("file_right", "/right.md");
+	return {
+		focusedPanel: "central",
+		panels: {
+			left: {
+				views: [{ instance: "files-left", kind: FILES_EXTENSION_KIND }, left],
+				activeInstance: left.instance,
+			},
+			central: {
+				views: [central],
+				activeInstance: central.instance,
+			},
+			right: {
+				views: [right, { instance: "files-right", kind: FILES_EXTENSION_KIND }],
+				activeInstance: right.instance,
+			},
+		},
+		layout: { sizes: { left: 20, central: 50, right: 30 } },
+	};
+}
+
+function centralNonDocumentState(): FlashtypeUiState {
+	return {
+		focusedPanel: "central",
+		panels: {
+			left: {
+				views: [{ instance: "files-left", kind: FILES_EXTENSION_KIND }],
+				activeInstance: "files-left",
+			},
+			central: {
+				views: [{ instance: "files-central", kind: FILES_EXTENSION_KIND }],
+				activeInstance: "files-central",
+			},
+			right: { views: [], activeInstance: null },
+		},
+		layout: { sizes: { left: 20, central: 50, right: 30 } },
+	};
+}
+
+function centralFileIdOnlyDocumentState(): FlashtypeUiState {
+	const instance = fileExtensionInstanceForKind(
+		FILE_EXTENSION_KIND,
+		"file_id_only",
+	);
+	return {
+		focusedPanel: "central",
+		panels: {
+			left: {
+				views: [{ instance: "files-left", kind: FILES_EXTENSION_KIND }],
+				activeInstance: "files-left",
+			},
+			central: {
 				views: [
 					{
 						instance,
 						kind: FILE_EXTENSION_KIND,
-						state: {
-							fileId,
-							filePath,
-							flashtype: {
-								label: filePath.split("/").filter(Boolean).pop() ?? filePath,
-							},
-						},
+						state: { fileId: "file_id_only" },
 					},
 				],
 				activeInstance: instance,
@@ -1006,6 +1500,27 @@ function centralFilePaths(uiState: FlashtypeUiState | undefined): string[] {
 	);
 }
 
+function panelDocumentFileIds(
+	uiState: FlashtypeUiState | undefined,
+): Record<"left" | "central" | "right", string[]> {
+	const idsForPanel = (side: "left" | "central" | "right") =>
+		uiState?.panels[side].views
+			.filter((entry) => {
+				const fileId = entry.state?.fileId;
+				return (
+					typeof fileId === "string" &&
+					entry.instance === fileExtensionInstanceForKind(entry.kind, fileId)
+				);
+			})
+			.map((entry) => entry.state?.fileId)
+			.filter((fileId): fileId is string => typeof fileId === "string") ?? [];
+	return {
+		left: idsForPanel("left"),
+		central: idsForPanel("central"),
+		right: idsForPanel("right"),
+	};
+}
+
 async function findFilePath(
 	lix: Lix,
 	path: string,
@@ -1017,17 +1532,6 @@ async function findFilePath(
 			.where("path", "=", path)
 			.executeTakeFirst()
 	)?.path;
-}
-
-async function activeCommitId(lix: Lix): Promise<string> {
-	const result = await lix.execute(
-		"SELECT lix_active_branch_commit_id() AS commit_id",
-	);
-	const commitId = result.rows[0]?.get("commit_id");
-	if (typeof commitId !== "string") {
-		throw new Error("Missing active commit id");
-	}
-	return commitId;
 }
 
 async function writeReviewFile(

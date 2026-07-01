@@ -7,7 +7,7 @@ export type FilesystemEntryRow = {
 	path: string;
 	display_name: string;
 	kind: "directory" | "file";
-	source?: "lix" | "watched";
+	source?: "lix" | "watched" | "checkpoint-diff";
 };
 
 /**

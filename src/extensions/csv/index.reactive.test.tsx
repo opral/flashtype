@@ -115,3 +115,229 @@ test("updates when CSV file data changes in Lix", async () => {
 		await lix.close();
 	}
 });
+
+test("renders a read-only historical CSV snapshot from afterCommitId", async () => {
+	const lix = await openLix();
+	let utils: ReturnType<typeof render> | undefined;
+	try {
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_csv_snapshot",
+				path: "/snapshot.csv",
+				data: new TextEncoder().encode("name,value\nsnapshot,1"),
+			})
+			.execute();
+		const snapshotCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("name,value\nhead,2") })
+			.where("id", "=", "file_csv_snapshot")
+			.execute();
+
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<CsvView
+							fileId="file_csv_snapshot"
+							filePath="/snapshot.csv"
+							afterCommitId={snapshotCommitId}
+							isActiveView
+							isPanelFocused
+						/>
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		expect(await screen.findByText("snapshot")).toBeInTheDocument();
+		expect(screen.queryByText("head")).toBeNull();
+		expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+	} finally {
+		if (utils) {
+			await act(async () => {
+				utils!.unmount();
+			});
+		}
+		await lix.close();
+	}
+});
+
+test("renders a read-only CSV diff from beforeCommitId to HEAD", async () => {
+	const lix = await openLix();
+	let utils: ReturnType<typeof render> | undefined;
+	try {
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_csv_head_diff",
+				path: "/head-diff.csv",
+				data: new TextEncoder().encode("name,value\nbefore,1"),
+			})
+			.execute();
+		const beforeCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("name,value\nhead,2") })
+			.where("id", "=", "file_csv_head_diff")
+			.execute();
+
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<CsvView
+							fileId="file_csv_head_diff"
+							filePath="/head-diff.csv"
+							beforeCommitId={beforeCommitId}
+							isActiveView
+							isPanelFocused
+						/>
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.container.querySelector(".csv-review-table")).toBeTruthy();
+		});
+		expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+	} finally {
+		if (utils) {
+			await act(async () => {
+				utils!.unmount();
+			});
+		}
+		await lix.close();
+	}
+});
+
+test("does not mark unchanged before-to-HEAD CSV files as fully added", async () => {
+	const lix = await openLix();
+	let utils: ReturnType<typeof render> | undefined;
+	try {
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_csv_unchanged_head_diff",
+				path: "/unchanged-head-diff.csv",
+				data: new TextEncoder().encode("name,value\nstable,1"),
+			})
+			.execute();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_csv_other_head_diff",
+				path: "/other-head-diff.csv",
+				data: new TextEncoder().encode("name,value\nbefore,1"),
+			})
+			.execute();
+		const beforeCommitId = await activeCommitId(lix);
+		await qb(lix)
+			.updateTable("lix_file")
+			.set({ data: new TextEncoder().encode("name,value\nafter,2") })
+			.where("id", "=", "file_csv_other_head_diff")
+			.execute();
+
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<CsvView
+							fileId="file_csv_unchanged_head_diff"
+							filePath="/unchanged-head-diff.csv"
+							beforeCommitId={beforeCommitId}
+							isActiveView
+							isPanelFocused
+						/>
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(screen.getAllByText("stable").length).toBeGreaterThan(0);
+		});
+		expect(
+			utils!.container.querySelector("[data-diff-status='added']"),
+		).toBeNull();
+		expect(
+			utils!.container.querySelector("[data-diff-status='removed']"),
+		).toBeNull();
+	} finally {
+		if (utils) {
+			await act(async () => {
+				utils!.unmount();
+			});
+		}
+		await lix.close();
+	}
+});
+
+test("renders checkpoint CSV diffs without review controls for missing active files", async () => {
+	const lix = await openLix();
+	let utils: ReturnType<typeof render> | undefined;
+	try {
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<CsvView
+							fileId="file_checkpoint_csv"
+							filePath="/checkpoint.csv"
+							isActiveView
+							isPanelFocused
+							beforeCommitId="before-commit"
+							afterCommitId="after-commit"
+							checkpointDiff={{
+								branchId: "checkpoint-after",
+								branchName: "After",
+								beforeBranchId: "checkpoint-before",
+								beforeBranchName: "Before",
+								beforeCommitId: "before-commit",
+								afterCommitId: "after-commit",
+								files: [
+									{
+										fileId: "file_checkpoint_csv",
+										path: "/checkpoint.csv",
+										beforePath: "/checkpoint.csv",
+										afterPath: "/checkpoint.csv",
+										beforeData: new TextEncoder().encode("name,value\nalpha,1"),
+										afterData: new TextEncoder().encode("name,value\nalpha,2"),
+										beforeCommitId: "before-commit",
+										afterCommitId: "after-commit",
+										reviewId: "checkpoint:csv",
+										status: "modified",
+									},
+								],
+							}}
+						/>
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(utils!.container.querySelector(".csv-review-table")).toBeTruthy();
+		});
+		expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+		expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+	} finally {
+		if (utils) {
+			await act(async () => {
+				utils!.unmount();
+			});
+		}
+		await lix.close();
+	}
+});
+
+async function activeCommitId(lix: Awaited<ReturnType<typeof openLix>>) {
+	const result = await lix.execute(
+		"SELECT lix_active_branch_commit_id() AS commit_id",
+	);
+	return result.rows[0]?.get("commit_id") as string;
+}

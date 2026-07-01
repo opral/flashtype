@@ -188,7 +188,7 @@ export async function exportCurrentLixImage(window) {
 	let bytes;
 	await enqueue(session, async () => {
 		await closeCurrentLix(session);
-		await checkpointWorkspaceLixDatabase(window);
+		await truncateWorkspaceLixWal(window);
 		bytes = await readFile(getWorkspaceLixDatabasePath(window));
 	});
 	return bytes;
@@ -230,7 +230,7 @@ async function removeLixDatabaseFiles(workspacePath) {
 	});
 }
 
-async function checkpointWorkspaceLixDatabase(window) {
+async function truncateWorkspaceLixWal(window) {
 	const { DatabaseSync } = await import("node:sqlite");
 	const database = new DatabaseSync(getWorkspaceLixDatabasePath(window));
 	try {

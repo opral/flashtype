@@ -54,13 +54,6 @@ const workspace = {
 			ipcRenderer.off("workspace:closeFile", wrapped);
 		};
 	},
-	onNewCheckpoint: (listener) => {
-		const wrapped = () => listener();
-		ipcRenderer.on("workspace:newCheckpoint", wrapped);
-		return () => {
-			ipcRenderer.off("workspace:newCheckpoint", wrapped);
-		};
-	},
 	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
 	openInNewWindow: (payload) =>
 		ipcRenderer.invoke("workspace:openInNewWindow", payload),
@@ -106,6 +99,10 @@ const lix = {
 
 const terminal = {
 	create: (payload) => ipcRenderer.invoke("terminal:create", payload),
+	generateCheckpointName: (payload) =>
+		ipcRenderer.invoke("terminal:generateCheckpointName", payload),
+	refreshAgentExecutablePaths: (payload) =>
+		ipcRenderer.invoke("terminal:refreshAgentExecutablePaths", payload),
 	write: (payload) => ipcRenderer.invoke("terminal:write", payload),
 	resize: (payload) => ipcRenderer.invoke("terminal:resize", payload),
 	kill: (payload) => ipcRenderer.invoke("terminal:kill", payload),

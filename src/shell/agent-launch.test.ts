@@ -88,7 +88,7 @@ describe("buildAgentLaunchArgsWithActiveFile", () => {
 			'ELECTRON_RUN_AS_NODE=1 \\"$FLASHTYPE_AGENT_HOOK_NODE\\" \\"$FLASHTYPE_AGENT_HOOK_SCRIPT\\" codex turn-start',
 		);
 		expect(pathWrapper.command).toContain(
-			`-c 'developer_instructions="${FLASHTYPE_INITIAL_PROMPT}"'`,
+			`-c 'developer_instructions=${JSON.stringify(FLASHTYPE_INITIAL_PROMPT)}'`,
 		);
 		expect(pathWrapper.command).not.toContain("./docs/intro.md");
 	});
@@ -109,7 +109,7 @@ describe("buildAgentLaunchArgsWithActiveFile", () => {
 		expect(command).toBe("codex-flashtype");
 		expect(pathWrapper.command).toContain("hooks.UserPromptSubmit=");
 		expect(pathWrapper.command).toContain(
-			`developer_instructions="${FLASHTYPE_INITIAL_PROMPT}"`,
+			`developer_instructions=${JSON.stringify(FLASHTYPE_INITIAL_PROMPT)}`,
 		);
 	});
 

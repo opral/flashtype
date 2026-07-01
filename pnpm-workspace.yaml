@@ -3,6 +3,15 @@ packages:
   - submodule/lix/packages/js-sdk
   - "!submodule/lix/packages/**/dist"
 
+allowBuilds:
+  '@parcel/watcher': set this to true or false
+  '@posthog/cli': set this to true or false
+  core-js: set this to true or false
+  electron: set this to true or false
+  electron-winstaller: set this to true or false
+  esbuild: set this to true or false
+  node-pty: set this to true or false
+
 onlyBuiltDependencies:
   - electron
   - node-pty

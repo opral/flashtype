@@ -5,7 +5,7 @@ import type { JSX, ReactNode } from "react";
  * document info.
  *
  * @example
- * <StatusBar left={<BranchSwitcher />} right={<span>1,240 words</span>} />
+ * <StatusBar right={<span>1,240 words</span>} />
  */
 export function StatusBar({
 	left,
@@ -15,7 +15,10 @@ export function StatusBar({
 	readonly right?: ReactNode;
 }): JSX.Element {
 	return (
-		<footer className="flex h-6 shrink-0 items-center justify-between px-3 text-[11.5px] text-[var(--color-icon-tertiary)]">
+		<footer
+			hidden
+			className="flex h-6 shrink-0 items-center justify-between px-3 text-[11.5px] text-[var(--color-icon-tertiary)]"
+		>
 			<div className="flex min-w-0 items-center gap-1.5">{left}</div>
 			<div className="flex min-w-0 items-center gap-1.5">{right}</div>
 		</footer>

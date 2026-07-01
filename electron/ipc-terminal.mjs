@@ -15,6 +15,8 @@ import {
 	disposeAgentHookEnvironment,
 } from "./agent-hooks.mjs";
 import { checkAgentVersionPreflight } from "./agent-version-preflight.mjs";
+import { refreshAgentExecutablePaths } from "./agent-executable-paths.mjs";
+import { generateCheckpointName } from "./checkpoint-name.mjs";
 
 const terminals = new Map();
 const ownerHooks = new Set();
@@ -55,6 +57,12 @@ export function registerTerminalIpc() {
 				);
 			}
 			const terminalEnv = buildTerminalEnv(process.env, process.platform, env);
+			refreshAgentExecutablePathsSoon({
+				cwd,
+				env: terminalEnv,
+				shell,
+				shellArgs,
+			});
 			const agentVersionError = await checkAgentVersionPreflight({
 				cwd,
 				env: terminalEnv,
@@ -136,6 +144,41 @@ export function registerTerminalIpc() {
 		}
 		closeTerminalHandle(id, { handle, kill: true });
 	});
+
+	ipcMain.handle(
+		"terminal:refreshAgentExecutablePaths",
+		async (_event, payload) => {
+			const shell = resolveShell(payload?.shell);
+			const shellArgs = resolveShellArgs(shell);
+			const terminalEnv = buildTerminalEnv(
+				process.env,
+				process.platform,
+				normalizeExtraEnv(payload?.env),
+			);
+			return await refreshAgentExecutablePaths({
+				cwd: payload?.cwd,
+				env: terminalEnv,
+				shell,
+				shellArgs,
+			});
+		},
+	);
+
+	ipcMain.handle("terminal:generateCheckpointName", async (_event, payload) => {
+		const shell = resolveShell(payload?.shell);
+		const shellArgs = resolveShellArgs(shell);
+		const terminalEnv = buildTerminalEnv(
+			process.env,
+			process.platform,
+			normalizeExtraEnv(payload?.env),
+		);
+		return await generateCheckpointName({
+			cwd: payload?.cwd,
+			env: terminalEnv,
+			shell,
+			shellArgs,
+		});
+	});
 }
 
 export function disposeTerminalIpc() {
@@ -205,6 +248,12 @@ async function createAgentHookEnvironmentSafely(instanceId, webContents) {
 		console.warn("[terminal] failed to prepare agent hook environment", error);
 		return {};
 	}
+}
+
+function refreshAgentExecutablePathsSoon(args) {
+	void refreshAgentExecutablePaths(args).catch((error) => {
+		console.warn("[terminal] failed to resolve agent executable paths", error);
+	});
 }
 
 function normalizeExtraEnv(extraEnv) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties } from "react";
 import { FileTree as PierreFileTree, useFileTree } from "@pierre/trees/react";
 import type {
 	FileTreeDirectoryHandle,
@@ -9,7 +9,10 @@ import type {
 	FileTreeRenamingItem,
 	GitStatusEntry,
 } from "@pierre/trees";
-import type { FilesystemTreeNode } from "@/extensions/files/build-filesystem-tree";
+import type {
+	FilesystemTreeNode,
+	FilesystemTreeSource,
+} from "@/extensions/files/build-filesystem-tree";
 
 export type FileTreeCreateRequest = {
 	readonly id: number;
@@ -21,7 +24,7 @@ export type FileTreeCreateRequest = {
 export type FileTreeRenameRequest = {
 	readonly id?: string;
 	readonly kind: "file" | "directory";
-	readonly source: "lix" | "watched";
+	readonly source: FilesystemTreeSource;
 	readonly sourcePath: string;
 	readonly destinationPath: string;
 };
@@ -35,9 +38,14 @@ export type FileTreeProps = {
 	readonly createRequest?: FileTreeCreateRequest | null;
 	readonly selectedPath?: string;
 	readonly isPanelFocused?: boolean;
-	readonly onSelectItem?: (path: string, kind: "file" | "directory") => void;
+	readonly onSelectItem?: (
+		path: string,
+		kind: "file" | "directory",
+		source?: FilesystemTreeSource,
+	) => void;
 	readonly openDirectories?: ReadonlySet<string>;
 	readonly reviewPaths?: ReadonlySet<string>;
+	readonly reviewStatuses?: ReadonlyMap<string, ReviewGitStatus>;
 	readonly onOpenDirectoriesChange?: (paths: ReadonlySet<string>) => void;
 	readonly onCreateCommit?: (
 		request: FileTreeCreateRequest,
@@ -49,12 +57,19 @@ export type FileTreeProps = {
 	) => Promise<void> | void;
 };
 
+type ReviewGitStatus = GitStatusEntry["status"] | "recreated";
+
+type ReviewGitStatusEntry = {
+	readonly path: string;
+	readonly status: ReviewGitStatus;
+};
+
 type TreePathInfo = {
 	readonly appPath: string;
 	readonly kind: "file" | "directory";
 	readonly id?: string;
 	readonly createRequestId?: number;
-	readonly source?: "lix" | "watched";
+	readonly source?: FilesystemTreeSource;
 };
 
 type TreeInput = {
@@ -137,6 +152,16 @@ const FILE_TREE_UNSAFE_CSS = `
 		background: currentColor;
 	}
 
+	[data-item-git-status='recreated'] {
+		--trees-item-git-status-color: var(--trees-git-renamed-color);
+	}
+
+	[data-item-git-status='recreated'] > [data-item-section='git']::before {
+		content: "R";
+		font-size: var(--trees-font-size);
+		font-weight: var(--trees-font-weight-semibold);
+	}
+
 	[data-item-contains-git-change='true'] > [data-item-section='git'] {
 		color: var(--color-warning-600);
 		opacity: 0.75;
@@ -186,6 +211,7 @@ export function FileTree({
 	onSelectItem,
 	openDirectories,
 	reviewPaths,
+	reviewStatuses,
 	onOpenDirectoriesChange,
 	onCreateCommit,
 	onCreateCancel,
@@ -222,8 +248,8 @@ export function FileTree({
 		[openDirectoryTreePaths],
 	);
 	const reviewGitStatusEntries = useMemo(
-		() => buildReviewGitStatusEntries(reviewPaths, treeInput),
-		[reviewPaths, treeInput],
+		() => buildReviewGitStatusEntries(reviewPaths, reviewStatuses, treeInput),
+		[reviewPaths, reviewStatuses, treeInput],
 	);
 	const reviewGitStatusKey = useMemo(
 		() =>
@@ -290,7 +316,7 @@ export function FileTree({
 			latestTreePath,
 		);
 		if (info) {
-			stateRef.current.onSelectItem?.(info.appPath, info.kind);
+			stateRef.current.onSelectItem?.(info.appPath, info.kind, info.source);
 			if (
 				!suppressSelectionOpenRef.current &&
 				!suppressSelectionOpenForClickRef.current &&
@@ -317,6 +343,9 @@ export function FileTree({
 		if (info.source === "watched") {
 			return info.kind === "file";
 		}
+		if (info.source === "checkpoint-diff") {
+			return false;
+		}
 		return true;
 	};
 
@@ -341,6 +370,9 @@ export function FileTree({
 		if (sourceInfo.source === "watched" && sourceInfo.kind !== "file") {
 			return;
 		}
+		if (sourceInfo.source === "checkpoint-diff") {
+			return;
+		}
 		void stateRef.current.onRenameCommit?.({
 			destinationPath:
 				sourceInfo.kind === "directory"
@@ -360,8 +392,8 @@ export function FileTree({
 		}, 0);
 	}, []);
 
-	const handleTreeClick = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-		const treePath = treePathFromComposedEvent(event.nativeEvent);
+	const openFileFromTreeEvent = useCallback((event: Event) => {
+		const treePath = treePathFromComposedEvent(event);
 		if (!treePath) return;
 		const info = pathInfoForTreePath(
 			stateRef.current.pathInfoByTreePath,
@@ -375,7 +407,7 @@ export function FileTree({
 		dragAndDrop: false,
 		flattenEmptyDirectories: false,
 		icons: { set: "minimal", colored: false },
-		gitStatus: reviewGitStatusEntries,
+		gitStatus: reviewGitStatusEntries as GitStatusEntry[],
 		initialExpansion: "closed",
 		itemHeight: 28,
 		onSelectionChange: (paths) => handleSelectionChangeRef.current(paths),
@@ -397,7 +429,7 @@ export function FileTree({
 	}, [model, treeInput.paths, treePathsKey]);
 
 	useEffect(() => {
-		model.setGitStatus(reviewGitStatusEntries);
+		model.setGitStatus(reviewGitStatusEntries as GitStatusEntry[]);
 	}, [model, reviewGitStatusEntries, reviewGitStatusKey]);
 
 	useEffect(() => {
@@ -481,6 +513,33 @@ export function FileTree({
 		});
 	}, [model]);
 
+	useEffect(() => {
+		if (treeInput.paths.length === 0) return;
+		let cancelled = false;
+		let timeoutId: number | null = null;
+		let removeListener: (() => void) | null = null;
+		const attach = () => {
+			if (cancelled || removeListener) return;
+			const shadowRoot = model.getFileTreeContainer()?.shadowRoot;
+			if (!shadowRoot) {
+				timeoutId = window.setTimeout(attach, 0);
+				return;
+			}
+			shadowRoot.addEventListener("click", openFileFromTreeEvent);
+			removeListener = () => {
+				shadowRoot.removeEventListener("click", openFileFromTreeEvent);
+			};
+		};
+		attach();
+		return () => {
+			cancelled = true;
+			if (timeoutId !== null) {
+				window.clearTimeout(timeoutId);
+			}
+			removeListener?.();
+		};
+	}, [model, openFileFromTreeEvent, treeInput.paths.length, treePathsKey]);
+
 	if (treeInput.paths.length === 0) {
 		// The "New file" row above the tree is the affordance; no extra copy.
 		return null;
@@ -490,7 +549,6 @@ export function FileTree({
 		<PierreFileTree
 			aria-label="Files"
 			model={model}
-			onClick={handleTreeClick}
 			onClickCapture={handleTreeClickCapture}
 			style={treeHostStyle(isPanelFocused)}
 		/>
@@ -571,11 +629,25 @@ function buildTreeInput(
 
 function buildReviewGitStatusEntries(
 	reviewPaths: ReadonlySet<string> | undefined,
+	reviewStatuses: ReadonlyMap<string, ReviewGitStatus> | undefined,
 	treeInput: TreeInput,
-): GitStatusEntry[] {
-	if (!reviewPaths || reviewPaths.size === 0) return [];
-	const entries: GitStatusEntry[] = [];
-	for (const appPath of reviewPaths) {
+): ReviewGitStatusEntry[] {
+	if (
+		(!reviewPaths || reviewPaths.size === 0) &&
+		(!reviewStatuses || reviewStatuses.size === 0)
+	) {
+		return [];
+	}
+	const entries: ReviewGitStatusEntry[] = [];
+	for (const [appPath, status] of reviewStatuses ?? []) {
+		const treePath = appPathToTreePath(appPath, false);
+		const info = treeInput.pathInfoByTreePath.get(treePath);
+		if (!info || info.kind !== "file" || info.createRequestId != null) {
+			continue;
+		}
+		entries.push({ path: treePath, status });
+	}
+	for (const appPath of reviewPaths ?? []) {
 		const treePath = appPathToTreePath(appPath, false);
 		const info = treeInput.pathInfoByTreePath.get(treePath);
 		if (!info || info.kind !== "file" || info.createRequestId != null) {

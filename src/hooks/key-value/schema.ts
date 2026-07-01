@@ -11,8 +11,6 @@ export type KeyDef<V> = {
 	defaultValue?: V | null;
 };
 
-export const FLASHTYPE_CHECKPOINTS_KEY = "flashtype_checkpoints" as const;
-
 // Flashtype keys + per-key defaults
 export const KEY_VALUE_DEFINITIONS = {
 	// Cross-branch UI state, not change-controlled
@@ -29,12 +27,6 @@ export const KEY_VALUE_DEFINITIONS = {
 		untracked: true,
 		defaultValue: DEFAULT_FLASHTYPE_UI_STATE,
 	} as KeyDef<FlashtypeUiState>,
-
-	[FLASHTYPE_CHECKPOINTS_KEY]: {
-		defaultBranchId: "active",
-		untracked: true,
-		defaultValue: [],
-	} as KeyDef<readonly string[]>,
 
 	// Test-only keys used in unit tests to exercise tracked behavior
 	flashtype_test_tracked: {

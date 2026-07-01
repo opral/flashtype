@@ -1,16 +1,17 @@
 import { describe, expect, test } from "vitest";
 import type { ExtensionInstance } from "./types";
 import {
+	CSV_EXTENSION_KIND,
 	FILE_EXTENSION_KIND,
-	activeMarkdownFileIdFromExtensionInstance,
+	activeFileIdFromExtensionInstance,
 	fileNameFromPath,
 	fileLabelFromPath,
 } from "./extension-instance-helpers";
 
-describe("activeMarkdownFileIdFromExtensionInstance", () => {
-	test("returns the file id for markdown file extensions", () => {
+describe("activeFileIdFromExtensionInstance", () => {
+	test("returns the file id for document views", () => {
 		const entry: ExtensionInstance = {
-			instance: "file-extension:file_md",
+			instance: `${FILE_EXTENSION_KIND}:file_md`,
 			kind: FILE_EXTENSION_KIND,
 			state: {
 				fileId: "file_md",
@@ -18,32 +19,44 @@ describe("activeMarkdownFileIdFromExtensionInstance", () => {
 			},
 		};
 
-		expect(activeMarkdownFileIdFromExtensionInstance(entry)).toBe("file_md");
+		expect(activeFileIdFromExtensionInstance(entry)).toBe("file_md");
 	});
 
-	test("does not return an id for non-markdown file extensions", () => {
+	test("returns the file id for non-markdown document views", () => {
 		const entry: ExtensionInstance = {
-			instance: "file-extension:file_csv",
-			kind: FILE_EXTENSION_KIND,
+			instance: `${CSV_EXTENSION_KIND}:file_csv`,
+			kind: CSV_EXTENSION_KIND,
 			state: {
 				fileId: "file_csv",
 				filePath: "/data.csv",
 			},
 		};
 
-		expect(activeMarkdownFileIdFromExtensionInstance(entry)).toBeNull();
+		expect(activeFileIdFromExtensionInstance(entry)).toBe("file_csv");
 	});
 
-	test("fails closed when the file path is missing", () => {
+	test("returns the file id when the file path is missing", () => {
 		const entry: ExtensionInstance = {
-			instance: "file-extension:file_unknown",
+			instance: `${FILE_EXTENSION_KIND}:file_unknown`,
 			kind: FILE_EXTENSION_KIND,
 			state: {
 				fileId: "file_unknown",
 			},
 		};
 
-		expect(activeMarkdownFileIdFromExtensionInstance(entry)).toBeNull();
+		expect(activeFileIdFromExtensionInstance(entry)).toBe("file_unknown");
+	});
+
+	test("fails closed when the instance is not keyed by file id", () => {
+		const entry: ExtensionInstance = {
+			instance: "some-panel-view",
+			kind: FILE_EXTENSION_KIND,
+			state: {
+				fileId: "file_unknown",
+			},
+		};
+
+		expect(activeFileIdFromExtensionInstance(entry)).toBeNull();
 	});
 
 	test("derives labels from literal path text", () => {

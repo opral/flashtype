@@ -109,6 +109,14 @@ describe("TerminalView", () => {
 function createTerminalApi(): DesktopTerminalApi {
 	return {
 		create: vi.fn(),
+		generateCheckpointName: vi.fn().mockResolvedValue({
+			name: "Silly Markdown Pancake",
+			source: "codex",
+		}),
+		refreshAgentExecutablePaths: vi.fn().mockResolvedValue({
+			claude: null,
+			codex: null,
+		}),
 		write: vi.fn().mockResolvedValue(undefined),
 		resize: vi.fn().mockResolvedValue(undefined),
 		kill: vi.fn().mockResolvedValue(undefined),

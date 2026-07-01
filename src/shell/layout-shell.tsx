@@ -28,11 +28,21 @@ import { SidePanel } from "./side-panel";
 import { CentralPanel } from "./central-panel";
 import { TopBar } from "./top-bar";
 import { FlashtypeMenu } from "./top-bar/flashtype-menu";
-import { BranchSwitcher } from "./top-bar/branch-switcher";
 import { StatusBar } from "./status-bar";
 import type { ExternalWriteReview } from "@/extension-runtime/external-write-review";
+import type {
+	CheckpointDiff,
+	CheckpointDiffBranchRow,
+	CheckpointDiffVisibleFile,
+	ShowCheckpointDiffArgs,
+} from "@/extension-runtime/checkpoint-diff";
+import {
+	hasHistoricalEditorRevisionState,
+	normalizeEditorRevisionState,
+	stripEditorRevisionState,
+} from "@/extension-runtime/editor-revision-state";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
-import { qb } from "@/lib/lix-kysely";
+import { qb, sql } from "@/lib/lix-kysely";
 import {
 	captureTelemetry,
 	fileExtensionProperty,
@@ -66,7 +76,7 @@ import {
 	fileExtensionInstanceForKind,
 	FILE_EXTENSION_KIND,
 	TERMINAL_EXTENSION_KIND,
-	activeMarkdownFileIdFromExtensionInstance,
+	activeFileIdFromExtensionInstance,
 } from "../extension-runtime/extension-instance-helpers";
 import {
 	fileExtensionFromPath,
@@ -97,12 +107,12 @@ import {
 	appendAgentTurnCommitRange,
 	type AgentTurnCommitRange,
 } from "./agent-turn-review-range";
-import { appendCheckpointCommitId } from "./checkpoints";
 import {
 	getExternalWriteReview,
 	getFileDataAtCommit,
 	getPendingExternalWriteReviewPaths,
 } from "./external-write-review-history";
+import { resolveCheckpointDiff } from "./checkpoint-diff";
 
 type NewFileDraftHandlerRegistration = {
 	readonly panelSide: PanelSide;
@@ -128,6 +138,10 @@ type ActiveAgentTurn = {
 	readonly event: AgentHookTurnEvent;
 	readonly beforeCommitIdPromise: Promise<string | null>;
 };
+
+const LEGACY_CHECKPOINT_DIFF_INSTANCE_PREFIX = "checkpoint-diff:";
+const LEGACY_CHECKPOINT_DIFF_REVIEW_ID_STATE_KEY = "checkpointDiffReviewId";
+const LEGACY_CHECKPOINT_DIFF_BRANCH_ID_STATE_KEY = "checkpointDiffBranchId";
 
 type AgentHookTurnEventResult = void | {
 	readonly additionalContext?: string | null;
@@ -210,14 +224,86 @@ const activeFilePathFromPanel = (panel: PanelState): string | null => {
 	return typeof rawPath === "string" && rawPath.length > 0 ? rawPath : null;
 };
 
-const collapsePanelToActiveView = (panel: PanelState): PanelState => {
-	const activeEntry = activeEntryFromPanel(panel);
-	if (!activeEntry) return { views: [], activeInstance: null };
-	return {
-		views: [activeEntry],
-		activeInstance: activeEntry.instance,
-	};
+const isLegacyCheckpointDiffView = (view: ExtensionInstance): boolean => {
+	return (
+		view.instance.startsWith(LEGACY_CHECKPOINT_DIFF_INSTANCE_PREFIX) ||
+		typeof view.state?.[LEGACY_CHECKPOINT_DIFF_REVIEW_ID_STATE_KEY] ===
+			"string" ||
+		typeof view.state?.[LEGACY_CHECKPOINT_DIFF_BRANCH_ID_STATE_KEY] === "string"
+	);
 };
+
+const isDocumentView = (view: ExtensionInstance): boolean => {
+	const fileId =
+		typeof view.state?.fileId === "string" ? view.state.fileId : "";
+	if (!fileId) return false;
+	return view.instance === fileExtensionInstanceForKind(view.kind, fileId);
+};
+
+const canPlaceViewInPanel = (
+	view: ExtensionInstance,
+	side: PanelSide,
+): boolean =>
+	side === "central" ? isDocumentView(view) : !isDocumentView(view);
+
+const activeEntryForDocumentSlot = (
+	panel: PanelState,
+): ExtensionInstance | null => {
+	if (panel.activeInstance) {
+		const active = panel.views.find(
+			(entry) => entry.instance === panel.activeInstance,
+		);
+		if (active) return active;
+	}
+	return panel.views[0] ?? null;
+};
+
+const normalizePanelForDocumentSlot = (
+	side: PanelSide,
+	panel: PanelState,
+): PanelState => {
+	if (side === "central") {
+		const activeEntry = activeEntryForDocumentSlot(panel);
+		if (!activeEntry || !isDocumentView(activeEntry)) {
+			return panel.views.length === 0 && panel.activeInstance === null
+				? panel
+				: { views: [], activeInstance: null };
+		}
+		if (
+			panel.views.length === 1 &&
+			panel.views[0] === activeEntry &&
+			panel.activeInstance === activeEntry.instance
+		) {
+			return panel;
+		}
+		return {
+			views: [activeEntry],
+			activeInstance: activeEntry.instance,
+		};
+	}
+
+	const views = panel.views.filter((view) => !isDocumentView(view));
+	const activeInstance = views.some(
+		(view) => view.instance === panel.activeInstance,
+	)
+		? panel.activeInstance
+		: (views[views.length - 1]?.instance ?? null);
+	if (
+		views.length === panel.views.length &&
+		activeInstance === panel.activeInstance
+	) {
+		return panel;
+	}
+	return { views, activeInstance };
+};
+
+const normalizePanelsForDocumentSlot = (
+	panels: Record<PanelSide, PanelState>,
+): Record<PanelSide, PanelState> => ({
+	left: normalizePanelForDocumentSlot("left", panels.left),
+	central: normalizePanelForDocumentSlot("central", panels.central),
+	right: normalizePanelForDocumentSlot("right", panels.right),
+});
 
 const newFileDraftHandlerKey = (
 	registration: NewFileDraftHandlerRegistration,
@@ -288,20 +374,26 @@ const isWorkspaceLixFilePath = (filePath: string): boolean => {
 
 const sanitizePanels = (
 	panels: Record<PanelSide, PanelState>,
-): Record<PanelSide, PanelState> => ({
-	left: {
-		views: panels.left.views.map(stripLaunchArgs),
-		activeInstance: panels.left.activeInstance,
-	},
-	central: {
-		views: panels.central.views.map(stripLaunchArgs),
-		activeInstance: panels.central.activeInstance,
-	},
-	right: {
-		views: panels.right.views.map(stripLaunchArgs),
-		activeInstance: panels.right.activeInstance,
-	},
-});
+): Record<PanelSide, PanelState> => {
+	const sanitizePanel = (panel: PanelState): PanelState => {
+		const views = panel.views
+			.filter((view) => !isLegacyCheckpointDiffView(view))
+			.map(stripLaunchArgs);
+		const activeInstance = views.some(
+			(view) => view.instance === panel.activeInstance,
+		)
+			? panel.activeInstance
+			: (views[views.length - 1]?.instance ?? null);
+		return { views, activeInstance };
+	};
+	return {
+		...normalizePanelsForDocumentSlot({
+			left: sanitizePanel(panels.left),
+			central: sanitizePanel(panels.central),
+			right: sanitizePanel(panels.right),
+		}),
+	};
+};
 
 const hydratePanel = (
 	panel: PanelState,
@@ -311,7 +403,9 @@ const hydratePanel = (
 	const views = panel.views
 		// Drop unknown view keys that might linger in persisted UI state.
 		.filter(
-			(view) => options.preserveUnknownKinds || extensionMap.has(view.kind),
+			(view) =>
+				!isLegacyCheckpointDiffView(view) &&
+				(options.preserveUnknownKinds || extensionMap.has(view.kind)),
 		);
 	if (views.length === 0) {
 		return { views, activeInstance: null };
@@ -327,6 +421,119 @@ const hydratePanel = (
 };
 
 export const hydratePanelForExtensions = hydratePanel;
+
+const hydratePanelForDocumentSlot = (
+	side: PanelSide,
+	panel: PanelState,
+	extensionMap: Map<ExtensionKind, ExtensionDefinition>,
+	options: { preserveUnknownKinds?: boolean } = {},
+): PanelState =>
+	normalizePanelForDocumentSlot(
+		side,
+		hydratePanel(panel, extensionMap, options),
+	);
+
+async function readCurrentLixFileIds(lix: Lix): Promise<ReadonlySet<string>> {
+	const rows = await qb(lix).selectFrom("lix_file").select(["id"]).execute();
+	return new Set(rows.map((row) => String(row.id)));
+}
+
+function transitionCheckpointEditorRevisionPanel(args: {
+	readonly panel: PanelState;
+	readonly previousDiff: CheckpointDiff | null;
+	readonly nextDiff: CheckpointDiff | null;
+	readonly currentFileIds: ReadonlySet<string>;
+}): PanelState {
+	const views: ExtensionInstance[] = [];
+	let changed = false;
+	for (const view of args.panel.views) {
+		if (isLegacyCheckpointDiffView(view)) {
+			changed = true;
+			continue;
+		}
+		let nextView = view;
+		if (isCheckpointEditorRevisionView(nextView, args.previousDiff)) {
+			const fileId =
+				typeof nextView.state?.fileId === "string"
+					? nextView.state.fileId
+					: null;
+			if (!fileId || !args.currentFileIds.has(fileId)) {
+				changed = true;
+				continue;
+			}
+			changed = true;
+			nextView = {
+				...nextView,
+				state: stripEditorRevisionState(nextView.state),
+			};
+		}
+		const nextDiff = args.nextDiff;
+		const nextDiffFile = checkpointDiffFileForView(nextView, nextDiff);
+		if (nextDiff && nextDiffFile) {
+			changed = true;
+			nextView = {
+				...nextView,
+				state: {
+					...(stripEditorRevisionState(nextView.state) ?? {}),
+					beforeCommitId: nextDiff.beforeCommitId,
+					afterCommitId: nextDiff.afterIsActiveHead
+						? null
+						: nextDiff.afterCommitId,
+				},
+			};
+		}
+		views.push(nextView);
+	}
+	if (!changed) return args.panel;
+	const activeInstance = views.some(
+		(view) => view.instance === args.panel.activeInstance,
+	)
+		? args.panel.activeInstance
+		: (views[views.length - 1]?.instance ?? null);
+	return { views, activeInstance };
+}
+
+function checkpointDiffFileForView(
+	view: ExtensionInstance,
+	checkpointDiff: CheckpointDiff | null,
+): CheckpointDiffVisibleFile | null {
+	if (!checkpointDiff) return null;
+	const fileId =
+		typeof view.state?.fileId === "string" ? view.state.fileId : "";
+	return (
+		checkpointDiffEditorFiles(checkpointDiff).find(
+			(file) => file.fileId === fileId,
+		) ?? null
+	);
+}
+
+function isCheckpointEditorRevisionView(
+	view: ExtensionInstance,
+	checkpointDiff: CheckpointDiff | null,
+): boolean {
+	if (!checkpointDiff || !hasHistoricalEditorRevisionState(view.state)) {
+		return false;
+	}
+	const fileId =
+		typeof view.state?.fileId === "string" ? view.state.fileId : "";
+	const revision = normalizeEditorRevisionState(view.state);
+	const afterCommitId = checkpointDiff.afterIsActiveHead
+		? null
+		: checkpointDiff.afterCommitId;
+	return (
+		revision.beforeCommitId === checkpointDiff.beforeCommitId &&
+		revision.afterCommitId === afterCommitId &&
+		checkpointDiffEditorFiles(checkpointDiff).some(
+			(file) => file.fileId === fileId,
+		)
+	);
+}
+
+function checkpointDiffEditorFiles(
+	checkpointDiff: CheckpointDiff,
+): readonly CheckpointDiffVisibleFile[] {
+	return checkpointDiff.visibleFiles ?? checkpointDiff.files;
+}
 
 const DEFAULT_PANEL_FALLBACK_SIZES = {
 	left: 20,
@@ -564,6 +771,215 @@ export async function resolveLixFileForOpen({
 	return selectLixFileForOpen(lix, normalizedPath);
 }
 
+type CurrentCheckpointChangeState = {
+	readonly branchId: string;
+	readonly branches: readonly CheckpointDiffBranchRow[];
+	readonly count: number | null;
+};
+
+type CurrentCheckpointBranchState = {
+	readonly key: string;
+	readonly branchId: string;
+	readonly branches: readonly CheckpointDiffBranchRow[];
+};
+
+function useCurrentCheckpointChangeState(
+	lix: Lix,
+): CurrentCheckpointChangeState {
+	const [branchState, setBranchState] =
+		useState<CurrentCheckpointBranchState | null>(null);
+	const [changedFileCount, setChangedFileCount] = useState<number | null>(null);
+
+	useEffect(() => {
+		let closed = false;
+		let loadRunId = 0;
+		const load = async () => {
+			const runId = loadRunId + 1;
+			loadRunId = runId;
+			try {
+				const [branches, branchId] = await Promise.all([
+					loadVisibleCheckpointBranches(lix),
+					loadActiveCheckpointBranchId(lix),
+				]);
+				if (closed || loadRunId !== runId) return;
+				const nextState =
+					branchId && branches.some((branch) => branch.id === branchId)
+						? {
+								key: checkpointDiffCacheKey(branches, branchId),
+								branchId,
+								branches,
+							}
+						: null;
+				setBranchState((previous) =>
+					previous?.key === nextState?.key ? previous : nextState,
+				);
+			} catch (error: unknown) {
+				if (closed) return;
+				console.warn("Failed to load checkpoint footer state", error);
+				setBranchState(null);
+			}
+		};
+
+		void load();
+
+		const branchesQuery = visibleCheckpointBranchesQuery(lix).compile();
+		const activeBranchQuery = activeCheckpointBranchQuery(lix).compile();
+		const branchEvents = lix.observe(
+			branchesQuery.sql,
+			branchesQuery.parameters,
+		);
+		const activeBranchEvents = lix.observe(
+			activeBranchQuery.sql,
+			activeBranchQuery.parameters,
+		);
+		const observe = async (events: typeof branchEvents) => {
+			try {
+				while (!closed) {
+					const event = await events.next();
+					if (closed || !event) break;
+					void load();
+				}
+			} catch (error: unknown) {
+				if (!closed) {
+					console.warn("Failed to observe checkpoint footer state", error);
+				}
+			}
+		};
+
+		void observe(branchEvents);
+		void observe(activeBranchEvents);
+
+		return () => {
+			closed = true;
+			branchEvents.close();
+			activeBranchEvents.close();
+		};
+	}, [lix]);
+
+	useEffect(() => {
+		if (!branchState) {
+			setChangedFileCount(0);
+			return;
+		}
+
+		let closed = false;
+		setChangedFileCount(null);
+		void resolveCheckpointDiff({
+			lix,
+			branches: branchState.branches,
+			branchId: branchState.branchId,
+		})
+			.then((diff) => {
+				if (closed) return;
+				setChangedFileCount(diff?.files.length ?? 0);
+			})
+			.catch((error: unknown) => {
+				if (closed) return;
+				console.warn("Failed to resolve checkpoint footer count", error);
+				setChangedFileCount(0);
+			});
+		return () => {
+			closed = true;
+		};
+	}, [branchState, lix]);
+
+	return {
+		branchId: branchState?.branchId ?? "",
+		branches: branchState?.branches ?? [],
+		count: branchState ? changedFileCount : null,
+	};
+}
+
+function visibleCheckpointBranchesQuery(lix: Lix) {
+	return qb(lix)
+		.selectFrom("lix_branch")
+		.select(["id", "name", "commit_id"])
+		.where(
+			() =>
+				sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+		)
+		.orderBy("name", "asc");
+}
+
+async function loadVisibleCheckpointBranches(
+	lix: Lix,
+): Promise<CheckpointDiffBranchRow[]> {
+	return (await visibleCheckpointBranchesQuery(
+		lix,
+	).execute()) as CheckpointDiffBranchRow[];
+}
+
+function activeCheckpointBranchQuery(lix: Lix) {
+	return qb(lix)
+		.selectFrom("lix_key_value")
+		.where("key", "=", "lix_workspace_branch_id")
+		.select(["value"]);
+}
+
+async function loadActiveCheckpointBranchId(lix: Lix): Promise<string | null> {
+	const row = await activeCheckpointBranchQuery(lix).executeTakeFirst();
+	return typeof row?.value === "string" && row.value.length > 0
+		? row.value
+		: null;
+}
+
+function checkpointDiffCacheKey(
+	branches: readonly CheckpointDiffBranchRow[],
+	branchId: string,
+): string {
+	return [
+		branchId,
+		...branches.map((branch) =>
+			[branch.id, branch.name, branch.commit_id ?? ""].join(":"),
+		),
+	].join("|");
+}
+
+function formatChangedFileCount(count: number): string {
+	return `${count} ${count === 1 ? "file" : "files"} changed since last checkpoint`;
+}
+
+function CurrentCheckpointFooterReviewButton({
+	lix,
+	checkpointDiff,
+	showCheckpointDiff,
+	clearCheckpointDiff,
+}: {
+	readonly lix: Lix;
+	readonly checkpointDiff: CheckpointDiff | null;
+	readonly showCheckpointDiff: (
+		args: ShowCheckpointDiffArgs,
+	) => Promise<CheckpointDiff | null>;
+	readonly clearCheckpointDiff: () => void;
+}) {
+	const currentCheckpointChange = useCurrentCheckpointChangeState(lix);
+	if (currentCheckpointChange.count === null) return null;
+	const status = formatChangedFileCount(currentCheckpointChange.count);
+	const isReviewingCurrentCheckpoint =
+		checkpointDiff?.branchId === currentCheckpointChange.branchId;
+
+	return (
+		<button
+			type="button"
+			className="min-w-0 cursor-pointer truncate rounded-[5px] border-0 bg-transparent px-1 py-0.5 text-left font-[inherit] text-inherit hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring-focus-visible)]"
+			data-attr="checkpoint-footer-review"
+			aria-pressed={isReviewingCurrentCheckpoint}
+			onClick={() => {
+				if (isReviewingCurrentCheckpoint) {
+					clearCheckpointDiff();
+					return;
+				}
+				void showCheckpointDiff({
+					branchId: currentCheckpointChange.branchId,
+					branches: currentCheckpointChange.branches,
+				});
+			}}
+		>
+			{status}
+		</button>
+	);
+}
+
 function documentOpenAttemptTelemetryProperties({
 	filePath,
 	handler,
@@ -697,29 +1113,38 @@ function LayoutShellLoadedContent({
 
 	const initialLayoutSizes = normalizeLayoutSizes(uiState.layout?.sizes);
 	const sanitizedPersistedPanels = useMemo(() => {
-		const panels = sanitizePanels(uiState.panels);
-		return {
-			...panels,
-			central: collapsePanelToActiveView(panels.central),
-		};
+		return sanitizePanels(uiState.panels);
 	}, [uiState]);
 
 	const [leftPanel, setLeftPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.left, extensionMap, {
-			preserveUnknownKinds: true,
-		}),
+		hydratePanelForDocumentSlot(
+			"left",
+			sanitizedPersistedPanels.left,
+			extensionMap,
+			{
+				preserveUnknownKinds: true,
+			},
+		),
 	);
 	const [centralPanel, setCentralPanel] = useState<PanelState>(() =>
-		collapsePanelToActiveView(
-			hydratePanel(sanitizedPersistedPanels.central, extensionMap, {
+		hydratePanelForDocumentSlot(
+			"central",
+			sanitizedPersistedPanels.central,
+			extensionMap,
+			{
 				preserveUnknownKinds: true,
-			}),
+			},
 		),
 	);
 	const [rightPanel, setRightPanel] = useState<PanelState>(() =>
-		hydratePanel(sanitizedPersistedPanels.right, extensionMap, {
-			preserveUnknownKinds: true,
-		}),
+		hydratePanelForDocumentSlot(
+			"right",
+			sanitizedPersistedPanels.right,
+			extensionMap,
+			{
+				preserveUnknownKinds: true,
+			},
+		),
 	);
 	const [focusedPanel, setFocusedPanel] = useState<PanelSide>(
 		() => uiState.focusedPanel,
@@ -734,6 +1159,10 @@ function LayoutShellLoadedContent({
 		() => initialLayoutSizes.right <= MIN_VISIBLE_PANEL_SIZE,
 	);
 	const [shouldAnimatePanels, setShouldAnimatePanels] = useState(false);
+	const [checkpointDiff, setCheckpointDiff] = useState<CheckpointDiff | null>(
+		null,
+	);
+	const checkpointDiffRef = useRef<CheckpointDiff | null>(null);
 	const animationTimeoutRef = useRef<number | null>(null);
 	const newFileDraftHandlersRef = useRef(
 		new Map<string, NewFileDraftHandlerRegistration>(),
@@ -1102,7 +1531,8 @@ function LayoutShellLoadedContent({
 		setLeftPanel((prev) =>
 			prev === sanitizedPersistedPanels.left
 				? prev
-				: hydratePanel(
+				: hydratePanelForDocumentSlot(
+						"left",
 						sanitizedPersistedPanels.left,
 						extensionMap,
 						hydrateOptions,
@@ -1111,18 +1541,18 @@ function LayoutShellLoadedContent({
 		setCentralPanel((prev) =>
 			prev === sanitizedPersistedPanels.central
 				? prev
-				: collapsePanelToActiveView(
-						hydratePanel(
-							sanitizedPersistedPanels.central,
-							extensionMap,
-							hydrateOptions,
-						),
+				: hydratePanelForDocumentSlot(
+						"central",
+						sanitizedPersistedPanels.central,
+						extensionMap,
+						hydrateOptions,
 					),
 		);
 		setRightPanel((prev) =>
 			prev === sanitizedPersistedPanels.right
 				? prev
-				: hydratePanel(
+				: hydratePanelForDocumentSlot(
+						"right",
 						sanitizedPersistedPanels.right,
 						extensionMap,
 						hydrateOptions,
@@ -1162,15 +1592,28 @@ function LayoutShellLoadedContent({
 			preserveUnknownKinds: !hasLoadedInstalledExtensions,
 		};
 		setLeftPanel((current) =>
-			hydratePanel(current, extensionMap, hydrateOptions),
+			hydratePanelForDocumentSlot(
+				"left",
+				current,
+				extensionMap,
+				hydrateOptions,
+			),
 		);
 		setCentralPanel((current) =>
-			collapsePanelToActiveView(
-				hydratePanel(current, extensionMap, hydrateOptions),
+			hydratePanelForDocumentSlot(
+				"central",
+				current,
+				extensionMap,
+				hydrateOptions,
 			),
 		);
 		setRightPanel((current) =>
-			hydratePanel(current, extensionMap, hydrateOptions),
+			hydratePanelForDocumentSlot(
+				"right",
+				current,
+				extensionMap,
+				hydrateOptions,
+			),
 		);
 	}, [extensionMap, hasLoadedInstalledExtensions]);
 
@@ -1220,14 +1663,14 @@ function LayoutShellLoadedContent({
 			const applyReducer = (prev: PanelState) => {
 				const next = hydratePanel(
 					reducer(
-						hydratePanel(prev, extensionMap, {
+						hydratePanelForDocumentSlot(side, prev, extensionMap, {
 							preserveUnknownKinds: !hasLoadedInstalledExtensions,
 						}),
 					),
 					extensionMap,
 					{ preserveUnknownKinds: !hasLoadedInstalledExtensions },
 				);
-				return side === "central" ? collapsePanelToActiveView(next) : next;
+				return normalizePanelForDocumentSlot(side, next);
 			};
 			if (side === "left") {
 				setLeftPanel(applyReducer);
@@ -1249,6 +1692,51 @@ function LayoutShellLoadedContent({
 			hasLoadedInstalledExtensions,
 		],
 	);
+
+	useEffect(() => {
+		checkpointDiffRef.current = checkpointDiff;
+	}, [checkpointDiff]);
+
+	const transitionCheckpointEditorRevisions = useCallback(
+		(args: {
+			readonly previousDiff: CheckpointDiff | null;
+			readonly nextDiff: CheckpointDiff | null;
+		}) => {
+			void (async () => {
+				const currentFileIds = args.previousDiff
+					? await readCurrentLixFileIds(lix)
+					: new Set<string>();
+				const transitionPanel =
+					(side: PanelSide) =>
+					(panel: PanelState): PanelState =>
+						normalizePanelForDocumentSlot(
+							side,
+							transitionCheckpointEditorRevisionPanel({
+								panel,
+								previousDiff: args.previousDiff,
+								nextDiff: args.nextDiff,
+								currentFileIds,
+							}),
+						);
+				setLeftPanel(transitionPanel("left"));
+				setCentralPanel(transitionPanel("central"));
+				setRightPanel(transitionPanel("right"));
+			})().catch((error: unknown) => {
+				onError?.(error);
+			});
+		},
+		[lix, onError],
+	);
+
+	const clearCheckpointDiff = useCallback(() => {
+		const previousDiff = checkpointDiffRef.current;
+		checkpointDiffRef.current = null;
+		setCheckpointDiff(null);
+		transitionCheckpointEditorRevisions({
+			previousDiff,
+			nextDiff: null,
+		});
+	}, [transitionCheckpointEditorRevisions]);
 
 	const schedulePanelAnimation = useCallback(() => {
 		setShouldAnimatePanels(true);
@@ -1320,6 +1808,16 @@ function LayoutShellLoadedContent({
 			instance?: string;
 			pending?: boolean;
 		}) => {
+			if (panel === "central") {
+				const candidate: ExtensionInstance = {
+					instance: instance ?? "",
+					kind,
+					state,
+					launchArgs,
+					isPending: pending || undefined,
+				};
+				if (!isDocumentView(candidate)) return;
+			}
 			ensurePanelExpanded(panel);
 			setPanelState(
 				panel,
@@ -1397,9 +1895,10 @@ function LayoutShellLoadedContent({
 
 	const openResolvedFileView = useCallback(
 		({
-			panel,
+			panel: _requestedPanel,
 			fileId,
 			filePath,
+			instance,
 			state,
 			launchArgs,
 			focus = true,
@@ -1412,6 +1911,7 @@ function LayoutShellLoadedContent({
 			panel: PanelSide;
 			fileId: string;
 			filePath: string;
+			instance?: string;
 			state?: ExtensionState;
 			launchArgs?: ExtensionLaunchArgs;
 			focus?: boolean;
@@ -1441,9 +1941,9 @@ function LayoutShellLoadedContent({
 				});
 			}
 			handleOpenView({
-				panel,
+				panel: "central",
 				kind,
-				instance: fileExtensionInstanceForKind(kind, fileId),
+				instance: instance ?? fileExtensionInstanceForKind(kind, fileId),
 				state: {
 					...buildFileExtensionProps({ fileId, filePath }),
 					...(state ?? {}),
@@ -1454,6 +1954,28 @@ function LayoutShellLoadedContent({
 			});
 		},
 		[handleOpenView, extensionMap, captureWorkspaceTelemetry],
+	);
+
+	const showCheckpointDiff = useCallback(
+		async ({ branchId, branches }: ShowCheckpointDiffArgs) => {
+			const previousDiff = checkpointDiffRef.current;
+			const [resolvedDiff, activeBranchId] = await Promise.all([
+				resolveCheckpointDiff({ lix, branches, branchId }),
+				lix.activeBranchId().catch(() => null),
+			]);
+			const nextDiff =
+				resolvedDiff && activeBranchId === branchId
+					? { ...resolvedDiff, afterIsActiveHead: true }
+					: resolvedDiff;
+			checkpointDiffRef.current = nextDiff;
+			setCheckpointDiff(nextDiff);
+			transitionCheckpointEditorRevisions({
+				previousDiff,
+				nextDiff,
+			});
+			return nextDiff;
+		},
+		[lix, transitionCheckpointEditorRevisions],
 	);
 
 	const autoOpenFirstAgentReviewFile = useCallback(
@@ -1544,6 +2066,23 @@ function LayoutShellLoadedContent({
 			trackDocumentOpenAttempt?: boolean;
 			trackDocumentViewed?: boolean;
 		}) => {
+			if (hasHistoricalEditorRevisionState(state)) {
+				openResolvedFileView({
+					panel,
+					fileId: _requestedFileId,
+					filePath,
+					state,
+					launchArgs,
+					focus,
+					pending,
+					documentOrigin,
+					trackTelemetry,
+					trackDocumentOpenAttempt,
+					trackDocumentViewed,
+				});
+				return;
+			}
+
 			let resolvedFile: LixFileForOpen | null = null;
 			try {
 				resolvedFile = await resolveLixFileForOpen({
@@ -1838,7 +2377,6 @@ function LayoutShellLoadedContent({
 				: (["central", "left", "right"] as PanelSide[]);
 			const matchesFileView = (entry: ExtensionInstance) => {
 				if (entry.state?.fileId !== fileId) return false;
-				if (typeof entry.state.filePath !== "string") return false;
 				return (
 					entry.instance === fileExtensionInstanceForKind(entry.kind, fileId)
 				);
@@ -2034,6 +2572,7 @@ function LayoutShellLoadedContent({
 			const movedView = cloneExtensionInstance(sourcePanel, instance);
 
 			if (!movedView) return;
+			if (!canPlaceViewInPanel(movedView, toPanel)) return;
 
 			setPanelState(fromPanel, (panel) => {
 				const remaining = panel.views.filter(
@@ -2168,41 +2707,16 @@ function LayoutShellLoadedContent({
 	}, [activeCentralEntry, handleCloseView]);
 
 	useEffect(() => {
-		const unsubscribe =
-			window.flashtypeDesktop?.workspace.onCloseFile?.(handleNativeCloseFile);
+		const unsubscribe = window.flashtypeDesktop?.workspace.onCloseFile?.(
+			handleNativeCloseFile,
+		);
 		return () => {
 			unsubscribe?.();
 		};
 	}, [handleNativeCloseFile]);
 
-	const handleNativeNewCheckpoint = useCallback(async () => {
-		try {
-			const commitId = await readSyncedActiveCommitId(lix);
-			if (!commitId) {
-				return;
-			}
-			await appendCheckpointCommitId(lix, commitId);
-		} catch (error) {
-			if (onError) {
-				onError(error);
-				return;
-			}
-			console.error("Failed to create checkpoint from native menu", error);
-		}
-	}, [lix, onError]);
-
-	useEffect(() => {
-		const unsubscribe =
-			window.flashtypeDesktop?.workspace.onNewCheckpoint?.(
-				handleNativeNewCheckpoint,
-			);
-		return () => {
-			unsubscribe?.();
-		};
-	}, [handleNativeNewCheckpoint]);
-
 	const activeCentralFileId =
-		activeMarkdownFileIdFromExtensionInstance(activeCentralEntry);
+		activeFileIdFromExtensionInstance(activeCentralEntry);
 
 	useEffect(() => {
 		if (!activeCentralFileId) return;
@@ -2328,6 +2842,7 @@ function LayoutShellLoadedContent({
 
 			const sourcePanel = viewToMove.sourcePanel;
 			if (sourcePanel === targetPanel) return;
+			if (!canPlaceViewInPanel(viewToMove, targetPanel)) return;
 
 			// Remove from source panel
 			setPanelState(sourcePanel, (panel) => {
@@ -2392,6 +2907,9 @@ function LayoutShellLoadedContent({
 			openFile: handleOpenFile,
 			closeExtension: handleCloseView,
 			closeFileViews: handleCloseFileViews,
+			checkpointDiff,
+			showCheckpointDiff,
+			clearCheckpointDiff,
 			setTabBadgeCount: () => {},
 			moveExtensionToPanel: handleMoveViewToPanel,
 			resizePanel: handleResizePanel,
@@ -2409,6 +2927,9 @@ function LayoutShellLoadedContent({
 			handleOpenFile,
 			handleCloseView,
 			handleCloseFileViews,
+			checkpointDiff,
+			showCheckpointDiff,
+			clearCheckpointDiff,
 			handleMoveViewToPanel,
 			handleResizePanel,
 			handleAcceptExternalWriteReview,
@@ -2591,6 +3112,7 @@ function LayoutShellLoadedContent({
 				<TopBar
 					workspaceName={workspaceName}
 					activeFileName={activeFileName}
+					isReviewingCheckpoint={Boolean(checkpointDiff)}
 					onWorkspaceTitleClick={onOpenWorkspace}
 					menu={<FlashtypeMenu />}
 					onToggleLeftSidebar={toggleLeftSidebar}
@@ -2600,7 +3122,7 @@ function LayoutShellLoadedContent({
 					isUpdateReady={isUpdateReady}
 					onInstallUpdate={onInstallUpdate}
 				/>
-				<div className="flex flex-1 min-h-0 overflow-hidden px-2">
+				<div className="flex flex-1 min-h-0 overflow-hidden px-2 pb-2">
 					<PanelGroup direction="horizontal" onLayout={handleLayoutChange}>
 						<Panel
 							ref={leftPanelRef}
@@ -2678,7 +3200,14 @@ function LayoutShellLoadedContent({
 					</PanelGroup>
 				</div>
 				<StatusBar
-					left={<BranchSwitcher disabled={workspace?.ephemeral === true} />}
+					left={
+						<CurrentCheckpointFooterReviewButton
+							lix={lix}
+							checkpointDiff={checkpointDiff}
+							showCheckpointDiff={showCheckpointDiff}
+							clearCheckpointDiff={clearCheckpointDiff}
+						/>
+					}
 				/>
 			</div>
 			<DragOverlay>
