@@ -26,6 +26,19 @@ import { resolveLixFileForOpen, V2LayoutShell } from "./layout-shell";
 import type { FlashtypeUiState } from "./ui-state";
 import type { Lix } from "@/lib/lix-types";
 
+const telemetryMock = vi.hoisted(() => ({
+	captureTelemetry: vi.fn(),
+}));
+
+vi.mock("@/lib/telemetry", async () => {
+	const actual =
+		await vi.importActual<typeof import("@/lib/telemetry")>("@/lib/telemetry");
+	return {
+		...actual,
+		captureTelemetry: telemetryMock.captureTelemetry,
+	};
+});
+
 type DesktopMock = {
 	readonly emitCloseFile: () => Promise<void>;
 	readonly emitNewFile: () => Promise<void>;
@@ -113,6 +126,7 @@ function getFileTreeHostForShadowElement(
 afterEach(() => {
 	cleanup();
 	window.flashtypeDesktop = originalDesktop;
+	telemetryMock.captureTelemetry.mockClear();
 });
 
 describe("resolveLixFileForOpen", () => {
@@ -911,6 +925,72 @@ describe("V2LayoutShell checkpoint editor revisions", () => {
 });
 
 describe("V2LayoutShell agent review auto-open", () => {
+	test("captures prompt submitted telemetry from turn-start hooks", async () => {
+		const desktop = installAgentHooksDesktopMock();
+		const lix = await openLix();
+		vi.spyOn(lix, "syncDiskToLix").mockResolvedValue();
+
+		const utils = await renderShell(lix);
+		await waitFor(() => expect(desktop.onTurnEvent).toHaveBeenCalled());
+		telemetryMock.captureTelemetry.mockClear();
+
+		await act(async () => {
+			await desktop.emitTurnEvent(agentTurnEvent("turn-start"));
+		});
+
+		await waitFor(() =>
+			expect(telemetryMock.captureTelemetry).toHaveBeenCalledWith(
+				"prompt_submitted",
+				expect.objectContaining({
+					agent: "codex",
+					surface: "terminal",
+					source: "agent_hook",
+					attempt_number: 1,
+				}),
+			),
+		);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("increments prompt submitted attempt numbers per agent session", async () => {
+		const desktop = installAgentHooksDesktopMock();
+		const lix = await openLix();
+		vi.spyOn(lix, "syncDiskToLix").mockResolvedValue();
+
+		const utils = await renderShell(lix);
+		await waitFor(() => expect(desktop.onTurnEvent).toHaveBeenCalled());
+		telemetryMock.captureTelemetry.mockClear();
+
+		await act(async () => {
+			await desktop.emitTurnEvent(agentTurnEvent("turn-start"));
+			await desktop.emitTurnEvent({
+				...agentTurnEvent("turn-start"),
+				id: "event-turn-start-2",
+				turnId: "test-turn-2",
+				createdAt: 2,
+			});
+		});
+
+		await waitFor(() =>
+			expect(telemetryMock.captureTelemetry).toHaveBeenCalledTimes(2),
+		);
+		expect(telemetryMock.captureTelemetry).toHaveBeenNthCalledWith(
+			1,
+			"prompt_submitted",
+			expect.objectContaining({ attempt_number: 1 }),
+		);
+		expect(telemetryMock.captureTelemetry).toHaveBeenNthCalledWith(
+			2,
+			"prompt_submitted",
+			expect.objectContaining({ attempt_number: 2 }),
+		);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
 	test("returns current active file context from turn-start hooks", async () => {
 		const desktop = installAgentHooksDesktopMock();
 		const lix = await openLix({

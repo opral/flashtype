@@ -712,6 +712,24 @@ function agentTurnKey(event: AgentHookTurnEvent): string {
 	].join(":");
 }
 
+function agentPromptAttemptKey(event: AgentHookTurnEvent): string {
+	return [
+		event.instanceId ?? "unknown-instance",
+		event.agent,
+		event.sessionId ?? event.cwd ?? "unknown-session",
+	].join(":");
+}
+
+function incrementAgentPromptAttemptNumber(
+	attempts: Map<string, number>,
+	event: AgentHookTurnEvent,
+): number {
+	const key = agentPromptAttemptKey(event);
+	const nextAttemptNumber = (attempts.get(key) ?? 0) + 1;
+	attempts.set(key, nextAttemptNumber);
+	return nextAttemptNumber;
+}
+
 type LixFileForOpen = {
 	readonly id: string;
 	readonly path: string;
@@ -1192,6 +1210,7 @@ function LayoutShellLoadedContent({
 		| null
 	>(null);
 	const activeAgentTurnsRef = useRef(new Map<string, ActiveAgentTurn>());
+	const agentPromptAttemptNumbersRef = useRef(new Map<string, number>());
 	const autoOpenFirstAgentReviewFileRef = useRef(
 		async (_range: AgentTurnCommitRange) => {},
 	);
@@ -1314,6 +1333,16 @@ function LayoutShellLoadedContent({
 		async (event: AgentHookTurnEvent): Promise<AgentHookTurnEventResult> => {
 			const key = agentTurnKey(event);
 			if (event.phase === "turn-start") {
+				const attemptNumber = incrementAgentPromptAttemptNumber(
+					agentPromptAttemptNumbersRef.current,
+					event,
+				);
+				captureWorkspaceTelemetry("prompt_submitted", {
+					agent: event.agent,
+					surface: "terminal",
+					source: "agent_hook",
+					attempt_number: attemptNumber,
+				});
 				const additionalContext = buildFlashtypeActiveFilePrompt(
 					activeFilePathFromPanel(panelStatesRef.current.central),
 				);
@@ -1384,7 +1413,7 @@ function LayoutShellLoadedContent({
 				throw error;
 			}
 		},
-		[lix],
+		[lix, captureWorkspaceTelemetry],
 	);
 
 	useEffect(() => {

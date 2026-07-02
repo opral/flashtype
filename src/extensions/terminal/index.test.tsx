@@ -9,6 +9,10 @@ const xtermMock = vi.hoisted(() => ({
 		dispose: ReturnType<typeof vi.fn>;
 	}>,
 }));
+const telemetryMock = vi.hoisted(() => ({
+	captureTelemetry: vi.fn(),
+	captureTelemetryException: vi.fn(),
+}));
 
 vi.mock("@xterm/xterm", () => {
 	class MockTerminal {
@@ -35,6 +39,8 @@ vi.mock("@xterm/addon-fit", () => {
 	return { FitAddon: MockFitAddon };
 });
 
+vi.mock("@/lib/telemetry", () => telemetryMock);
+
 import { TerminalView } from "./index";
 
 const originalDesktop = window.flashtypeDesktop;
@@ -43,6 +49,8 @@ const originalResizeObserver = window.ResizeObserver;
 describe("TerminalView", () => {
 	beforeEach(() => {
 		xtermMock.instances.length = 0;
+		telemetryMock.captureTelemetry.mockClear();
+		telemetryMock.captureTelemetryException.mockClear();
 		window.ResizeObserver = class {
 			observe = vi.fn();
 			disconnect = vi.fn();
@@ -93,6 +101,18 @@ describe("TerminalView", () => {
 			screen.getByText(/Flashtype needs Claude Code 2\.1\.78 or newer/u),
 		).toBeInTheDocument();
 		expect(xtermMock.instances[0]?.writeln).not.toHaveBeenCalled();
+		expect(telemetryMock.captureTelemetry).toHaveBeenCalledWith(
+			"agent_start_failed",
+			{
+				agent: "claude",
+				reason: "unsupported",
+				required_version: "2.1.78",
+				detected_version: "2.1.77",
+				surface: "terminal",
+				retry_count: 0,
+			},
+		);
+		expect(telemetryMock.captureTelemetryException).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: /retry/i }));
 
@@ -104,7 +124,200 @@ describe("TerminalView", () => {
 			}),
 		);
 	});
+
+	test.each([
+		["missing", "Claude Code not found"],
+		["unparseable", "Could not read Claude Code version"],
+		["timeout", "Claude Code version check timed out"],
+		["failed", "Claude Code version check failed"],
+	] as const)(
+		"captures agent version startup telemetry for %s errors",
+		async (reason, title) => {
+			const terminalApi = createTerminalApi();
+			terminalApi.create = vi.fn().mockResolvedValueOnce({
+				status: "agentVersionError",
+				agent: "claude",
+				requiredVersion: "2.1.78",
+				reason,
+			});
+			window.flashtypeDesktop = createDesktop(terminalApi);
+
+			render(
+				<TerminalView
+					launchConfig={{
+						initialCommand: "claude-flashtype",
+						pathWrapper: {
+							executableName: "claude-flashtype",
+							command: "claude --settings '{}'",
+						},
+					}}
+				/>,
+			);
+
+			expect(await screen.findByText(title)).toBeInTheDocument();
+			expect(telemetryMock.captureTelemetry).toHaveBeenCalledWith(
+				"agent_start_failed",
+				{
+					agent: "claude",
+					reason,
+					required_version: "2.1.78",
+					detected_version: undefined,
+					surface: "terminal",
+					retry_count: 0,
+				},
+			);
+			expect(telemetryMock.captureTelemetryException).not.toHaveBeenCalled();
+		},
+	);
+
+	test("captures retry count on later startup failures", async () => {
+		const terminalApi = createTerminalApi();
+		terminalApi.create = vi
+			.fn()
+			.mockResolvedValueOnce({
+				status: "agentVersionError",
+				agent: "codex",
+				requiredVersion: "0.134.0",
+				detectedVersion: "0.133.0",
+				reason: "unsupported",
+			})
+			.mockResolvedValueOnce({
+				status: "agentVersionError",
+				agent: "codex",
+				requiredVersion: "0.134.0",
+				detectedVersion: "0.133.0",
+				reason: "unsupported",
+			});
+		window.flashtypeDesktop = createDesktop(terminalApi);
+
+		render(
+			<TerminalView
+				launchConfig={{
+					initialCommand: "codex-flashtype",
+					pathWrapper: {
+						executableName: "codex-flashtype",
+						command: "codex --dangerously-bypass-hook-trust",
+					},
+				}}
+			/>,
+		);
+
+		expect(
+			await screen.findByText("Codex update required"),
+		).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+		await waitFor(() => expect(terminalApi.create).toHaveBeenCalledTimes(2));
+		await waitFor(() =>
+			expect(telemetryMock.captureTelemetry).toHaveBeenLastCalledWith(
+				"agent_start_failed",
+				{
+					agent: "codex",
+					reason: "unsupported",
+					required_version: "0.134.0",
+					detected_version: "0.133.0",
+					surface: "terminal",
+					retry_count: 1,
+				},
+			),
+		);
+	});
+
+	test("captures unexpected agent startup errors as telemetry and exceptions", async () => {
+		const terminalApi = createTerminalApi();
+		const error = new Error("pty failed");
+		terminalApi.create = vi.fn().mockRejectedValueOnce(error);
+		window.flashtypeDesktop = createDesktop(terminalApi);
+
+		render(
+			<TerminalView
+				launchConfig={{
+					initialCommand: "codex-flashtype",
+					pathWrapper: {
+						executableName: "codex-flashtype",
+						command: "codex --dangerously-bypass-hook-trust",
+					},
+				}}
+			/>,
+		);
+
+		expect(
+			await screen.findByText("Failed to start terminal"),
+		).toBeInTheDocument();
+		expect(telemetryMock.captureTelemetry).toHaveBeenCalledWith(
+			"agent_start_failed",
+			{
+				agent: "codex",
+				reason: "unexpected",
+				surface: "terminal",
+				retry_count: 0,
+			},
+		);
+		expect(telemetryMock.captureTelemetryException).toHaveBeenCalledWith(
+			error,
+			{
+				agent: "codex",
+				reason: "unexpected",
+				surface: "terminal",
+				retry_count: 0,
+			},
+		);
+	});
+
+	test("captures initial command write failures as agent startup telemetry", async () => {
+		const terminalApi = createTerminalApi();
+		const error = new Error("write failed");
+		terminalApi.create = vi.fn().mockResolvedValueOnce({
+			status: "ok",
+			id: "terminal-1",
+		});
+		terminalApi.write = vi.fn().mockRejectedValueOnce(error);
+		window.flashtypeDesktop = createDesktop(terminalApi);
+
+		render(
+			<TerminalView
+				launchConfig={{
+					initialCommand: "claude-flashtype",
+					pathWrapper: {
+						executableName: "claude-flashtype",
+						command: "claude --settings '{}'",
+					},
+				}}
+			/>,
+		);
+
+		expect(
+			await screen.findByText("Failed to start terminal"),
+		).toBeInTheDocument();
+		expect(telemetryMock.captureTelemetry).toHaveBeenCalledWith(
+			"agent_start_failed",
+			{
+				agent: "claude",
+				reason: "unexpected",
+				surface: "terminal",
+				retry_count: 0,
+			},
+		);
+		expect(telemetryMock.captureTelemetryException).toHaveBeenCalledWith(
+			error,
+			{
+				agent: "claude",
+				reason: "unexpected",
+				surface: "terminal",
+				retry_count: 0,
+			},
+		);
+	});
 });
+
+function createDesktop(terminalApi: DesktopTerminalApi) {
+	return {
+		lix: {
+			workspaceDir: vi.fn().mockResolvedValue("/workspace"),
+		},
+		terminal: terminalApi,
+	} as unknown as Window["flashtypeDesktop"];
+}
 
 function createTerminalApi(): DesktopTerminalApi {
 	return {

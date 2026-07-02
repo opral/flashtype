@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
+import { captureTelemetry, captureTelemetryException } from "@/lib/telemetry";
 import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
 import { TERMINAL_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import {
@@ -57,6 +58,7 @@ type AgentVersionErrorResult = Extract<
 type TerminalStartupError =
 	| { kind: "agentVersion"; error: AgentVersionErrorResult }
 	| { kind: "unexpected"; error: unknown };
+type AgentTelemetryName = AgentVersionErrorResult["agent"];
 
 export function TerminalView({
 	launchConfig,
@@ -84,6 +86,7 @@ export function TerminalView({
 		let disposed = false;
 		let cleanedUp = false;
 		let terminalId: string | null = null;
+		const attemptLaunchConfig = launchConfigRef.current;
 
 		setStartupError(null);
 		const terminal = new Terminal({
@@ -156,6 +159,10 @@ export function TerminalView({
 
 		const showStartupError = (error: TerminalStartupError) => {
 			if (disposed) return;
+			captureAgentStartFailure(error, {
+				launchConfig: attemptLaunchConfig,
+				retryCount: retryKey,
+			});
 			setStartupError(error);
 			cleanupLocalTerminal();
 		};
@@ -170,7 +177,7 @@ export function TerminalView({
 					cwd,
 					cols: terminal.cols,
 					rows: terminal.rows,
-					pathWrapper: launchConfigRef.current.pathWrapper,
+					pathWrapper: attemptLaunchConfig.pathWrapper,
 				});
 				if (created.status === "agentVersionError") {
 					showStartupError({ kind: "agentVersion", error: created });
@@ -182,11 +189,11 @@ export function TerminalView({
 				}
 				terminalId = created.id;
 				handleResize();
-				const command = launchConfigRef.current.initialCommand;
-				launchConfigRef.current = {};
+				const command = attemptLaunchConfig.initialCommand;
 				if (command) {
 					await terminalApi.write({ id: created.id, data: `${command}\r` });
 				}
+				launchConfigRef.current = {};
 			} catch (error) {
 				showStartupError({ kind: "unexpected", error });
 			}
@@ -225,6 +232,59 @@ export function TerminalView({
 			<div ref={containerRef} className="h-full w-full p-2" />
 		</div>
 	);
+}
+
+function captureAgentStartFailure(
+	error: TerminalStartupError,
+	options: {
+		readonly launchConfig: TerminalLaunchConfig;
+		readonly retryCount: number;
+	},
+) {
+	const properties = agentStartFailureTelemetryProperties(error, options);
+	if (!properties) return;
+	captureTelemetry("agent_start_failed", properties);
+	if (error.kind === "unexpected") {
+		captureTelemetryException(error.error, properties);
+	}
+}
+
+function agentStartFailureTelemetryProperties(
+	error: TerminalStartupError,
+	options: {
+		readonly launchConfig: TerminalLaunchConfig;
+		readonly retryCount: number;
+	},
+) {
+	const common = {
+		surface: "terminal",
+		retry_count: options.retryCount,
+	} as const;
+	if (error.kind === "agentVersion") {
+		return {
+			...common,
+			agent: error.error.agent,
+			reason: error.error.reason,
+			required_version: error.error.requiredVersion,
+			detected_version: error.error.detectedVersion,
+		};
+	}
+	const agent = readAgentTelemetryName(options.launchConfig);
+	if (!agent) return null;
+	return {
+		...common,
+		agent,
+		reason: "unexpected",
+	};
+}
+
+function readAgentTelemetryName(
+	launchConfig: TerminalLaunchConfig,
+): AgentTelemetryName | null {
+	const executableName = launchConfig.pathWrapper?.executableName;
+	if (executableName === "claude-flashtype") return "claude";
+	if (executableName === "codex-flashtype") return "codex";
+	return null;
 }
 
 function TerminalStartupErrorView({
