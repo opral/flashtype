@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 - 2026-07-02
+
+- Improved Claude Code and Codex launch reliability.
+- Bug fixes and performance improvements relating to switching between files.
+- Added the History panel for creating, reviewing, restoring, renaming, and deleting checkpoints.
+
 ## 0.7.1 - 2026-06-30
 
 - Added Markdown link tools: select text and add, update, or remove links from the formatting toolbar. Typed `[label](url)` Markdown links are converted automatically, bare domains are normalized, email addresses become `mailto:` links, and relative links are preserved.
