@@ -308,12 +308,14 @@ export type DesktopAppApi = {
 
 export type DesktopTelemetryEventName =
 	| "agent_opened"
+	| "agent_start_failed"
 	| "app_opened"
 	| "diff_opened"
 	| "diff_resolved"
 	| "document_open_attempted"
 	| "document_modified"
 	| "document_viewed"
+	| "prompt_submitted"
 	| "workspace_recovery_lifecycle"
 	| "workspace_extension_profiled"
 	| "workspace_profiled";
