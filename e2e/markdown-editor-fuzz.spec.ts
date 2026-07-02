@@ -97,7 +97,7 @@ test("fuzzes markdown editor plain text in a real browser", async ({
 test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 	browserName: _browserName,
 }, testInfo) => {
-	const operationCount = markdownUiFuzzOperationCount();
+	const operationCount = 300;
 	const seed = testInfo.repeatEachIndex;
 	const rng = seedrandom(seed.toString());
 	const state = createSimplifiedState();

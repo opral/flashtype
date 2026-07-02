@@ -48,9 +48,10 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		const lix = await ensureLixOpenForEvent(event);
 		const sql = String(payload?.sql ?? "");
 		const params = normalizeParams(payload?.params);
+		const options = normalizeExecuteOptions(payload?.options);
 		const started = performance.now();
 		try {
-			const result = await lix.execute(sql, params);
+			const result = await lix.execute(sql, params, options);
 			const serialized = serializeExecuteResult(result, "lix.execute");
 			logSlowOperation("execute", started, {
 				sqlHash: hashString(sql),
@@ -130,9 +131,10 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		);
 		const sql = String(payload?.sql ?? "");
 		const params = normalizeParams(payload?.params);
+		const options = normalizeExecuteOptions(payload?.options);
 		const started = performance.now();
 		try {
-			const result = await transaction.execute(sql, params);
+			const result = await transaction.execute(sql, params, options);
 			const serialized = serializeExecuteResult(result, "transaction.execute");
 			logSlowOperation("transaction:execute", started, {
 				transactionId: String(payload?.transactionId ?? ""),
@@ -447,6 +449,16 @@ function normalizeParams(params) {
 		return [];
 	}
 	return params.map((param, index) => normalizeSqlParam(param, index));
+}
+
+function normalizeExecuteOptions(options) {
+	if (!options || typeof options !== "object" || Array.isArray(options)) {
+		return undefined;
+	}
+	if (typeof options.originKey !== "string") {
+		return undefined;
+	}
+	return { originKey: options.originKey };
 }
 
 function normalizeSqlParam(value, index = 0) {

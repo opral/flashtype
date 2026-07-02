@@ -5,13 +5,16 @@ import { qb, sql } from "@/lib/lix-kysely";
 import { useEditorCtx } from "./editor-context";
 import { useLix, useQueryTakeFirst } from "@/lib/lix-react";
 import { useKeyValue } from "@/hooks/key-value/use-key-value";
-import { createEditor } from "./create-editor";
+import { createEditor, createMarkdownEditorOriginKey } from "./create-editor";
 import { assembleMdAst } from "./assemble-md-ast";
 import { astToTiptapDoc } from "./tiptap-markdown-bridge";
 import type { EmptyMarkdownDefaultBlock } from "./tiptap-markdown-bridge";
-import { parseMarkdown, serializeAst } from "./markdown";
-import { tiptapDocToAst } from "./tiptap-markdown-bridge";
+import { parseMarkdown } from "./markdown";
 import { decodeMarkdownData } from "./decode-markdown-data";
+import {
+	buildNormalizedMarkdownFromEditor,
+	normalizePersistedMarkdown,
+} from "./build-markdown-from-editor";
 import {
 	desktopWorkspaceApi,
 	useDesktopWorkspaceDir,
@@ -26,6 +29,7 @@ type TipTapEditorProps = {
 	focusOnLoad?: boolean;
 	defaultBlock?: EmptyMarkdownDefaultBlock;
 	isActiveView?: boolean;
+	originKey?: string;
 };
 
 /**
@@ -51,6 +55,7 @@ export function TipTapEditor({
 	focusOnLoad,
 	defaultBlock,
 	isActiveView = true,
+	originKey,
 }: TipTapEditorProps) {
 	if (fileId) {
 		return (
@@ -63,6 +68,7 @@ export function TipTapEditor({
 				focusOnLoad={focusOnLoad}
 				defaultBlock={defaultBlock}
 				isActiveView={isActiveView}
+				originKey={originKey}
 			/>
 		);
 	}
@@ -75,6 +81,7 @@ export function TipTapEditor({
 			focusOnLoad={focusOnLoad}
 			defaultBlock={defaultBlock}
 			isActiveView={isActiveView}
+			originKey={originKey}
 		/>
 	);
 }
@@ -162,6 +169,7 @@ function TipTapEditorLoadedContent({
 	focusOnLoad,
 	defaultBlock,
 	isActiveView = true,
+	originKey,
 	hasInitialFile,
 	initialMarkdown,
 	sourceFilePath,
@@ -175,8 +183,10 @@ function TipTapEditorLoadedContent({
 	const { setEditor } = useEditorCtx();
 	const workspaceDirState = useDesktopWorkspaceDir();
 	const PERSIST_DEBOUNCE_MS = persistDebounceMs ?? 500;
-	const normalizePersistedMarkdown = (markdown: string): string =>
-		markdown.endsWith("\n") ? markdown : `${markdown}\n`;
+	const editorOriginKey = useMemo(
+		() => originKey ?? createMarkdownEditorOriginKey(),
+		[originKey],
+	);
 	const resolveImageSrc = useMemo(() => {
 		const workspaceApi = desktopWorkspaceApi();
 		const workspacePath = workspaceDirState.workspaceDir;
@@ -200,6 +210,7 @@ function TipTapEditorLoadedContent({
 	const lastInitialAstRef = useRef<string | null>(null);
 	const hasAutoFocusedRef = useRef(false);
 	const mountedEditorRef = useRef<Editor | null>(null);
+	const pendingExternalMarkdownRef = useRef<string | null>(null);
 
 	const editor = useMemo(() => {
 		if (
@@ -221,6 +232,7 @@ function TipTapEditorLoadedContent({
 			defaultBlock,
 			persistDebounceMs: PERSIST_DEBOUNCE_MS,
 			resolveImageSrc,
+			originKey: editorOriginKey,
 		});
 	}, [
 		lix,
@@ -232,6 +244,7 @@ function TipTapEditorLoadedContent({
 		initialMarkdown,
 		defaultBlock,
 		resolveImageSrc,
+		editorOriginKey,
 		workspaceDirState.loaded,
 	]);
 
@@ -405,16 +418,21 @@ function TipTapEditorLoadedContent({
 		if (!activeFileId || !editor || !isActiveView) return;
 		const events = lix.observe(
 			`
-				SELECT
-					data
-				FROM lix_file
-				WHERE id = ?
-			`,
+					SELECT
+						f.data,
+						f.lixcol_change_id,
+						c.origin_key
+					FROM lix_file AS f
+					LEFT JOIN lix_change AS c ON c.id = f.lixcol_change_id
+					WHERE f.id = ?
+				`,
 			[activeFileId],
 		);
 		let closed = false;
 		let sawInitialSnapshot = false;
 		const initialObservedMarkdown = normalizePersistedMarkdown(initialMarkdown);
+		let lastCleanPersistedMarkdown = buildNormalizedMarkdownFromEditor(editor);
+		pendingExternalMarkdownRef.current = null;
 
 		void (async () => {
 			while (!closed) {
@@ -429,30 +447,32 @@ function TipTapEditorLoadedContent({
 				const nextMarkdown = normalizePersistedMarkdown(
 					decodeMarkdownData(firstRow.get("data")),
 				);
+				const observedOriginKey = firstRow.get("origin_key");
+				const currentMarkdown = buildNormalizedMarkdownFromEditor(editor);
 				if (!sawInitialSnapshot) {
 					sawInitialSnapshot = true;
 					if (nextMarkdown === initialObservedMarkdown) {
 						continue;
 					}
 				}
-				const currentMarkdownAst = tiptapDocToAst(
-					editor.getJSON() as any,
-				) as any;
-				const currentMarkdown = normalizePersistedMarkdown(
-					serializeAst({
-						type: "root",
-						children: Array.isArray(currentMarkdownAst?.children)
-							? currentMarkdownAst.children
-							: [],
-					}),
-				);
 				if (currentMarkdown === nextMarkdown) {
+					lastCleanPersistedMarkdown = nextMarkdown;
+					pendingExternalMarkdownRef.current = null;
+					continue;
+				}
+				if (observedOriginKey === editorOriginKey) {
+					continue;
+				}
+				if (currentMarkdown !== lastCleanPersistedMarkdown) {
+					pendingExternalMarkdownRef.current = nextMarkdown;
 					continue;
 				}
 				const ast = parseMarkdown(nextMarkdown) as any;
 				editor.commands.setContent(astToTiptapDoc(ast, { defaultBlock }), {
 					emitUpdate: false,
 				});
+				lastCleanPersistedMarkdown = nextMarkdown;
+				pendingExternalMarkdownRef.current = null;
 			}
 		})();
 
@@ -466,6 +486,7 @@ function TipTapEditorLoadedContent({
 		activeFileId,
 		activeBranchId,
 		isActiveView,
+		editorOriginKey,
 		initialMarkdown,
 		defaultBlock,
 	]);

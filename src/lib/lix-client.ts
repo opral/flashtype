@@ -8,6 +8,7 @@ import type {
 	Lix,
 	LixRow,
 	LixRuntimeQueryResult,
+	LixExecuteOptions,
 	ObserveEvent,
 	ObserveEvents,
 	SqlTransaction,
@@ -57,10 +58,11 @@ export async function openDesktopLix(): Promise<Lix> {
 	const execute = async (
 		sql: string,
 		params: ReadonlyArray<unknown> = [],
+		options?: LixExecuteOptions,
 	): Promise<LixRuntimeQueryResult> => {
 		ensureOpen("execute");
 		return toRuntimeQueryResult(
-			await runQueued(() => desktop.lix.execute({ sql, params })),
+			await runQueued(() => desktop.lix.execute({ sql, params, options })),
 		);
 	};
 
@@ -81,6 +83,7 @@ export async function openDesktopLix(): Promise<Lix> {
 			execute: async (
 				sql: string,
 				params: ReadonlyArray<unknown> = [],
+				options?: LixExecuteOptions,
 			): Promise<LixRuntimeQueryResult> => {
 				if (transactionClosed) {
 					throw new Error("transaction is closed; execute() is unavailable");
@@ -91,6 +94,7 @@ export async function openDesktopLix(): Promise<Lix> {
 						transactionId,
 						sql,
 						params,
+						options,
 					}),
 				);
 			},

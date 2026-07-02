@@ -34,6 +34,96 @@ function Providers({
 	);
 }
 
+async function renderEditorForMarkdownFile({
+	fileId,
+	markdown,
+	originKey = "flashtype.markdown-editor:test-origin",
+}: {
+	fileId: string;
+	markdown: string;
+	originKey?: string;
+}): Promise<{ lix: Lix; editor: Editor }> {
+	const lix = await openLix({
+		keyValues: [
+			{
+				key: "lix_deterministic_mode",
+				value: { enabled: true },
+				lixcol_branch_id: "global",
+				lixcol_global: true,
+			},
+			{
+				key: "flashtype_active_file_id",
+				value: fileId,
+				lixcol_branch_id: "global",
+				lixcol_global: true,
+				lixcol_untracked: true,
+			},
+		],
+	});
+	await qb(lix)
+		.insertInto("lix_file")
+		.values({
+			id: fileId,
+			path: `/${fileId}.md`,
+			data: new TextEncoder().encode(markdown),
+		})
+		.execute();
+
+	let editorRef: Editor | null = null;
+	await act(async () => {
+		render(
+			<Suspense>
+				<Providers lix={lix}>
+					<TipTapEditor
+						onReady={(editor) => (editorRef = editor)}
+						originKey={originKey}
+						persistDebounceMs={60_000}
+					/>
+				</Providers>
+			</Suspense>,
+		);
+	});
+	await screen.findByTestId("tiptap-editor");
+	await waitFor(() => expect(editorRef).not.toBeNull());
+	return { lix, editor: editorRef! };
+}
+
+async function setEditorText(editor: Editor, text: string): Promise<void> {
+	await act(async () => {
+		editor.commands.setContent({
+			type: "doc",
+			content: [
+				{
+					type: "paragraph",
+					content: text ? [{ type: "text", text }] : undefined,
+				},
+			],
+		});
+	});
+	await waitFor(() =>
+		expect(screen.getByTestId("tiptap-editor")).toHaveTextContent(text),
+	);
+}
+
+async function writeMarkdownFileWithOrigin(
+	lix: Lix,
+	fileId: string,
+	markdown: string,
+	originKey?: string,
+): Promise<void> {
+	await lix.execute(
+		"UPDATE lix_file SET data = $1 WHERE id = $2",
+		[new TextEncoder().encode(markdown), fileId],
+		originKey ? { originKey } : undefined,
+	);
+}
+
+async function settleMarkdownObserver(): Promise<void> {
+	await act(async () => {
+		await new Promise((resolve) => setTimeout(resolve, 75));
+	});
+}
+
 // Removed CaptureEditor and editor ref helpers; interact via DOM instead
 
 test("renders initial document content", async () => {
@@ -515,6 +605,97 @@ test("updates editor when file.data is updated externally (simulate updateFile w
 		const editorB = await screen.findByTestId("tiptap-editor");
 		expect(editorB).toHaveTextContent("Hello B from file.data");
 	});
+});
+
+test("ignores same-origin stale markdown autosave echoes", async () => {
+	const originKey = "flashtype.markdown-editor:same-origin-stale";
+	const fileId = "file_same_origin_stale";
+	const { lix, editor } = await renderEditorForMarkdownFile({
+		fileId,
+		markdown: "Initial\n",
+		originKey,
+	});
+
+	await setEditorText(editor, "Local newer");
+	await writeMarkdownFileWithOrigin(
+		lix,
+		fileId,
+		"Stale saved copy\n",
+		originKey,
+	);
+	await settleMarkdownObserver();
+
+	const editorNode = screen.getByTestId("tiptap-editor");
+	expect(editorNode).toHaveTextContent("Local newer");
+	expect(editorNode).not.toHaveTextContent("Stale saved copy");
+});
+
+test("same-origin echo matching current markdown marks editor clean", async () => {
+	const originKey = "flashtype.markdown-editor:same-origin-clean";
+	const fileId = "file_same_origin_clean";
+	const { lix, editor } = await renderEditorForMarkdownFile({
+		fileId,
+		markdown: "Initial\n",
+		originKey,
+	});
+
+	await setEditorText(editor, "Local current");
+	await writeMarkdownFileWithOrigin(lix, fileId, "Local current\n", originKey);
+	await settleMarkdownObserver();
+	await writeMarkdownFileWithOrigin(
+		lix,
+		fileId,
+		"External after clean\n",
+		"external-origin",
+	);
+
+	await waitFor(() => {
+		expect(screen.getByTestId("tiptap-editor")).toHaveTextContent(
+			"External after clean",
+		);
+	});
+});
+
+test("applies different-origin markdown update when editor is clean", async () => {
+	const fileId = "file_external_clean";
+	const { lix } = await renderEditorForMarkdownFile({
+		fileId,
+		markdown: "Initial\n",
+	});
+
+	await writeMarkdownFileWithOrigin(
+		lix,
+		fileId,
+		"External clean update\n",
+		"external-origin",
+	);
+
+	await waitFor(() => {
+		expect(screen.getByTestId("tiptap-editor")).toHaveTextContent(
+			"External clean update",
+		);
+	});
+});
+
+test("does not clobber dirty editor content with different-origin markdown update", async () => {
+	const fileId = "file_external_dirty";
+	const { lix, editor } = await renderEditorForMarkdownFile({
+		fileId,
+		markdown: "Initial\n",
+	});
+
+	await setEditorText(editor, "Unsaved local edit");
+	await writeMarkdownFileWithOrigin(
+		lix,
+		fileId,
+		"External dirty update\n",
+		"external-origin",
+	);
+	await settleMarkdownObserver();
+
+	const editorNode = screen.getByTestId("tiptap-editor");
+	expect(editorNode).toHaveTextContent("Unsaved local edit");
+	expect(editorNode).not.toHaveTextContent("External dirty update");
 });
 
 test("preserves main content when switching to a new branch and back", async () => {

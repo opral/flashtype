@@ -14,6 +14,7 @@ export async function upsertMarkdownFile(args: {
 	path?: string;
 	metadata?: any;
 	createIfMissing?: boolean;
+	originKey?: string;
 }): Promise<void> {
 	const {
 		lix,
@@ -22,6 +23,7 @@ export async function upsertMarkdownFile(args: {
 		path,
 		metadata,
 		createIfMissing = true,
+		originKey,
 	} = args;
 	const data = new TextEncoder().encode(markdown);
 	const db = qb(lix);
@@ -46,30 +48,46 @@ export async function upsertMarkdownFile(args: {
 		if (metadata !== undefined && metadata !== existing.lixcol_metadata) {
 			updateValues.lixcol_metadata = resolvedMetadata;
 		}
-		await db
-			.updateTable("lix_file")
-			.set(updateValues)
-			.where("id", "=", fileId)
-			.execute();
+		await executeMarkdownFileWrite(
+			lix,
+			{
+				sql: `UPDATE lix_file SET ${Object.keys(updateValues)
+					.map((column) => `${column} = ?`)
+					.join(", ")} WHERE id = ?`,
+				params: [...Object.values(updateValues), fileId],
+			},
+			originKey,
+		);
 		captureDocumentModifiedTelemetry({ lix, fileId, filePath: resolvedPath });
 	} else {
 		if (!createIfMissing) return;
 		// Insert requires a path; use provided or fallback to /<fileId>.md
-		await db
-			.insertInto("lix_file")
-			.values({
-				id: fileId,
-				path: path ?? `/${fileId}.md`,
-				data,
-				lixcol_metadata: metadata ?? null,
-			})
-			.execute();
+		await executeMarkdownFileWrite(
+			lix,
+			{
+				sql: "INSERT INTO lix_file (id, path, data, lixcol_metadata) VALUES (?, ?, ?, ?)",
+				params: [fileId, path ?? `/${fileId}.md`, data, metadata ?? null],
+			},
+			originKey,
+		);
 		captureDocumentModifiedTelemetry({
 			lix,
 			fileId,
 			filePath: path ?? `/${fileId}.md`,
 		});
 	}
+}
+
+async function executeMarkdownFileWrite(
+	lix: Lix,
+	statement: { sql: string; params: ReadonlyArray<unknown> },
+	originKey: string | undefined,
+): Promise<void> {
+	if (originKey) {
+		await lix.execute(statement.sql, statement.params, { originKey });
+		return;
+	}
+	await lix.execute(statement.sql, statement.params);
 }
 
 function captureDocumentModifiedTelemetry({
