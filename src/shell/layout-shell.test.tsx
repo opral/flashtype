@@ -42,6 +42,7 @@ vi.mock("@/lib/telemetry", async () => {
 type DesktopMock = {
 	readonly emitCloseFile: () => Promise<void>;
 	readonly emitNewFile: () => Promise<void>;
+	readonly getMostRecentMarkdownFile: ReturnType<typeof vi.fn>;
 	readonly onCloseFile: ReturnType<typeof vi.fn>;
 	readonly onNewFile: ReturnType<typeof vi.fn>;
 	readonly setActiveFilePath: ReturnType<typeof vi.fn>;
@@ -711,6 +712,109 @@ describe("V2LayoutShell central file views", () => {
 		await lix.close();
 	});
 
+	test("opens the most recent markdown file when the central panel is empty", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix);
+
+		await waitForPersistedActiveState(lix, "file_recent", "/recent.md");
+		expect(desktop.getMostRecentMarkdownFile).toHaveBeenCalledTimes(1);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps pending launch files ahead of the most recent markdown fallback", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_pending", "/pending.md", "# Pending");
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix, {
+			pendingOpenFilePaths: ["pending.md"],
+		});
+
+		await waitForPersistedActiveState(lix, "file_pending", "/pending.md");
+		expect(desktop.getMostRecentMarkdownFile).not.toHaveBeenCalled();
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps restored central documents ahead of the most recent markdown fallback", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [
+				uiStateKeyValue(openFileState("file_current", "/current.md")),
+			],
+		});
+		await writeReviewFile(lix, "file_current", "/current.md", "# Current");
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix);
+
+		await waitForPersistedActiveState(lix, "file_current", "/current.md");
+		expect(desktop.getMostRecentMarkdownFile).not.toHaveBeenCalled();
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps the empty state when there is no recent markdown file", async () => {
+		const desktop = installDesktopMock({ mostRecentMarkdownFile: null });
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() =>
+			expect(desktop.getMostRecentMarkdownFile).toHaveBeenCalledTimes(1),
+		);
+		await screen.findByTestId("central-panel-empty-state");
+		expect(screen.queryByTestId("tiptap-editor")).toBeNull();
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("does not reopen the most recent markdown file after native close", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix);
+		await waitForPersistedActiveState(lix, "file_recent", "/recent.md");
+		await waitFor(() => expect(desktop.onCloseFile).toHaveBeenCalled());
+
+		await act(async () => {
+			await desktop.emitCloseFile();
+		});
+
+		await screen.findByTestId("central-panel-empty-state");
+		expect(screen.queryByTestId("tiptap-editor")).toBeNull();
+		expect(desktop.getMostRecentMarkdownFile).toHaveBeenCalledTimes(1);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
 	test("opening a second file replaces the existing central document", async () => {
 		installDesktopMock();
 		const lix = await openLix({
@@ -1243,9 +1347,16 @@ async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
 	});
 }
 
-function installDesktopMock(): DesktopMock {
+function installDesktopMock(
+	options: {
+		readonly mostRecentMarkdownFile?: { readonly path: string } | null;
+	} = {},
+): DesktopMock {
 	let newFileListener: (() => void | Promise<void>) | null = null;
 	let closeFileListener: (() => void | Promise<void>) | null = null;
+	const getMostRecentMarkdownFile = vi
+		.fn()
+		.mockResolvedValue(options.mostRecentMarkdownFile ?? null);
 	const setActiveFilePath = vi.fn();
 	const setOpenFilePaths = vi.fn();
 	const onNewFile = vi.fn((nextListener: () => void | Promise<void>) => {
@@ -1266,6 +1377,7 @@ function installDesktopMock(): DesktopMock {
 	});
 	window.flashtypeDesktop = {
 		workspace: {
+			getMostRecentMarkdownFile,
 			onCloseFile,
 			onNewFile,
 			setActiveFilePath,
@@ -1285,6 +1397,7 @@ function installDesktopMock(): DesktopMock {
 			}
 			await newFileListener();
 		},
+		getMostRecentMarkdownFile,
 		onCloseFile,
 		onNewFile,
 		setActiveFilePath,

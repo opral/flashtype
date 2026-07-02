@@ -40,6 +40,8 @@ const workspace = {
 		};
 	},
 	profile: () => ipcRenderer.invoke("workspace:profile"),
+	getMostRecentMarkdownFile: () =>
+		ipcRenderer.invoke("workspace:getMostRecentMarkdownFile"),
 	onNewFile: (listener) => {
 		const wrapped = () => listener();
 		ipcRenderer.on("workspace:newFile", wrapped);

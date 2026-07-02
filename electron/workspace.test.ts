@@ -1,4 +1,11 @@
-import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	readFile,
+	stat,
+	symlink,
+	utimes,
+	writeFile,
+} from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +14,7 @@ import {
 	profileWorkspaceFilesystem,
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
+	getMostRecentMarkdownFile,
 	getWorkspace,
 	getWorkspaceFsBackendOptions,
 	resolveWorkspace,
@@ -31,6 +39,122 @@ function createTestWindow() {
 		webContents: { send: vi.fn() },
 	};
 }
+
+async function setFileMtime(filePath: string, seconds: number) {
+	const timestamp = new Date(seconds * 1000);
+	await utimes(filePath, timestamp, timestamp);
+}
+
+describe("most recent markdown file", () => {
+	test("finds the newest markdown file recursively by mtime", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, "docs", "nested"), { recursive: true });
+		const alphaPath = path.join(directory, "alpha.md");
+		const notesPath = path.join(directory, "docs", "notes.markdown");
+		const upperPath = path.join(directory, "docs", "nested", "UPPER.MD");
+		const dataPath = path.join(directory, "data.csv");
+		await writeFile(alphaPath, "# Alpha\n");
+		await writeFile(notesPath, "# Notes\n");
+		await writeFile(upperPath, "# Upper\n");
+		await writeFile(dataPath, "name,value\nA,1\n");
+		await setFileMtime(alphaPath, 1);
+		await setFileMtime(notesPath, 2);
+		await setFileMtime(upperPath, 3);
+		await setFileMtime(dataPath, 4);
+
+		await expect(
+			getMostRecentMarkdownFile({
+				ephemeral: false,
+				path: directory,
+				name: "workspace",
+			}),
+		).resolves.toEqual({ path: "/docs/nested/UPPER.MD" });
+	});
+
+	test("skips hidden entries, .lix, and symbolic links", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, ".hidden-dir"), { recursive: true });
+		await mkdir(path.join(directory, ".lix"), { recursive: true });
+		const visiblePath = path.join(directory, "visible.md");
+		const hiddenFilePath = path.join(directory, ".hidden.md");
+		const hiddenNestedPath = path.join(directory, ".hidden-dir", "newer.md");
+		const lixPath = path.join(directory, ".lix", "newest.md");
+		const targetPath = path.join(directory, "target.txt");
+		await writeFile(visiblePath, "# Visible\n");
+		await writeFile(hiddenFilePath, "# Hidden\n");
+		await writeFile(hiddenNestedPath, "# Hidden nested\n");
+		await writeFile(lixPath, "# Lix\n");
+		await writeFile(targetPath, "Target\n");
+		await symlink(targetPath, path.join(directory, "linked.md"));
+		await setFileMtime(visiblePath, 1);
+		await setFileMtime(hiddenFilePath, 5);
+		await setFileMtime(hiddenNestedPath, 6);
+		await setFileMtime(lixPath, 7);
+
+		await expect(
+			getMostRecentMarkdownFile({
+				ephemeral: false,
+				path: directory,
+				name: "workspace",
+			}),
+		).resolves.toEqual({ path: "/visible.md" });
+	});
+
+	test("breaks equal mtimes by path ascending", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(directory, { recursive: true });
+		const aPath = path.join(directory, "a.markdown");
+		const bPath = path.join(directory, "b.md");
+		await writeFile(aPath, "# A\n");
+		await writeFile(bPath, "# B\n");
+		await setFileMtime(aPath, 1);
+		await setFileMtime(bPath, 1);
+
+		await expect(
+			getMostRecentMarkdownFile({
+				ephemeral: true,
+				path: directory,
+				name: "workspace",
+				openFilePaths: [],
+			}),
+		).resolves.toEqual({ path: "/a.markdown" });
+	});
+
+	test("returns null when no visible markdown files exist", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, ".lix"), { recursive: true });
+		await writeFile(path.join(directory, "data.csv"), "name,value\nA,1\n");
+		await writeFile(path.join(directory, ".lix", "ignored.md"), "# Ignored\n");
+
+		await expect(
+			getMostRecentMarkdownFile({
+				ephemeral: false,
+				path: directory,
+				name: "workspace",
+			}),
+		).resolves.toBeNull();
+	});
+});
 
 describe("workspace resolution", () => {
 	test("opens directory paths as ephemeral workspaces by default", async () => {

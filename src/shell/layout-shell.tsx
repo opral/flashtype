@@ -1215,12 +1215,17 @@ function LayoutShellLoadedContent({
 		async (_range: AgentTurnCommitRange) => {},
 	);
 	const workspaceIdRef = useRef<string | undefined>(undefined);
+	const mostRecentMarkdownFallbackAttemptedRef = useRef(false);
 	const panelStatesRef = useRef({
 		left: leftPanel,
 		central: centralPanel,
 		right: rightPanel,
 	});
 	const viewHostRegistry = useExtensionHostRegistry();
+	const mostRecentMarkdownFallbackWorkspaceKey = useMemo(() => {
+		if (!workspace) return "none";
+		return `${workspace.ephemeral ? "ephemeral" : "persistent"}:${workspace.path}`;
+	}, [workspace]);
 
 	const captureWorkspaceTelemetry = useCallback(
 		(
@@ -1245,6 +1250,10 @@ function LayoutShellLoadedContent({
 	useEffect(() => {
 		workspaceIdRef.current = undefined;
 	}, [lix]);
+
+	useEffect(() => {
+		mostRecentMarkdownFallbackAttemptedRef.current = false;
+	}, [lix, mostRecentMarkdownFallbackWorkspaceKey]);
 
 	useEffect(() => {
 		panelStatesRef.current = {
@@ -2443,6 +2452,52 @@ function LayoutShellLoadedContent({
 	const activeCentralEntry = useMemo(() => {
 		return activeEntryFromPanel(centralPanel);
 	}, [centralPanel]);
+
+	useEffect(() => {
+		if (mostRecentMarkdownFallbackAttemptedRef.current) return;
+		if (canPersistOpenFileSession !== true) return;
+		if ((pendingOpenFilePaths?.length ?? 0) > 0) return;
+		if (activeCentralEntry) {
+			mostRecentMarkdownFallbackAttemptedRef.current = true;
+			return;
+		}
+
+		const workspaceApi = window.flashtypeDesktop?.workspace;
+		if (!workspaceApi?.getMostRecentMarkdownFile) {
+			mostRecentMarkdownFallbackAttemptedRef.current = true;
+			return;
+		}
+
+		mostRecentMarkdownFallbackAttemptedRef.current = true;
+		let cancelled = false;
+		void workspaceApi
+			.getMostRecentMarkdownFile()
+			.then(async (file) => {
+				if (cancelled || !file?.path) return;
+				if (activeEntryFromPanel(panelStatesRef.current.central)) return;
+				await handleOpenFile({
+					panel: "central",
+					fileId: "",
+					filePath: file.path,
+					focus: true,
+					documentOrigin: "existing",
+				});
+			})
+			.catch((error: unknown) => {
+				if (!cancelled) {
+					onError?.(error);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		activeCentralEntry,
+		canPersistOpenFileSession,
+		handleOpenFile,
+		onError,
+		pendingOpenFilePaths,
+	]);
 
 	const handleAddView = useCallback(
 		(side: PanelSide, kind: ExtensionKind, state?: ExtensionState) => {

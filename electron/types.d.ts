@@ -233,6 +233,10 @@ export type DesktopWorkspaceProfile = {
 	extensions: DesktopWorkspaceExtensionProfile[];
 };
 
+export type DesktopMostRecentMarkdownFile = {
+	path: string;
+};
+
 export type DesktopWatchedFilesystemEntry = {
 	id: string;
 	parent_id: string | null;
@@ -256,6 +260,7 @@ export type DesktopWorkspaceApi = {
 		listener: (entries: DesktopWatchedFilesystemEntry[]) => void,
 	): () => void;
 	profile(): Promise<DesktopWorkspaceProfile | null>;
+	getMostRecentMarkdownFile(): Promise<DesktopMostRecentMarkdownFile | null>;
 	/** Fired when the native menu asks the workspace UI to start a new file. */
 	onNewFile(listener: () => void): () => void;
 	/** Fired when the native menu asks the workspace UI to close the active file. */
