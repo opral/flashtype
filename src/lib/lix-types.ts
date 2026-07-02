@@ -1,4 +1,5 @@
 import type {
+	ExecuteOptions,
 	ExecuteResult,
 	Lix as SdkLix,
 	LixTransaction as SdkLixTransaction,
@@ -6,6 +7,7 @@ import type {
 } from "@lix-js/sdk";
 
 export type { ExecuteResult as LixRuntimeQueryResult } from "@lix-js/sdk";
+export type { ExecuteOptions as LixExecuteOptions } from "@lix-js/sdk";
 
 export type LixRow = ExecuteResult["rows"][number];
 
@@ -15,7 +17,11 @@ export type TransactionStatement = {
 };
 
 export type SqlTransaction = Pick<SdkLixTransaction, "commit" | "rollback"> & {
-	execute(sql: string, params?: ReadonlyArray<unknown>): Promise<ExecuteResult>;
+	execute(
+		sql: string,
+		params?: ReadonlyArray<unknown>,
+		options?: ExecuteOptions,
+	): Promise<ExecuteResult>;
 };
 
 export type ObserveEvent = {
@@ -55,7 +61,11 @@ type SdkLixBase = Pick<
 >;
 
 export interface FlashtypeLix extends SdkLixBase {
-	execute(sql: string, params?: ReadonlyArray<unknown>): Promise<ExecuteResult>;
+	execute(
+		sql: string,
+		params?: ReadonlyArray<unknown>,
+		options?: ExecuteOptions,
+	): Promise<ExecuteResult>;
 	beginTransaction(): Promise<SqlTransaction>;
 	transaction<T>(callback: (tx: SqlTransaction) => Promise<T>): Promise<T>;
 	executeTransaction(

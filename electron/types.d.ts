@@ -52,6 +52,7 @@ export type DesktopLixApi = {
 	execute(payload: {
 		sql: string;
 		params?: ReadonlyArray<unknown>;
+		options?: { originKey?: string };
 	}): Promise<SerializedQueryResult>;
 	executeTransaction(payload: {
 		statements: ReadonlyArray<{
@@ -64,6 +65,7 @@ export type DesktopLixApi = {
 		transactionId: string;
 		sql: string;
 		params?: ReadonlyArray<unknown>;
+		options?: { originKey?: string };
 	}): Promise<SerializedQueryResult>;
 	transactionCommit(payload: { transactionId: string }): Promise<void>;
 	transactionRollback(payload: { transactionId: string }): Promise<void>;

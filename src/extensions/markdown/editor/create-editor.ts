@@ -2,17 +2,17 @@ import { Editor } from "@tiptap/core";
 import History from "@tiptap/extension-history";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { Lix } from "@/lib/lix-types";
-import {
-	MarkdownWc,
-	astToTiptapDoc,
-	tiptapDocToAst,
-} from "./tiptap-markdown-bridge";
+import { MarkdownWc, astToTiptapDoc } from "./tiptap-markdown-bridge";
 import type { EmptyMarkdownDefaultBlock } from "./tiptap-markdown-bridge";
 import { parseMarkdown, serializeAst } from "./markdown";
 import { handlePaste as defaultHandlePaste } from "./handle-paste";
 import { SlashCommandsExtension } from "./extensions/slash-commands";
 import { TableNavigationExtension } from "./extensions/table-navigation";
 import { upsertMarkdownFile } from "./upsert-markdown-file";
+import {
+	buildNormalizedMarkdownFromEditor,
+	normalizePersistedMarkdown,
+} from "./build-markdown-from-editor";
 
 type CreateEditorArgs = {
 	lix: Lix;
@@ -27,23 +27,20 @@ type CreateEditorArgs = {
 	persistDebounceMs?: number;
 	persistState?: boolean;
 	resolveImageSrc?: (src: string) => string;
+	originKey?: string;
 };
 
-const createNodeId = (): string => {
+export const createMarkdownEditorOriginKey = (): string => {
 	if (
 		typeof crypto !== "undefined" &&
 		typeof crypto.randomUUID === "function"
 	) {
-		return crypto.randomUUID().replaceAll("-", "").slice(0, 10);
+		return `flashtype.markdown-editor:${crypto.randomUUID()}`;
 	}
-	return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.slice(
-		0,
-		10,
-	);
+	return `flashtype.markdown-editor:${Date.now().toString(36)}${Math.random()
+		.toString(36)
+		.slice(2)}`;
 };
-
-const normalizePersistedMarkdown = (markdown: string): string =>
-	markdown.endsWith("\n") ? markdown : `${markdown}\n`;
 
 function flushEditorViewDomObserver(view: any): void {
 	view?.domObserver?.flush?.();
@@ -67,9 +64,7 @@ function externalLinkUrlFromClick(event: MouseEvent): string | null {
 		return null;
 	}
 	const target =
-		event.target instanceof Element
-			? event.target.closest("a[href]")
-			: null;
+		event.target instanceof Element ? event.target.closest("a[href]") : null;
 	if (!(target instanceof HTMLAnchorElement)) {
 		return null;
 	}
@@ -105,28 +100,6 @@ function handleExternalLinkClick(event: MouseEvent): void {
 	openExternalLink(url);
 }
 
-function ensureTopLevelIds(children: any[]): void {
-	const seen = new Set<string>();
-	for (const node of children) {
-		node.data = node.data || {};
-		let id = (node.data.id ?? "") as string;
-		if (!id || seen.has(id)) {
-			do {
-				id = createNodeId();
-			} while (seen.has(id));
-			node.data.id = id;
-		}
-		seen.add(id);
-	}
-}
-
-function markdownFromEditorAst(editor: Editor): string {
-	const ast = tiptapDocToAst(editor.getJSON() as any) as any;
-	const children: any[] = Array.isArray(ast?.children) ? ast.children : [];
-	ensureTopLevelIds(children);
-	return serializeAst({ type: "root", children } as any);
-}
-
 // Plain TipTap Editor factory (no React). Useful for unit/integration tests.
 export function createEditor(args: CreateEditorArgs): Editor {
 	const {
@@ -142,6 +115,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		persistDebounceMs,
 		persistState = true,
 		resolveImageSrc,
+		originKey = createMarkdownEditorOriginKey(),
 	} = args;
 
 	const ast = contentAst ?? (parseMarkdown(initialMarkdown ?? "") as any);
@@ -159,13 +133,14 @@ export function createEditor(args: CreateEditorArgs): Editor {
 	);
 	const persistDebounceMsResolved = persistDebounceMs ?? 0;
 	const persistOnce = async (editor: Editor) => {
-		const markdown = normalizePersistedMarkdown(markdownFromEditorAst(editor));
+		const markdown = buildNormalizedMarkdownFromEditor(editor);
 		if (markdown === lastPersistedMarkdown) return;
 		await upsertMarkdownFile({
 			lix,
 			fileId: fileId!,
 			markdown,
 			createIfMissing: false,
+			originKey,
 		});
 		lastPersistedMarkdown = markdown;
 	};
@@ -226,9 +201,7 @@ export function createEditor(args: CreateEditorArgs): Editor {
 		content: astToTiptapDoc(ast, { defaultBlock }) as any,
 		onCreate: ({ editor }) => {
 			currentEditor = editor as Editor;
-			lastPersistedMarkdown = normalizePersistedMarkdown(
-				markdownFromEditorAst(editor),
-			);
+			lastPersistedMarkdown = buildNormalizedMarkdownFromEditor(editor);
 			onCreate?.({ editor });
 		},
 		onUpdate: ({ editor }) => {

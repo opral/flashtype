@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import type {
 	BundledPluginArchive,
+	ExecuteOptions,
 	ExecuteResult,
 	Lix as SdkLix,
 	OpenLixOptions as SdkOpenLixOptions,
@@ -92,14 +93,22 @@ async function seedKeyValues(
 
 function createTestLixAdapter(sdkLix: SdkLix): Lix {
 	return {
-		async execute(sql: string, params: ReadonlyArray<unknown> = []) {
-			return await sdkLix.execute(sql, toSqlParams(params));
+		async execute(
+			sql: string,
+			params: ReadonlyArray<unknown> = [],
+			options?: ExecuteOptions,
+		) {
+			return await sdkLix.execute(sql, toSqlParams(params), options);
 		},
 		async beginTransaction() {
 			const transaction = await sdkLix.beginTransaction();
 			return {
-				async execute(sql: string, params: ReadonlyArray<unknown> = []) {
-					return await transaction.execute(sql, toSqlParams(params));
+				async execute(
+					sql: string,
+					params: ReadonlyArray<unknown> = [],
+					options?: ExecuteOptions,
+				) {
+					return await transaction.execute(sql, toSqlParams(params), options);
 				},
 				async commit() {
 					await transaction.commit();

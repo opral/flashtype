@@ -315,8 +315,10 @@ function createDesktopLixHandle(nativeLix, workspaceDir, storageDir) {
 		storageDir() {
 			return storageDir;
 		},
-		async execute(sql, params = []) {
-			return await runQueued(() => nativeLix.execute(sql, [...params]));
+		async execute(sql, params = [], options) {
+			return await runQueued(() =>
+				nativeLix.execute(sql, [...params], options),
+			);
 		},
 		async beginTransaction() {
 			const releaseSlot = await acquireOperationSlot();
@@ -329,8 +331,8 @@ function createDesktopLixHandle(nativeLix, workspaceDir, storageDir) {
 				throw error;
 			}
 			return {
-				async execute(sql, params = []) {
-					return await transaction.execute(sql, [...params]);
+				async execute(sql, params = [], options) {
+					return await transaction.execute(sql, [...params], options);
 				},
 				async commit() {
 					if (transactionClosed) {

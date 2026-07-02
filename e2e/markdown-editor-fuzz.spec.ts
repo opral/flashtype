@@ -97,12 +97,9 @@ test("fuzzes markdown editor plain text in a real browser", async ({
 test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 	browserName: _browserName,
 }, testInfo) => {
-	const seed =
-		process.env.FLASHTYPE_MARKDOWN_UI_FUZZ_SEED ??
-		process.env.FLASHTYPE_MARKDOWN_FUZZ_SEED ??
-		MARKDOWN_EDITOR_FUZZ_DEFAULT_SEED;
-	const operationCount = markdownUiFuzzOperationCount();
-	const rng = seedrandom(seed);
+	const operationCount = 300;
+	const seed = testInfo.repeatEachIndex;
+	const rng = seedrandom(seed.toString());
 	const state = createSimplifiedState();
 	const workspaceDir = testInfo.outputPath("workspace-ui-fuzz");
 	const fuzzFile = path.join(workspaceDir, "fuzz.md");
@@ -134,11 +131,13 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 			try {
 				await applyOperationToUiPage(page, operation);
 				applyOperationToSimplifiedState(state, operation);
+				const delayMs = Math.floor(rng() * (1000 + 1));
+				await page.waitForTimeout(delayMs);
 			} catch (error) {
 				const snapshot = await safeUiSnapshot(page);
 				throw new Error(
 					buildUiOperationFailureMessage({
-						seed,
+						seed: seed,
 						index,
 						operation,
 						state,
@@ -154,7 +153,7 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 			if (snapshot.plainText !== expected) {
 				throw new Error(
 					buildUiPlainTextMismatchMessage({
-						seed,
+						seed: seed,
 						index,
 						operation,
 						state,
@@ -187,7 +186,7 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 function assertSnapshotSelectionMatches(
 	snapshot: MarkdownFuzzSnapshot,
 	state: SimplifiedState,
-	seed: string,
+	seed: number,
 	index: number,
 	operation: FuzzOperation,
 ): void {
@@ -375,7 +374,7 @@ function markdownUiFuzzOperationCount(): number {
 }
 
 function buildUiOperationFailureMessage(args: {
-	seed: string;
+	seed: number;
 	index: number;
 	operation: FuzzOperation;
 	state: SimplifiedState;
@@ -399,7 +398,7 @@ function buildUiOperationFailureMessage(args: {
 }
 
 function buildUiPlainTextMismatchMessage(args: {
-	seed: string;
+	seed: number;
 	index: number;
 	operation: FuzzOperation;
 	state: SimplifiedState;
@@ -422,7 +421,7 @@ function buildUiPlainTextMismatchMessage(args: {
 function assertUiSnapshotSelectionMatches(
 	snapshot: UiMarkdownFuzzSnapshot,
 	state: SimplifiedState,
-	seed: string,
+	seed: number,
 	index: number,
 	operation: FuzzOperation,
 ): void {
@@ -446,7 +445,7 @@ function assertUiSnapshotSelectionMatches(
 }
 
 function buildUiSelectionMismatchMessage(args: {
-	seed: string;
+	seed: number;
 	index: number;
 	operation: FuzzOperation;
 	state: SimplifiedState;
