@@ -112,6 +112,40 @@ export type DesktopAgentExecutablePathRefreshPayload = {
 	env?: Record<string, string>;
 };
 
+export type DesktopAgentName = "claude" | "codex";
+
+export type DesktopAgentAuthStatus =
+	| "unknown"
+	| "notSignedIn"
+	| "signedIn"
+	| "free"
+	| "paid";
+
+export type DesktopAgentPreferenceReason =
+	| "paid"
+	| "free"
+	| "signedIn"
+	| "supportedVersion"
+	| "installed"
+	| "fallback";
+
+export type DesktopAgentStatus = {
+	authStatus: DesktopAgentAuthStatus;
+	installed: boolean;
+	supportedVersion: boolean;
+	detectedVersion?: string;
+};
+
+export type DesktopAgentPreferencePayload =
+	DesktopAgentExecutablePathRefreshPayload;
+
+export type DesktopAgentPreferenceResult = {
+	preferredAgent: DesktopAgentName;
+	autoLaunchAgent: DesktopAgentName | null;
+	reason: DesktopAgentPreferenceReason;
+	agents: Record<DesktopAgentName, DesktopAgentStatus>;
+};
+
 export type DesktopGenerateCheckpointNamePayload = {
 	cwd?: string;
 	diffContext?: string;
@@ -156,6 +190,9 @@ export type DesktopTerminalApi = {
 	generateCheckpointName(
 		payload?: DesktopGenerateCheckpointNamePayload,
 	): Promise<DesktopGenerateCheckpointNameResult>;
+	getPreferredAgent(
+		payload?: DesktopAgentPreferencePayload,
+	): Promise<DesktopAgentPreferenceResult>;
 	refreshAgentExecutablePaths(
 		payload?: DesktopAgentExecutablePathRefreshPayload,
 	): Promise<DesktopAgentExecutablePaths>;

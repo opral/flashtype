@@ -326,6 +326,23 @@ function createTerminalApi(): DesktopTerminalApi {
 			name: "Silly Markdown Pancake",
 			source: "codex",
 		}),
+		getPreferredAgent: vi.fn().mockResolvedValue({
+			preferredAgent: "claude",
+			autoLaunchAgent: null,
+			reason: "fallback",
+			agents: {
+				claude: {
+					authStatus: "unknown",
+					installed: false,
+					supportedVersion: false,
+				},
+				codex: {
+					authStatus: "unknown",
+					installed: false,
+					supportedVersion: false,
+				},
+			},
+		}),
 		refreshAgentExecutablePaths: vi.fn().mockResolvedValue({
 			claude: null,
 			codex: null,

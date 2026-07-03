@@ -102,6 +102,7 @@ import {
 	buildAgentLaunchArgsWithActiveFile,
 	buildFlashtypeActiveFilePrompt,
 } from "./agent-launch";
+import { agentLaunchPresetByKey, type AgentKey } from "./agent-icons";
 import {
 	clearAgentTurnCommitRangeFile,
 	appendAgentTurnCommitRange,
@@ -1177,6 +1178,7 @@ function LayoutShellLoadedContent({
 		() => initialLayoutSizes.right <= MIN_VISIBLE_PANEL_SIZE,
 	);
 	const [shouldAnimatePanels, setShouldAnimatePanels] = useState(false);
+	const [preferredAgent, setPreferredAgent] = useState<AgentKey | null>(null);
 	const [checkpointDiff, setCheckpointDiff] = useState<CheckpointDiff | null>(
 		null,
 	);
@@ -1214,6 +1216,7 @@ function LayoutShellLoadedContent({
 	const autoOpenFirstAgentReviewFileRef = useRef(
 		async (_range: AgentTurnCommitRange) => {},
 	);
+	const agentPreferenceAttemptedRef = useRef(false);
 	const workspaceIdRef = useRef<string | undefined>(undefined);
 	const mostRecentMarkdownFallbackAttemptedRef = useRef(false);
 	const panelStatesRef = useRef({
@@ -1253,6 +1256,11 @@ function LayoutShellLoadedContent({
 
 	useEffect(() => {
 		mostRecentMarkdownFallbackAttemptedRef.current = false;
+	}, [lix, mostRecentMarkdownFallbackWorkspaceKey]);
+
+	useEffect(() => {
+		agentPreferenceAttemptedRef.current = false;
+		setPreferredAgent(null);
 	}, [lix, mostRecentMarkdownFallbackWorkspaceKey]);
 
 	useEffect(() => {
@@ -2536,6 +2544,62 @@ function LayoutShellLoadedContent({
 		],
 	);
 
+	useEffect(() => {
+		if (agentPreferenceAttemptedRef.current) return;
+		if (!extensionMap.has(TERMINAL_EXTENSION_KIND)) return;
+		if (rightPanel.views.length > 0) {
+			agentPreferenceAttemptedRef.current = true;
+			return;
+		}
+
+		const terminalApi = window.flashtypeDesktop?.terminal;
+		if (!terminalApi?.getPreferredAgent) {
+			agentPreferenceAttemptedRef.current = true;
+			return;
+		}
+
+		agentPreferenceAttemptedRef.current = true;
+		let cancelled = false;
+		void (async () => {
+			const cwd = await window.flashtypeDesktop?.lix?.workspaceDir?.();
+			const preference = await terminalApi.getPreferredAgent(
+				cwd ? { cwd } : undefined,
+			);
+			if (cancelled) return;
+			if (
+				preference.preferredAgent === "claude" ||
+				preference.preferredAgent === "codex"
+			) {
+				setPreferredAgent(preference.preferredAgent);
+			}
+			const autoLaunchAgent = preference.autoLaunchAgent;
+			if (autoLaunchAgent !== "claude" && autoLaunchAgent !== "codex") {
+				return;
+			}
+			if (panelStatesRef.current.right.views.length > 0) {
+				return;
+			}
+			const preset = agentLaunchPresetByKey(autoLaunchAgent);
+			if (!preset) {
+				return;
+			}
+			handleAddView("right", TERMINAL_EXTENSION_KIND, preset.state);
+		})().catch((error: unknown) => {
+			if (!cancelled) {
+				onError?.(error);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		extensionMap,
+		handleAddView,
+		mostRecentMarkdownFallbackWorkspaceKey,
+		onError,
+		rightPanel.views.length,
+	]);
+
 	const focusPanel = useCallback((side: PanelSide) => {
 		setFocusedPanel((prev) => (prev === side ? prev : side));
 	}, []);
@@ -3279,6 +3343,7 @@ function LayoutShellLoadedContent({
 								onAddView={addViewOnRight}
 								onRemoveView={(key) => handleRemoveView("right", key)}
 								viewContext={rightViewContext}
+								preferredAgent={preferredAgent}
 							/>
 						</Panel>
 					</PanelGroup>

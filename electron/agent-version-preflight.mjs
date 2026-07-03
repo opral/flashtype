@@ -14,13 +14,47 @@ const AGENT_REQUIREMENTS = {
 
 const AGENT_VERSION_TIMEOUT_MS = 8_000;
 const MAX_PROBE_OUTPUT_LENGTH = 16 * 1024;
+const ANSI_ESCAPE_PATTERN = new RegExp(
+	`${escapeRegExp(String.fromCharCode(27))}\\[[0-?]*[ -/]*[@-~]`,
+	"gu",
+);
 
 export async function checkAgentVersionPreflight(args) {
 	const agent = readAgentFromPathWrapper(args?.pathWrapper);
 	if (!agent) {
 		return null;
 	}
+	const support = await checkAgentVersionSupport({
+		agent,
+		cwd: args.cwd,
+		env: args.env,
+		shell: args.shell,
+		shellArgs: args.shellArgs,
+		timeoutMs: args.timeoutMs,
+	});
+	if (support.supportedVersion) {
+		return null;
+	}
+	return agentVersionError({
+		agent,
+		detectedVersion: support.detectedVersion,
+		output: support.output,
+		reason: support.reason,
+		requiredVersion: support.requiredVersion,
+	});
+}
+
+export async function checkAgentVersionSupport(args) {
+	const agent = args?.agent;
 	const requirement = AGENT_REQUIREMENTS[agent];
+	if (!requirement) {
+		return {
+			agent,
+			supportedVersion: false,
+			reason: "missing",
+			requiredVersion: undefined,
+		};
+	}
 	const probe = await runAgentVersionProbe({
 		command: requirement.command,
 		cwd: args.cwd,
@@ -35,7 +69,7 @@ export async function checkAgentVersionPreflight(args) {
 		: null;
 
 	if (probe.timedOut) {
-		return agentVersionError({
+		return agentVersionSupportError({
 			agent,
 			detectedVersion,
 			output,
@@ -45,7 +79,7 @@ export async function checkAgentVersionPreflight(args) {
 	}
 
 	if (probe.exitCode !== 0) {
-		return agentVersionError({
+		return agentVersionSupportError({
 			agent,
 			detectedVersion,
 			output,
@@ -58,7 +92,7 @@ export async function checkAgentVersionPreflight(args) {
 	}
 
 	if (!detectedVersion) {
-		return agentVersionError({
+		return agentVersionSupportError({
 			agent,
 			output,
 			reason: "unparseable",
@@ -67,7 +101,7 @@ export async function checkAgentVersionPreflight(args) {
 	}
 
 	if (compareSemver(detectedVersion, requirement.requiredVersion) < 0) {
-		return agentVersionError({
+		return agentVersionSupportError({
 			agent,
 			detectedVersion,
 			output,
@@ -76,7 +110,12 @@ export async function checkAgentVersionPreflight(args) {
 		});
 	}
 
-	return null;
+	return {
+		agent,
+		detectedVersion,
+		requiredVersion: requirement.requiredVersion,
+		supportedVersion: true,
+	};
 }
 
 export function readAgentFromPathWrapper(pathWrapper) {
@@ -241,6 +280,19 @@ function agentVersionError(args) {
 	);
 }
 
+function agentVersionSupportError(args) {
+	return Object.fromEntries(
+		Object.entries({
+			agent: args.agent,
+			requiredVersion: args.requiredVersion,
+			detectedVersion: args.detectedVersion,
+			reason: args.reason,
+			output: args.output || undefined,
+			supportedVersion: false,
+		}).filter(([, value]) => value !== undefined),
+	);
+}
+
 function parseSemver(value) {
 	const match = String(value).match(
 		/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/u,
@@ -301,7 +353,7 @@ function comparePrerelease(left, right) {
 
 function normalizeProbeOutput(output) {
 	return String(output ?? "")
-		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/gu, "")
+		.replace(ANSI_ESCAPE_PATTERN, "")
 		.replace(/\r/g, "")
 		.trim();
 }

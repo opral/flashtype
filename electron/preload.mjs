@@ -103,6 +103,8 @@ const terminal = {
 	create: (payload) => ipcRenderer.invoke("terminal:create", payload),
 	generateCheckpointName: (payload) =>
 		ipcRenderer.invoke("terminal:generateCheckpointName", payload),
+	getPreferredAgent: (payload) =>
+		ipcRenderer.invoke("terminal:getPreferredAgent", payload),
 	refreshAgentExecutablePaths: (payload) =>
 		ipcRenderer.invoke("terminal:refreshAgentExecutablePaths", payload),
 	write: (payload) => ipcRenderer.invoke("terminal:write", payload),
