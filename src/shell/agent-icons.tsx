@@ -52,3 +52,19 @@ export const AGENT_LAUNCH_PRESETS = [
 		},
 	},
 ] as const;
+
+export type AgentLaunchPreset = (typeof AGENT_LAUNCH_PRESETS)[number];
+export type AgentKey = AgentLaunchPreset["key"];
+
+export function orderedAgentLaunchPresets(
+	preferredAgent: AgentKey | null | undefined,
+): readonly AgentLaunchPreset[] {
+	if (preferredAgent !== "codex") {
+		return AGENT_LAUNCH_PRESETS;
+	}
+	return [AGENT_LAUNCH_PRESETS[1], AGENT_LAUNCH_PRESETS[0]];
+}
+
+export function agentLaunchPresetByKey(agent: AgentKey) {
+	return AGENT_LAUNCH_PRESETS.find((preset) => preset.key === agent) ?? null;
+}

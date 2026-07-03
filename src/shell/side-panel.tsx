@@ -8,7 +8,7 @@ import type {
 import { TERMINAL_EXTENSION_KIND } from "../extension-runtime/extension-instance-helpers";
 import { PanelV2 } from "./panel-v2";
 import { AgentInvite } from "./agent-invite";
-import { AGENT_LAUNCH_PRESETS } from "./agent-icons";
+import { agentLaunchPresetByKey, type AgentKey } from "./agent-icons";
 
 interface SidePanelProps {
 	readonly side: PanelSide;
@@ -20,6 +20,7 @@ interface SidePanelProps {
 	readonly viewContext: ExtensionContext;
 	readonly isFocused: boolean;
 	readonly onFocusPanel: (side: PanelSide) => void;
+	readonly preferredAgent?: AgentKey | null;
 }
 
 /**
@@ -38,6 +39,7 @@ export function SidePanel({
 	viewContext,
 	isFocused,
 	onFocusPanel,
+	preferredAgent,
 }: SidePanelProps) {
 	// The right island is the agent's home: empty means inviting the agent in.
 	// The command lives in persisted state, so restoring the workspace
@@ -46,11 +48,18 @@ export function SidePanel({
 		side === "right" ? (
 			<AgentInvite
 				onStartClaude={() =>
-					onAddView(TERMINAL_EXTENSION_KIND, AGENT_LAUNCH_PRESETS[0].state)
+					onAddView(
+						TERMINAL_EXTENSION_KIND,
+						agentLaunchPresetByKey("claude")?.state,
+					)
 				}
 				onStartCodex={() =>
-					onAddView(TERMINAL_EXTENSION_KIND, AGENT_LAUNCH_PRESETS[1].state)
+					onAddView(
+						TERMINAL_EXTENSION_KIND,
+						agentLaunchPresetByKey("codex")?.state,
+					)
 				}
+				preferredAgent={preferredAgent}
 			/>
 		) : (
 			<div className="flex flex-1 items-center justify-center">

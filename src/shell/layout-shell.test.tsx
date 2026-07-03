@@ -16,6 +16,7 @@ import { qb } from "@/lib/lix-kysely";
 import {
 	FILE_EXTENSION_KIND,
 	FILES_EXTENSION_KIND,
+	TERMINAL_EXTENSION_KIND,
 	fileExtensionInstanceForKind,
 } from "@/extension-runtime/extension-instance-helpers";
 import type {
@@ -25,6 +26,10 @@ import type {
 import { resolveLixFileForOpen, V2LayoutShell } from "./layout-shell";
 import type { FlashtypeUiState } from "./ui-state";
 import type { Lix } from "@/lib/lix-types";
+import type {
+	DesktopAgentPreferenceResult,
+	DesktopTerminalApi,
+} from "../../electron/types";
 
 const telemetryMock = vi.hoisted(() => ({
 	captureTelemetry: vi.fn(),
@@ -39,9 +44,35 @@ vi.mock("@/lib/telemetry", async () => {
 	};
 });
 
+vi.mock("../extensions/terminal", async () => {
+	const actualReactExtension = await vi.importActual<
+		typeof import("../extension-runtime/react-extension")
+	>("../extension-runtime/react-extension");
+	const actualHelpers = await vi.importActual<
+		typeof import("../extension-runtime/extension-instance-helpers")
+	>("../extension-runtime/extension-instance-helpers");
+	return {
+		extension: actualReactExtension.createReactExtensionDefinition({
+			kind: actualHelpers.TERMINAL_EXTENSION_KIND,
+			label: "Terminal",
+			description: "Run shell commands in a native terminal session.",
+			icon: () => <svg aria-hidden="true" />,
+			multiInstance: true,
+			component: ({ instance }) => (
+				<div
+					data-testid="terminal-view"
+					data-agent={instance.state?.flashtype?.icon ?? ""}
+				/>
+			),
+		}),
+	};
+});
+
 type DesktopMock = {
 	readonly emitCloseFile: () => Promise<void>;
 	readonly emitNewFile: () => Promise<void>;
+	readonly getPreferredAgent?: ReturnType<typeof vi.fn>;
+	readonly getMostRecentMarkdownFile: ReturnType<typeof vi.fn>;
 	readonly onCloseFile: ReturnType<typeof vi.fn>;
 	readonly onNewFile: ReturnType<typeof vi.fn>;
 	readonly setActiveFilePath: ReturnType<typeof vi.fn>;
@@ -711,6 +742,109 @@ describe("V2LayoutShell central file views", () => {
 		await lix.close();
 	});
 
+	test("opens the most recent markdown file when the central panel is empty", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix);
+
+		await waitForPersistedActiveState(lix, "file_recent", "/recent.md");
+		expect(desktop.getMostRecentMarkdownFile).toHaveBeenCalledTimes(1);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps pending launch files ahead of the most recent markdown fallback", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_pending", "/pending.md", "# Pending");
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix, {
+			pendingOpenFilePaths: ["pending.md"],
+		});
+
+		await waitForPersistedActiveState(lix, "file_pending", "/pending.md");
+		expect(desktop.getMostRecentMarkdownFile).not.toHaveBeenCalled();
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps restored central documents ahead of the most recent markdown fallback", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [
+				uiStateKeyValue(openFileState("file_current", "/current.md")),
+			],
+		});
+		await writeReviewFile(lix, "file_current", "/current.md", "# Current");
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix);
+
+		await waitForPersistedActiveState(lix, "file_current", "/current.md");
+		expect(desktop.getMostRecentMarkdownFile).not.toHaveBeenCalled();
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("keeps the empty state when there is no recent markdown file", async () => {
+		const desktop = installDesktopMock({ mostRecentMarkdownFile: null });
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() =>
+			expect(desktop.getMostRecentMarkdownFile).toHaveBeenCalledTimes(1),
+		);
+		await screen.findByTestId("central-panel-empty-state");
+		expect(screen.queryByTestId("tiptap-editor")).toBeNull();
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("does not reopen the most recent markdown file after native close", async () => {
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: { path: "/recent.md" },
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix);
+		await waitForPersistedActiveState(lix, "file_recent", "/recent.md");
+		await waitFor(() => expect(desktop.onCloseFile).toHaveBeenCalled());
+
+		await act(async () => {
+			await desktop.emitCloseFile();
+		});
+
+		await screen.findByTestId("central-panel-empty-state");
+		expect(screen.queryByTestId("tiptap-editor")).toBeNull();
+		expect(desktop.getMostRecentMarkdownFile).toHaveBeenCalledTimes(1);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
 	test("opening a second file replaces the existing central document", async () => {
 		installDesktopMock();
 		const lix = await openLix({
@@ -917,6 +1051,117 @@ describe("V2LayoutShell checkpoint editor revisions", () => {
 			expect(
 				(await readPersistedUiState(lix))?.panels.central.views ?? [],
 			).toEqual([]);
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+});
+
+describe("V2LayoutShell agent preference auto-launch", () => {
+	test("auto-launches a paid or free preferred agent once", async () => {
+		const desktop = installDesktopMock({
+			agentPreference: agentPreferenceResult({
+				preferredAgent: "codex",
+				autoLaunchAgent: "codex",
+				reason: "free",
+			}),
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() =>
+			expect(desktop.getPreferredAgent).toHaveBeenCalledTimes(1),
+		);
+		expect(await screen.findByTestId("terminal-view")).toHaveAttribute(
+			"data-agent",
+			"codex",
+		);
+		await waitFor(async () => {
+			const rightViews =
+				(await readPersistedUiState(lix))?.panels.right.views ?? [];
+			expect(rightViews).toHaveLength(1);
+			expect(rightViews[0]?.kind).toBe(TERMINAL_EXTENSION_KIND);
+			expect(rightViews[0]?.state?.flashtype?.icon).toBe("codex");
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test.each([
+		{
+			name: "signed-in",
+			preference: agentPreferenceResult({
+				preferredAgent: "claude",
+				autoLaunchAgent: null,
+				reason: "signedIn",
+			}),
+			ctaName: /start claude code/i,
+		},
+		{
+			name: "install-only",
+			preference: agentPreferenceResult({
+				preferredAgent: "codex",
+				autoLaunchAgent: null,
+				reason: "installed",
+			}),
+			ctaName: /start codex/i,
+		},
+	])(
+		"does not auto-launch for $name preference signals",
+		async ({ preference, ctaName }) => {
+			const desktop = installDesktopMock({ agentPreference: preference });
+			const lix = await openLix({
+				keyValues: [uiStateKeyValue(noFilesViewState())],
+			});
+
+			const utils = await renderShell(lix);
+
+			await waitFor(() =>
+				expect(desktop.getPreferredAgent).toHaveBeenCalledTimes(1),
+			);
+			expect(
+				await screen.findByRole("button", { name: ctaName }),
+			).toBeVisible();
+			expect(screen.queryByTestId("terminal-view")).toBeNull();
+			await waitFor(async () => {
+				expect(
+					(await readPersistedUiState(lix))?.panels.right.views ?? [],
+				).toEqual([]);
+			});
+
+			await unmountShell(utils);
+			await lix.close();
+		},
+	);
+
+	test("does not auto-launch when the right panel already has a view", async () => {
+		const desktop = installDesktopMock({
+			agentPreference: agentPreferenceResult({
+				preferredAgent: "codex",
+				autoLaunchAgent: "codex",
+				reason: "free",
+			}),
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(twoFilesViewsState())],
+		});
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() =>
+			expect(screen.getAllByLabelText("Add view").length).toBeGreaterThan(0),
+		);
+		expect(desktop.getPreferredAgent).not.toHaveBeenCalled();
+		expect(screen.queryByTestId("terminal-view")).toBeNull();
+		await waitFor(async () => {
+			const rightViews =
+				(await readPersistedUiState(lix))?.panels.right.views ?? [];
+			expect(rightViews.map((view) => view.instance)).toEqual(["files-right"]);
 		});
 
 		await unmountShell(utils);
@@ -1243,9 +1488,17 @@ async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
 	});
 }
 
-function installDesktopMock(): DesktopMock {
+function installDesktopMock(
+	options: {
+		readonly mostRecentMarkdownFile?: { readonly path: string } | null;
+		readonly agentPreference?: DesktopAgentPreferenceResult;
+	} = {},
+): DesktopMock {
 	let newFileListener: (() => void | Promise<void>) | null = null;
 	let closeFileListener: (() => void | Promise<void>) | null = null;
+	const getMostRecentMarkdownFile = vi
+		.fn()
+		.mockResolvedValue(options.mostRecentMarkdownFile ?? null);
 	const setActiveFilePath = vi.fn();
 	const setOpenFilePaths = vi.fn();
 	const onNewFile = vi.fn((nextListener: () => void | Promise<void>) => {
@@ -1264,15 +1517,44 @@ function installDesktopMock(): DesktopMock {
 			}
 		};
 	});
-	window.flashtypeDesktop = {
+	const desktop: Record<string, unknown> = {
 		workspace: {
+			getMostRecentMarkdownFile,
 			onCloseFile,
 			onNewFile,
 			setActiveFilePath,
 			setOpenFilePaths,
 		},
-	} as unknown as Window["flashtypeDesktop"];
-	return {
+	};
+	let getPreferredAgent: ReturnType<typeof vi.fn> | undefined;
+	if (options.agentPreference) {
+		getPreferredAgent = vi.fn().mockResolvedValue(options.agentPreference);
+		const terminalApi: DesktopTerminalApi = {
+			create: vi
+				.fn()
+				.mockResolvedValue({ status: "created", id: "terminal:1" }),
+			generateCheckpointName: vi.fn().mockResolvedValue({
+				name: "Silly Markdown Pancake",
+				source: "codex",
+			}),
+			getPreferredAgent,
+			refreshAgentExecutablePaths: vi.fn().mockResolvedValue({
+				claude: null,
+				codex: null,
+			}),
+			write: vi.fn().mockResolvedValue(undefined),
+			resize: vi.fn().mockResolvedValue(undefined),
+			kill: vi.fn().mockResolvedValue(undefined),
+			onData: vi.fn(() => vi.fn()),
+			onExit: vi.fn(() => vi.fn()),
+		};
+		desktop.terminal = terminalApi;
+		desktop.lix = {
+			workspaceDir: vi.fn().mockResolvedValue("/workspace"),
+		};
+	}
+	window.flashtypeDesktop = desktop as unknown as Window["flashtypeDesktop"];
+	const result: DesktopMock = {
 		emitCloseFile: async () => {
 			if (!closeFileListener) {
 				throw new Error("native Close File listener was not registered");
@@ -1285,11 +1567,16 @@ function installDesktopMock(): DesktopMock {
 			}
 			await newFileListener();
 		},
+		getMostRecentMarkdownFile,
 		onCloseFile,
 		onNewFile,
 		setActiveFilePath,
 		setOpenFilePaths,
 	};
+	if (getPreferredAgent) {
+		return { ...result, getPreferredAgent };
+	}
+	return result;
 }
 
 function installAgentHooksDesktopMock(): AgentHooksDesktopMock {
@@ -1347,6 +1634,32 @@ function uiStateKeyValue(value: FlashtypeUiState) {
 		lixcol_branch_id: "global",
 		lixcol_global: true,
 		lixcol_untracked: true,
+	};
+}
+
+function agentPreferenceResult(
+	overrides: Pick<
+		DesktopAgentPreferenceResult,
+		"preferredAgent" | "autoLaunchAgent" | "reason"
+	> &
+		Partial<Pick<DesktopAgentPreferenceResult, "agents">>,
+): DesktopAgentPreferenceResult {
+	return {
+		...overrides,
+		agents:
+			overrides.agents ??
+			({
+				claude: {
+					authStatus: "unknown",
+					installed: false,
+					supportedVersion: false,
+				},
+				codex: {
+					authStatus: "unknown",
+					installed: false,
+					supportedVersion: false,
+				},
+			} satisfies DesktopAgentPreferenceResult["agents"]),
 	};
 }
 

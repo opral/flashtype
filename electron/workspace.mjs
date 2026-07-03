@@ -287,6 +287,64 @@ export async function profileWorkspaceFilesystem(workspace) {
 	return finalizeWorkspaceFilesystemProfile(profile);
 }
 
+export async function getMostRecentMarkdownFile(workspace) {
+	if (!workspace) {
+		return null;
+	}
+	let mostRecent = null;
+	const pendingDirectories = [workspace.path];
+	while (pendingDirectories.length > 0) {
+		const currentDirectory = pendingDirectories.pop();
+		let directory;
+		try {
+			directory = await opendir(currentDirectory);
+		} catch {
+			continue;
+		}
+		for await (const entry of directory) {
+			if (entry.name.startsWith(".")) {
+				continue;
+			}
+			const entryPath = path.join(currentDirectory, entry.name);
+			let metadata;
+			try {
+				metadata = await lstat(entryPath);
+			} catch {
+				continue;
+			}
+			if (metadata.isSymbolicLink()) {
+				continue;
+			}
+			if (metadata.isDirectory()) {
+				pendingDirectories.push(entryPath);
+				continue;
+			}
+			if (!metadata.isFile() || !isMarkdownFileName(entry.name)) {
+				continue;
+			}
+			const relativePath = workspaceRelativeFilePath(workspace.path, entryPath);
+			if (!relativePath) {
+				continue;
+			}
+			const workspacePath = `/${relativePath}`;
+			const mtimeMs = Number(metadata.mtimeMs);
+			const candidate = {
+				path: workspacePath,
+				mtimeMs: Number.isFinite(mtimeMs) ? mtimeMs : 0,
+			};
+			if (
+				!mostRecent ||
+				candidate.mtimeMs > mostRecent.mtimeMs ||
+				(candidate.mtimeMs === mostRecent.mtimeMs &&
+					candidate.path < mostRecent.path)
+			) {
+				mostRecent = candidate;
+			}
+		}
+	}
+	return mostRecent ? { path: mostRecent.path } : null;
+}
+
 async function profileTransientWorkspaceSourceFiles(profile, workspace) {
 	const directories = new Set();
 	for (const openFilePath of workspace.openFilePaths ?? []) {
@@ -503,6 +561,11 @@ function extensionFromPath(fileName) {
 function normalizeFileExtension(extension) {
 	const normalized = extension.trim().toLowerCase();
 	return /^[a-z0-9][a-z0-9+_-]{0,15}$/.test(normalized) ? normalized : "other";
+}
+
+function isMarkdownFileName(fileName) {
+	const extension = extensionFromPath(fileName);
+	return extension === "md" || extension === "markdown";
 }
 
 function parentDirectories(relativePath) {
@@ -1202,6 +1265,12 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 
 	ipcMain.handle("workspace:profile", async (event) => {
 		return await profileWorkspaceFilesystem(
+			getWorkspace(getWindowForEvent(event)),
+		);
+	});
+
+	ipcMain.handle("workspace:getMostRecentMarkdownFile", async (event) => {
+		return await getMostRecentMarkdownFile(
 			getWorkspace(getWindowForEvent(event)),
 		);
 	});

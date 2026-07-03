@@ -102,6 +102,7 @@ import {
 	buildAgentLaunchArgsWithActiveFile,
 	buildFlashtypeActiveFilePrompt,
 } from "./agent-launch";
+import { agentLaunchPresetByKey, type AgentKey } from "./agent-icons";
 import {
 	clearAgentTurnCommitRangeFile,
 	appendAgentTurnCommitRange,
@@ -1177,6 +1178,7 @@ function LayoutShellLoadedContent({
 		() => initialLayoutSizes.right <= MIN_VISIBLE_PANEL_SIZE,
 	);
 	const [shouldAnimatePanels, setShouldAnimatePanels] = useState(false);
+	const [preferredAgent, setPreferredAgent] = useState<AgentKey | null>(null);
 	const [checkpointDiff, setCheckpointDiff] = useState<CheckpointDiff | null>(
 		null,
 	);
@@ -1214,13 +1216,19 @@ function LayoutShellLoadedContent({
 	const autoOpenFirstAgentReviewFileRef = useRef(
 		async (_range: AgentTurnCommitRange) => {},
 	);
+	const agentPreferenceAttemptedRef = useRef(false);
 	const workspaceIdRef = useRef<string | undefined>(undefined);
+	const mostRecentMarkdownFallbackAttemptedRef = useRef(false);
 	const panelStatesRef = useRef({
 		left: leftPanel,
 		central: centralPanel,
 		right: rightPanel,
 	});
 	const viewHostRegistry = useExtensionHostRegistry();
+	const mostRecentMarkdownFallbackWorkspaceKey = useMemo(() => {
+		if (!workspace) return "none";
+		return `${workspace.ephemeral ? "ephemeral" : "persistent"}:${workspace.path}`;
+	}, [workspace]);
 
 	const captureWorkspaceTelemetry = useCallback(
 		(
@@ -1245,6 +1253,15 @@ function LayoutShellLoadedContent({
 	useEffect(() => {
 		workspaceIdRef.current = undefined;
 	}, [lix]);
+
+	useEffect(() => {
+		mostRecentMarkdownFallbackAttemptedRef.current = false;
+	}, [lix, mostRecentMarkdownFallbackWorkspaceKey]);
+
+	useEffect(() => {
+		agentPreferenceAttemptedRef.current = false;
+		setPreferredAgent(null);
+	}, [lix, mostRecentMarkdownFallbackWorkspaceKey]);
 
 	useEffect(() => {
 		panelStatesRef.current = {
@@ -2444,6 +2461,52 @@ function LayoutShellLoadedContent({
 		return activeEntryFromPanel(centralPanel);
 	}, [centralPanel]);
 
+	useEffect(() => {
+		if (mostRecentMarkdownFallbackAttemptedRef.current) return;
+		if (canPersistOpenFileSession !== true) return;
+		if ((pendingOpenFilePaths?.length ?? 0) > 0) return;
+		if (activeCentralEntry) {
+			mostRecentMarkdownFallbackAttemptedRef.current = true;
+			return;
+		}
+
+		const workspaceApi = window.flashtypeDesktop?.workspace;
+		if (!workspaceApi?.getMostRecentMarkdownFile) {
+			mostRecentMarkdownFallbackAttemptedRef.current = true;
+			return;
+		}
+
+		mostRecentMarkdownFallbackAttemptedRef.current = true;
+		let cancelled = false;
+		void workspaceApi
+			.getMostRecentMarkdownFile()
+			.then(async (file) => {
+				if (cancelled || !file?.path) return;
+				if (activeEntryFromPanel(panelStatesRef.current.central)) return;
+				await handleOpenFile({
+					panel: "central",
+					fileId: "",
+					filePath: file.path,
+					focus: true,
+					documentOrigin: "existing",
+				});
+			})
+			.catch((error: unknown) => {
+				if (!cancelled) {
+					onError?.(error);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		activeCentralEntry,
+		canPersistOpenFileSession,
+		handleOpenFile,
+		onError,
+		pendingOpenFilePaths,
+	]);
+
 	const handleAddView = useCallback(
 		(side: PanelSide, kind: ExtensionKind, state?: ExtensionState) => {
 			// Multi-instance kinds (agent terminals) get a fresh instance per
@@ -2480,6 +2543,62 @@ function LayoutShellLoadedContent({
 			captureWorkspaceTelemetry,
 		],
 	);
+
+	useEffect(() => {
+		if (agentPreferenceAttemptedRef.current) return;
+		if (!extensionMap.has(TERMINAL_EXTENSION_KIND)) return;
+		if (rightPanel.views.length > 0) {
+			agentPreferenceAttemptedRef.current = true;
+			return;
+		}
+
+		const terminalApi = window.flashtypeDesktop?.terminal;
+		if (!terminalApi?.getPreferredAgent) {
+			agentPreferenceAttemptedRef.current = true;
+			return;
+		}
+
+		agentPreferenceAttemptedRef.current = true;
+		let cancelled = false;
+		void (async () => {
+			const cwd = await window.flashtypeDesktop?.lix?.workspaceDir?.();
+			const preference = await terminalApi.getPreferredAgent(
+				cwd ? { cwd } : undefined,
+			);
+			if (cancelled) return;
+			if (
+				preference.preferredAgent === "claude" ||
+				preference.preferredAgent === "codex"
+			) {
+				setPreferredAgent(preference.preferredAgent);
+			}
+			const autoLaunchAgent = preference.autoLaunchAgent;
+			if (autoLaunchAgent !== "claude" && autoLaunchAgent !== "codex") {
+				return;
+			}
+			if (panelStatesRef.current.right.views.length > 0) {
+				return;
+			}
+			const preset = agentLaunchPresetByKey(autoLaunchAgent);
+			if (!preset) {
+				return;
+			}
+			handleAddView("right", TERMINAL_EXTENSION_KIND, preset.state);
+		})().catch((error: unknown) => {
+			if (!cancelled) {
+				onError?.(error);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		extensionMap,
+		handleAddView,
+		mostRecentMarkdownFallbackWorkspaceKey,
+		onError,
+		rightPanel.views.length,
+	]);
 
 	const focusPanel = useCallback((side: PanelSide) => {
 		setFocusedPanel((prev) => (prev === side ? prev : side));
@@ -3224,6 +3343,7 @@ function LayoutShellLoadedContent({
 								onAddView={addViewOnRight}
 								onRemoveView={(key) => handleRemoveView("right", key)}
 								viewContext={rightViewContext}
+								preferredAgent={preferredAgent}
 							/>
 						</Panel>
 					</PanelGroup>

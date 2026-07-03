@@ -15,6 +15,7 @@ import {
 	disposeAgentHookEnvironment,
 } from "./agent-hooks.mjs";
 import { checkAgentVersionPreflight } from "./agent-version-preflight.mjs";
+import { getPreferredAgent } from "./agent-status.mjs";
 import { refreshAgentExecutablePaths } from "./agent-executable-paths.mjs";
 import { generateCheckpointName } from "./checkpoint-name.mjs";
 
@@ -163,6 +164,22 @@ export function registerTerminalIpc() {
 			});
 		},
 	);
+
+	ipcMain.handle("terminal:getPreferredAgent", async (_event, payload) => {
+		const shell = resolveShell(payload?.shell);
+		const shellArgs = resolveShellArgs(shell);
+		const terminalEnv = buildTerminalEnv(
+			process.env,
+			process.platform,
+			normalizeExtraEnv(payload?.env),
+		);
+		return await getPreferredAgent({
+			cwd: payload?.cwd,
+			env: terminalEnv,
+			shell,
+			shellArgs,
+		});
+	});
 
 	ipcMain.handle("terminal:generateCheckpointName", async (_event, payload) => {
 		const shell = resolveShell(payload?.shell);

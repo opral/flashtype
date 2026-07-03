@@ -154,6 +154,39 @@ describe("SidePanel", () => {
 		).toHaveAttribute("data-attr", "agent-start-codex");
 	});
 
+	test("renders preferred Codex as the primary agent invite CTA", () => {
+		const emptyPanel: PanelState = { views: [], activeInstance: null };
+
+		render(
+			<ExtensionHostRegistryProvider>
+				<DndContext>
+					<SidePanel
+						side="right"
+						title="Agent"
+						panel={emptyPanel}
+						onSelectView={() => {}}
+						onAddView={() => {}}
+						onRemoveView={() => {}}
+						viewContext={createViewContext()}
+						isFocused={false}
+						onFocusPanel={vi.fn()}
+						preferredAgent="codex"
+					/>
+				</DndContext>
+			</ExtensionHostRegistryProvider>,
+		);
+
+		expect(
+			screen.getByText("Your agent writes here").closest("[data-attr]"),
+		).toHaveAttribute("data-attr", "agent-panel");
+		expect(
+			screen.getByRole("button", { name: /start codex/i }),
+		).toHaveAttribute("data-attr", "agent-start-codex");
+		expect(
+			screen.getByRole("button", { name: /use claude code instead/i }),
+		).toHaveAttribute("data-attr", "agent-start-claude");
+	});
+
 	test("renders the empty state helper when nothing is open", () => {
 		const emptyPanel: PanelState = { views: [], activeInstance: null };
 
