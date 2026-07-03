@@ -1171,6 +1171,55 @@ describe("V2LayoutShell agent preference auto-launch", () => {
 		await lix.close();
 	});
 
+	test("keeps a delayed auto-launch alive across startup rerenders", async () => {
+		let resolvePreference:
+			| ((preference: DesktopAgentPreferenceResult) => void)
+			| undefined;
+		const preferencePromise = new Promise<DesktopAgentPreferenceResult>(
+			(resolve) => {
+				resolvePreference = resolve;
+			},
+		);
+		const desktop = installDesktopMock({
+			agentPreference: agentPreferenceResult({
+				preferredAgent: "codex",
+				autoLaunchAgent: "codex",
+				reason: "paid",
+			}),
+		});
+		desktop.getPreferredAgent?.mockReturnValueOnce(preferencePromise);
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+		await writeReviewFile(lix, "file_pending", "/pending.md", "# Pending");
+
+		const utils = await renderShell(lix, {
+			pendingOpenFilePaths: ["pending.md"],
+		});
+
+		await waitFor(() =>
+			expect(desktop.getPreferredAgent).toHaveBeenCalledTimes(1),
+		);
+		await waitForPersistedActiveState(lix, "file_pending", "/pending.md");
+		await act(async () => {
+			resolvePreference?.(
+				agentPreferenceResult({
+					preferredAgent: "codex",
+					autoLaunchAgent: "codex",
+					reason: "paid",
+				}),
+			);
+			await preferencePromise;
+		});
+		expect(await screen.findByTestId("terminal-view")).toHaveAttribute(
+			"data-agent",
+			"codex",
+		);
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
 	test.each([
 		{
 			name: "signed-in",

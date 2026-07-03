@@ -1217,6 +1217,7 @@ function LayoutShellLoadedContent({
 		async (_range: AgentTurnCommitRange) => {},
 	);
 	const agentPreferenceAttemptedRef = useRef(false);
+	const agentPreferenceRunRef = useRef(0);
 	const fileOpenInterruptRevisionRef = useRef(0);
 	const workspaceIdRef = useRef<string | undefined>(undefined);
 	const mostRecentMarkdownFallbackAttemptedRef = useRef(false);
@@ -1261,6 +1262,7 @@ function LayoutShellLoadedContent({
 
 	useEffect(() => {
 		agentPreferenceAttemptedRef.current = false;
+		agentPreferenceRunRef.current += 1;
 		setPreferredAgent(null);
 	}, [lix, mostRecentMarkdownFallbackWorkspaceKey]);
 
@@ -2578,13 +2580,13 @@ function LayoutShellLoadedContent({
 		}
 
 		agentPreferenceAttemptedRef.current = true;
-		let cancelled = false;
+		const runId = (agentPreferenceRunRef.current += 1);
 		void (async () => {
 			const cwd = await window.flashtypeDesktop?.lix?.workspaceDir?.();
 			const preference = await terminalApi.getPreferredAgent(
 				cwd ? { cwd } : undefined,
 			);
-			if (cancelled) return;
+			if (runId !== agentPreferenceRunRef.current) return;
 			if (
 				preference.preferredAgent === "claude" ||
 				preference.preferredAgent === "codex"
@@ -2605,13 +2607,10 @@ function LayoutShellLoadedContent({
 			}
 			handleAddView("right", TERMINAL_EXTENSION_KIND, preset.state);
 		})().catch((error: unknown) => {
-			if (!cancelled) {
+			if (runId === agentPreferenceRunRef.current) {
 				onError?.(error);
 			}
 		});
-		return () => {
-			cancelled = true;
-		};
 	}, [
 		extensionMap,
 		handleAddView,
