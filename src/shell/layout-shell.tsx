@@ -1217,6 +1217,7 @@ function LayoutShellLoadedContent({
 		async (_range: AgentTurnCommitRange) => {},
 	);
 	const agentPreferenceAttemptedRef = useRef(false);
+	const fileOpenInterruptRevisionRef = useRef(0);
 	const workspaceIdRef = useRef<string | undefined>(undefined);
 	const mostRecentMarkdownFallbackAttemptedRef = useRef(false);
 	const panelStatesRef = useRef({
@@ -2099,6 +2100,7 @@ function LayoutShellLoadedContent({
 			trackTelemetry,
 			trackDocumentOpenAttempt,
 			trackDocumentViewed,
+			startupFallbackRevision,
 		}: {
 			panel: PanelSide;
 			fileId: string;
@@ -2111,8 +2113,21 @@ function LayoutShellLoadedContent({
 			trackTelemetry?: boolean;
 			trackDocumentOpenAttempt?: boolean;
 			trackDocumentViewed?: boolean;
+			startupFallbackRevision?: number;
 		}) => {
+			const shouldAbortStartupFallback = () =>
+				startupFallbackRevision !== undefined &&
+				(fileOpenInterruptRevisionRef.current !== startupFallbackRevision ||
+					Boolean(activeEntryFromPanel(panelStatesRef.current.central)));
+
+			if (startupFallbackRevision === undefined) {
+				fileOpenInterruptRevisionRef.current += 1;
+			} else if (shouldAbortStartupFallback()) {
+				return;
+			}
+
 			if (hasHistoricalEditorRevisionState(state)) {
+				if (shouldAbortStartupFallback()) return;
 				openResolvedFileView({
 					panel,
 					fileId: _requestedFileId,
@@ -2147,6 +2162,7 @@ function LayoutShellLoadedContent({
 				return;
 			}
 
+			if (shouldAbortStartupFallback()) return;
 			openResolvedFileView({
 				panel,
 				fileId: resolvedFile.id,
@@ -2477,11 +2493,13 @@ function LayoutShellLoadedContent({
 		}
 
 		mostRecentMarkdownFallbackAttemptedRef.current = true;
+		const fallbackRevision = fileOpenInterruptRevisionRef.current;
 		let cancelled = false;
 		void workspaceApi
 			.getMostRecentMarkdownFile()
 			.then(async (file) => {
 				if (cancelled || !file?.path) return;
+				if (fileOpenInterruptRevisionRef.current !== fallbackRevision) return;
 				if (activeEntryFromPanel(panelStatesRef.current.central)) return;
 				await handleOpenFile({
 					panel: "central",
@@ -2489,6 +2507,7 @@ function LayoutShellLoadedContent({
 					filePath: file.path,
 					focus: true,
 					documentOrigin: "existing",
+					startupFallbackRevision: fallbackRevision,
 				});
 			})
 			.catch((error: unknown) => {
@@ -2572,7 +2591,8 @@ function LayoutShellLoadedContent({
 			) {
 				setPreferredAgent(preference.preferredAgent);
 			}
-			const autoLaunchAgent = preference.autoLaunchAgent;
+			const autoLaunchAgent =
+				preference.autoLaunchAgent ?? preference.versionBlockedAutoLaunchAgent;
 			if (autoLaunchAgent !== "claude" && autoLaunchAgent !== "codex") {
 				return;
 			}
@@ -3066,6 +3086,7 @@ function LayoutShellLoadedContent({
 			acceptExternalWriteReview: handleAcceptExternalWriteReview,
 			rejectExternalWriteReview: handleRejectExternalWriteReview,
 			registerExternalWriteReview,
+			activeFileId: activeCentralFileId,
 			activeFilePath,
 			workspace,
 			lix,
@@ -3084,6 +3105,7 @@ function LayoutShellLoadedContent({
 			handleRejectExternalWriteReview,
 			focusPanel,
 			registerNewFileDraftHandler,
+			activeCentralFileId,
 			activeFilePath,
 			workspace,
 			lix,

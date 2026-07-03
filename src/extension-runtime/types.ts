@@ -170,6 +170,8 @@ export interface ExtensionContext {
 		readonly panel?: PanelSide;
 		readonly fileId: string;
 	}) => void;
+	/** File id for the file currently active in the central editor panel. */
+	readonly activeFileId?: string | null;
 	/** Path for the file currently active in the central editor panel. */
 	readonly activeFilePath?: string | null;
 	readonly isPanelFocused?: boolean;

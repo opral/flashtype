@@ -112,11 +112,15 @@ export function choosePreferredAgent(agents) {
 		const preferredAgent = candidates.includes(tier.preferredTie)
 			? tier.preferredTie
 			: candidates[0];
+		const supportsAutoLaunch =
+			tier.autoLaunch && agents[preferredAgent]?.supportedVersion === true;
 		return {
 			agents,
-			autoLaunchAgent: tier.autoLaunch ? preferredAgent : null,
+			autoLaunchAgent: supportsAutoLaunch ? preferredAgent : null,
 			preferredAgent,
 			reason: tier.reason,
+			versionBlockedAutoLaunchAgent:
+				tier.autoLaunch && !supportsAutoLaunch ? preferredAgent : null,
 		};
 	}
 
@@ -125,6 +129,7 @@ export function choosePreferredAgent(agents) {
 		autoLaunchAgent: null,
 		preferredAgent: "claude",
 		reason: "fallback",
+		versionBlockedAutoLaunchAgent: null,
 	};
 }
 

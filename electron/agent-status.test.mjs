@@ -78,23 +78,25 @@ describe("agent preference ranking", () => {
 	test("uses requested tier tie-breaks and auto-launch rules", () => {
 		expect(
 			choosePreferredAgent({
-				claude: status({ authStatus: "paid" }),
-				codex: status({ authStatus: "paid" }),
+				claude: status({ authStatus: "paid", supportedVersion: true }),
+				codex: status({ authStatus: "paid", supportedVersion: true }),
 			}),
 		).toMatchObject({
 			autoLaunchAgent: "claude",
 			preferredAgent: "claude",
 			reason: "paid",
+			versionBlockedAutoLaunchAgent: null,
 		});
 		expect(
 			choosePreferredAgent({
-				claude: status({ authStatus: "free" }),
-				codex: status({ authStatus: "free" }),
+				claude: status({ authStatus: "free", supportedVersion: true }),
+				codex: status({ authStatus: "free", supportedVersion: true }),
 			}),
 		).toMatchObject({
 			autoLaunchAgent: "codex",
 			preferredAgent: "codex",
 			reason: "free",
+			versionBlockedAutoLaunchAgent: null,
 		});
 		expect(
 			choosePreferredAgent({
@@ -125,6 +127,42 @@ describe("agent preference ranking", () => {
 			autoLaunchAgent: null,
 			preferredAgent: "codex",
 			reason: "installed",
+		});
+	});
+
+	test("blocks paid and free auto-launches when the selected agent version is unsupported", () => {
+		expect(
+			choosePreferredAgent({
+				claude: status({ authStatus: "paid", supportedVersion: false }),
+				codex: status({ authStatus: "paid", supportedVersion: true }),
+			}),
+		).toMatchObject({
+			autoLaunchAgent: null,
+			preferredAgent: "claude",
+			reason: "paid",
+			versionBlockedAutoLaunchAgent: "claude",
+		});
+		expect(
+			choosePreferredAgent({
+				claude: status({ authStatus: "free", supportedVersion: true }),
+				codex: status({ authStatus: "free", supportedVersion: false }),
+			}),
+		).toMatchObject({
+			autoLaunchAgent: null,
+			preferredAgent: "codex",
+			reason: "free",
+			versionBlockedAutoLaunchAgent: "codex",
+		});
+		expect(
+			choosePreferredAgent({
+				claude: status({ authStatus: "paid", supportedVersion: false }),
+				codex: status({ authStatus: "free", supportedVersion: true }),
+			}),
+		).toMatchObject({
+			autoLaunchAgent: null,
+			preferredAgent: "claude",
+			reason: "paid",
+			versionBlockedAutoLaunchAgent: "claude",
 		});
 	});
 });

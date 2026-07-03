@@ -142,6 +142,7 @@ export type DesktopAgentPreferencePayload =
 export type DesktopAgentPreferenceResult = {
 	preferredAgent: DesktopAgentName;
 	autoLaunchAgent: DesktopAgentName | null;
+	versionBlockedAutoLaunchAgent: DesktopAgentName | null;
 	reason: DesktopAgentPreferenceReason;
 	agents: Record<DesktopAgentName, DesktopAgentStatus>;
 };

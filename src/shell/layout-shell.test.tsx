@@ -760,6 +760,51 @@ describe("V2LayoutShell central file views", () => {
 		await lix.close();
 	});
 
+	test("ignores a stale most recent markdown fallback after a manual file open starts", async () => {
+		let resolveFallback:
+			| ((file: { readonly path: string } | null) => void)
+			| undefined;
+		const fallbackFile = new Promise<{ readonly path: string } | null>(
+			(resolve) => {
+				resolveFallback = resolve;
+			},
+		);
+		const desktop = installDesktopMock({
+			mostRecentMarkdownFile: fallbackFile,
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(filesViewOnlyState())],
+		});
+		await writeReviewFile(lix, "file_manual", "/manual.md", "# Manual");
+		await writeReviewFile(lix, "file_recent", "/recent.md", "# Recent");
+
+		const utils = await renderShell(lix);
+
+		await openFilesTab();
+		await waitFor(() =>
+			expect(desktop.getMostRecentMarkdownFile).toHaveBeenCalledTimes(1),
+		);
+		const manualFile = await findFilesViewTreeItemByPath(
+			utils.container,
+			"manual.md",
+		);
+		await act(async () => {
+			fireEvent.click(manualFile, { bubbles: true, composed: true });
+			resolveFallback?.({ path: "/recent.md" });
+			await fallbackFile;
+		});
+
+		await waitForPersistedActiveState(lix, "file_manual", "/manual.md");
+		await waitFor(async () => {
+			expect(centralFilePaths(await readPersistedUiState(lix))).toEqual([
+				"/manual.md",
+			]);
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
 	test("keeps pending launch files ahead of the most recent markdown fallback", async () => {
 		const desktop = installDesktopMock({
 			mostRecentMarkdownFile: { path: "/recent.md" },
@@ -1064,6 +1109,40 @@ describe("V2LayoutShell agent preference auto-launch", () => {
 			agentPreference: agentPreferenceResult({
 				preferredAgent: "codex",
 				autoLaunchAgent: "codex",
+				reason: "free",
+			}),
+		});
+		const lix = await openLix({
+			keyValues: [uiStateKeyValue(noFilesViewState())],
+		});
+
+		const utils = await renderShell(lix);
+
+		await waitFor(() =>
+			expect(desktop.getPreferredAgent).toHaveBeenCalledTimes(1),
+		);
+		expect(await screen.findByTestId("terminal-view")).toHaveAttribute(
+			"data-agent",
+			"codex",
+		);
+		await waitFor(async () => {
+			const rightViews =
+				(await readPersistedUiState(lix))?.panels.right.views ?? [];
+			expect(rightViews).toHaveLength(1);
+			expect(rightViews[0]?.kind).toBe(TERMINAL_EXTENSION_KIND);
+			expect(rightViews[0]?.state?.flashtype?.icon).toBe("codex");
+		});
+
+		await unmountShell(utils);
+		await lix.close();
+	});
+
+	test("auto-opens the agent terminal for a version-blocked auto-launch once", async () => {
+		const desktop = installDesktopMock({
+			agentPreference: agentPreferenceResult({
+				preferredAgent: "codex",
+				autoLaunchAgent: null,
+				versionBlockedAutoLaunchAgent: "codex",
 				reason: "free",
 			}),
 		});
@@ -1490,7 +1569,10 @@ async function unmountShell(utils: ReturnType<typeof render>): Promise<void> {
 
 function installDesktopMock(
 	options: {
-		readonly mostRecentMarkdownFile?: { readonly path: string } | null;
+		readonly mostRecentMarkdownFile?:
+			| { readonly path: string }
+			| null
+			| Promise<{ readonly path: string } | null>;
 		readonly agentPreference?: DesktopAgentPreferenceResult;
 	} = {},
 ): DesktopMock {
@@ -1642,7 +1724,12 @@ function agentPreferenceResult(
 		DesktopAgentPreferenceResult,
 		"preferredAgent" | "autoLaunchAgent" | "reason"
 	> &
-		Partial<Pick<DesktopAgentPreferenceResult, "agents">>,
+		Partial<
+			Pick<
+				DesktopAgentPreferenceResult,
+				"agents" | "versionBlockedAutoLaunchAgent"
+			>
+		>,
 ): DesktopAgentPreferenceResult {
 	return {
 		...overrides,
@@ -1660,6 +1747,8 @@ function agentPreferenceResult(
 					supportedVersion: false,
 				},
 			} satisfies DesktopAgentPreferenceResult["agents"]),
+		versionBlockedAutoLaunchAgent:
+			overrides.versionBlockedAutoLaunchAgent ?? null,
 	};
 }
 

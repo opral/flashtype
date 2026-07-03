@@ -329,6 +329,7 @@ function createTerminalApi(): DesktopTerminalApi {
 		getPreferredAgent: vi.fn().mockResolvedValue({
 			preferredAgent: "claude",
 			autoLaunchAgent: null,
+			versionBlockedAutoLaunchAgent: null,
 			reason: "fallback",
 			agents: {
 				claude: {
