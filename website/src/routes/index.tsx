@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
-	GITHUB_LATEST_RELEASE_URL,
+	DOWNLOAD_URL,
 	GITHUB_URL,
-	latestMacDmgDownloadUrl,
 } from "../download";
 
 export const Route = createFileRoute("/")({
@@ -77,20 +76,9 @@ const FEATURE_ROWS = [
 	badge?: string;
 }>;
 
-async function handleDownloadClick(event: MouseEvent<HTMLAnchorElement>) {
-	event.preventDefault();
-
-	try {
-		window.location.href = await latestMacDmgDownloadUrl();
-	} catch (error) {
-		console.error(error);
-		window.location.href = GITHUB_LATEST_RELEASE_URL;
-	}
-}
-
 function DownloadLink({ children, className }: { children: ReactNode; className: string }) {
 	return (
-		<a href={GITHUB_LATEST_RELEASE_URL} onClick={handleDownloadClick} className={className}>
+		<a href={DOWNLOAD_URL} className={className}>
 			{children}
 		</a>
 	);

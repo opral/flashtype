@@ -3,6 +3,7 @@ export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 export const GITHUB_LATEST_RELEASE_URL = `${GITHUB_RELEASES_URL}/latest`;
 export const GITHUB_LATEST_RELEASE_API_URL =
 	"https://api.github.com/repos/opral/flashtype/releases/latest";
+export const DOWNLOAD_URL = "/download";
 
 type GitHubReleaseAsset = {
 	name: string;
