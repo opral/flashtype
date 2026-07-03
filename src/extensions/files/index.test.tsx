@@ -618,6 +618,71 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
+	test("Cmd+Backspace deletes the active file id, not the active path", async () => {
+		const lix = await openLix();
+		const closeFileViews = vi.fn();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{
+					id: "file_viewed",
+					path: "/viewed.md",
+					data: new Uint8Array(),
+				},
+				{
+					id: "file_at_path",
+					path: "/path-active.md",
+					data: new Uint8Array(),
+				},
+			])
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView
+							context={createViewContext(lix, {
+								activeFileId: "file_viewed",
+								activeFilePath: "/path-active.md",
+								closeFileViews,
+							})}
+						/>
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(queryTreeItemByLabel(utils!, "viewed.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+		});
+
+		await act(async () => {
+			fireEvent.keyDown(document, { key: "Backspace", metaKey: true });
+		});
+
+		await waitFor(async () => {
+			const rows = await qb(lix)
+				.selectFrom("lix_file")
+				.select(["id", "path"])
+				.execute();
+			expect(rows.some((row) => row.id === "file_viewed")).toBe(false);
+			expect(rows).toContainEqual({
+				id: "file_at_path",
+				path: "/path-active.md",
+			});
+		});
+
+		expect(closeFileViews).toHaveBeenCalledWith({ fileId: "file_viewed" });
+
+		utils!.unmount();
+		await lix.close();
+	});
+
 	test("Cmd+Backspace in an empty editor keeps a newly created selected file and editor event", async () => {
 		const lix = await openLix();
 		const openFile = vi.fn();
@@ -996,7 +1061,12 @@ describe("FilesView", () => {
 				.values({ path: "/docs/" } as any)
 				.execute();
 			await writeReviewFile(lix, "file_live", "/docs/live.md", "after");
-			await writeReviewFile(lix, "file_live_only", "/docs/live-only.md", "head");
+			await writeReviewFile(
+				lix,
+				"file_live_only",
+				"/docs/live-only.md",
+				"head",
+			);
 
 			let utils: ReturnType<typeof render>;
 			await act(async () => {
@@ -1064,9 +1134,9 @@ describe("FilesView", () => {
 					"data-item-git-status",
 					"recreated",
 				);
-				expect(queryTreeItemByLabel(utils!, "unchanged.md")).not.toHaveAttribute(
-					"data-item-git-status",
-				);
+				expect(
+					queryTreeItemByLabel(utils!, "unchanged.md"),
+				).not.toHaveAttribute("data-item-git-status");
 				expect(queryTreeItemByLabel(utils!, "live-only.md")).toBeNull();
 			});
 

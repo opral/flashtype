@@ -133,7 +133,7 @@ function FilesViewContent({
 	const [selectedSource, setSelectedSource] =
 		useState<FilesystemTreeSource | null>(null);
 	const selectedKindRef = useRef(selectedKind);
-	const syncedActiveFilePathRef = useRef<string | null>(null);
+	const syncedActiveFileSelectionRef = useRef<string | null>(null);
 	const [isDraggingOver, setIsDraggingOver] = useState(false);
 	const dragCounterRef = useRef(0);
 	const entryPathSet = useMemo(() => {
@@ -164,6 +164,10 @@ function FilesViewContent({
 		}
 		return combined;
 	}, [entryDirectorySet, pendingDirectoryPaths]);
+	const activeFileId =
+		typeof context?.activeFileId === "string" && context.activeFileId.length > 0
+			? context.activeFileId
+			: null;
 	const activeFilePath = context?.activeFilePath ?? null;
 	useEffect(() => {
 		if (pendingPaths.length === 0) return;
@@ -180,13 +184,18 @@ function FilesViewContent({
 	}, [selectedKind]);
 	useEffect(() => {
 		if (createRequest) return;
+		const activeIdentity = activeFileId
+			? `id:${activeFileId}`
+			: activeFilePath
+				? `path:${normalizeFilePath(activeFilePath)}`
+				: null;
 		const normalizedActiveFilePath =
 			typeof activeFilePath === "string" && activeFilePath.length > 0
 				? normalizeFilePath(activeFilePath)
 				: null;
 
-		if (!normalizedActiveFilePath) {
-			syncedActiveFilePathRef.current = null;
+		if (!activeIdentity) {
+			syncedActiveFileSelectionRef.current = null;
 			if (selectedKindRef.current === "file") {
 				setSelectedPath(null);
 				setSelectedFileId(null);
@@ -197,15 +206,15 @@ function FilesViewContent({
 			return;
 		}
 
-		if (syncedActiveFilePathRef.current === normalizedActiveFilePath) {
-			return;
-		}
-
-		const activeEntry = combinedEntries.find(
-			(entry) =>
-				entry.kind === "file" &&
-				filesystemEntryPathKey(entry) === normalizedActiveFilePath,
-		);
+		const activeEntry = activeFileId
+			? combinedEntries.find(
+					(entry) => entry.kind === "file" && entry.id === activeFileId,
+				)
+			: combinedEntries.find(
+					(entry) =>
+						entry.kind === "file" &&
+						filesystemEntryPathKey(entry) === normalizedActiveFilePath,
+				);
 
 		if (!activeEntry) {
 			if (selectedKindRef.current === "file") {
@@ -218,16 +227,20 @@ function FilesViewContent({
 			return;
 		}
 
-		syncedActiveFilePathRef.current = normalizedActiveFilePath;
+		const activeEntryPath = filesystemEntryPathKey(activeEntry);
+		const activeSelectionKey = `${activeIdentity}:${activeEntryPath}`;
+		if (syncedActiveFileSelectionRef.current === activeSelectionKey) {
+			return;
+		}
+
+		syncedActiveFileSelectionRef.current = activeSelectionKey;
 		selectedKindRef.current = "file";
-		setSelectedPath(normalizedActiveFilePath);
+		setSelectedPath(activeEntryPath);
 		setSelectedFileId(activeEntry.id);
 		setSelectedKind("file");
 		setSelectedSource(activeEntry.source ?? "lix");
 		setOpenDirectoryPaths((prev) => {
-			const ancestors = ancestorDirectoryPathsForFilePath(
-				normalizedActiveFilePath,
-			);
+			const ancestors = ancestorDirectoryPathsForFilePath(activeEntryPath);
 			if (ancestors.length === 0) return prev;
 			const next = new Set(prev);
 			let changed = false;
@@ -239,7 +252,7 @@ function FilesViewContent({
 			}
 			return changed ? next : prev;
 		});
-	}, [activeFilePath, combinedEntries, createRequest]);
+	}, [activeFileId, activeFilePath, combinedEntries, createRequest]);
 	const isMacPlatform = useMemo(() => detectMacPlatform(), []);
 	const isPanelFocused = context?.isPanelFocused ?? false;
 	const registerNewFileDraftHandler = context?.registerNewFileDraftHandler;
@@ -662,16 +675,15 @@ function FilesViewContent({
 				: ensureDirectoryPath(selectedPath);
 		try {
 			if (selectedKind === "file") {
+				if (!selectedFileId) return;
 				await qb(lix)
 					.deleteFrom("lix_file")
-					.where("path", "=", normalizedPath)
+					.where("id", "=", selectedFileId)
 					.execute();
 				setPendingPaths((prev) =>
 					prev.filter((path) => path !== normalizedPath),
 				);
-				if (selectedFileId) {
-					context?.closeFileViews?.({ fileId: selectedFileId });
-				}
+				context?.closeFileViews?.({ fileId: selectedFileId });
 			} else {
 				await qb(lix)
 					.deleteFrom("lix_directory")

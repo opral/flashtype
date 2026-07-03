@@ -141,6 +141,7 @@ test("deleting the active file closes the central file view", async ({
 		).toBeVisible();
 
 		await file.click();
+		await file.focus();
 		await page.keyboard.press(deleteShortcut);
 
 		await expect(file).toHaveCount(0);
