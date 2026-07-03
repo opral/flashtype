@@ -185,7 +185,7 @@ if [ "$1" = "--version" ]; then
   exit 0
 fi
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
-  printf "%s\\n" '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","subscriptionType":"pro"}'
+  printf "\\0337\\033[r\\0338%s\\033(B\\017\\n" '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","subscriptionType":"pro"}'
   exit 0
 fi
 exit 1
@@ -201,8 +201,8 @@ fi
 if [ "$1" = "app-server" ] && [ "$2" = "--stdio" ]; then
   while IFS= read -r line; do
     case "$line" in
-      *\\"id\\":1*) printf "%s\\n" '{"id":1,"result":{}}' ;;
-      *\\"method\\":\\"account/read\\"*) printf "%s\\n" '{"id":2,"result":{"account":{"type":"chatgpt","email":null,"planType":"free"},"requiresOpenaiAuth":true}}'; exit 0 ;;
+      *\\"id\\":1*) printf "\\033]0;codex\\007%s\\033(B\\017\\n" '{"id":1,"result":{}}' ;;
+      *\\"method\\":\\"account/read\\"*) printf "\\0337\\033[3G%s\\0338\\017\\n" '{"id":2,"result":{"account":{"type":"chatgpt","email":null,"planType":"free"},"requiresOpenaiAuth":true}}'; exit 0 ;;
     esac
   done
 fi

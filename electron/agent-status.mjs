@@ -23,10 +23,19 @@ const CODEX_PAID_PLAN_TYPES = new Set([
 ]);
 const AGENT_STATUS_TIMEOUT_MS = 8_000;
 const MAX_PROBE_OUTPUT_LENGTH = 16 * 1024;
-const ANSI_ESCAPE_PATTERN = new RegExp(
-	`${escapeRegExp(String.fromCharCode(27))}\\[[0-?]*[ -/]*[@-~]`,
+const ESC = String.fromCharCode(27);
+const TERMINAL_CONTROL_SEQUENCE_PATTERN = new RegExp(
+	[
+		`${escapeRegExp(ESC)}\\][\\s\\S]*?(?:\\x07|${escapeRegExp(ESC)}\\\\)`,
+		`${escapeRegExp(ESC)}[P^_X][\\s\\S]*?${escapeRegExp(ESC)}\\\\`,
+		`${escapeRegExp(ESC)}\\[[0-?]*[ -/]*[@-~]`,
+		`${escapeRegExp(ESC)}[()][0-2AB]`,
+		`${escapeRegExp(ESC)}[78]`,
+		`${escapeRegExp(ESC)}[@-Z\\\\-_]`,
+	].join("|"),
 	"gu",
 );
+const C0_CONTROL_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/gu;
 
 export async function getPreferredAgent(args = {}) {
 	const probeArgs = normalizeProbeArgs(args);
@@ -309,7 +318,6 @@ function runMarkedCommandProbe(args) {
 			});
 		});
 		terminal.write(`${buildMarkedCommandLine(args.command)}\r`);
-		terminal.write("exit\r");
 	});
 }
 
@@ -433,7 +441,7 @@ function buildMarkedCommandLine(command) {
 		'printf "%s %s\\n" "$FLASHTYPE_AGENT_STATUS_PROBE_END" "$__flashtype_agent_status"',
 		'exit "$__flashtype_agent_status"',
 	].join("; ");
-	return `/bin/sh -c ${shellQuote(script)}`;
+	return `exec /bin/sh -c ${shellQuote(script)}`;
 }
 
 function buildCodexAccountCommandLine() {
@@ -441,7 +449,7 @@ function buildCodexAccountCommandLine() {
 		'printf "%s\\n" "$FLASHTYPE_CODEX_ACCOUNT_PROBE_START"',
 		"codex app-server --stdio",
 	].join("; ");
-	return `/bin/sh -c ${shellQuote(script)}`;
+	return `exec /bin/sh -c ${shellQuote(script)}`;
 }
 
 function extractMarkedProbeResult(output, markers) {
@@ -510,7 +518,8 @@ function createProbeMarkers(prefix) {
 
 function normalizeProbeOutput(output) {
 	return String(output ?? "")
-		.replace(ANSI_ESCAPE_PATTERN, "")
+		.replace(TERMINAL_CONTROL_SEQUENCE_PATTERN, "")
+		.replace(C0_CONTROL_PATTERN, "")
 		.replace(/\r/g, "")
 		.trim();
 }
