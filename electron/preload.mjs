@@ -30,6 +30,10 @@ const workspace = {
 	clearRecovery: () => ipcRenderer.invoke("workspace:clearRecovery"),
 	consumePendingOpenFiles: () =>
 		ipcRenderer.invoke("workspace:consumePendingOpenFiles"),
+	beginAgentTurnFileCapture: (payload) =>
+		ipcRenderer.invoke("workspace:beginAgentTurnFileCapture", payload),
+	finishAgentTurnFileCapture: (payload) =>
+		ipcRenderer.invoke("workspace:finishAgentTurnFileCapture", payload),
 	setEphemeralWatchedDirectories: (payload) =>
 		ipcRenderer.invoke("workspace:setEphemeralWatchedDirectories", payload),
 	onEphemeralWatchedFileTreeChanged: (listener) => {
@@ -59,10 +63,6 @@ const workspace = {
 	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
 	openInNewWindow: (payload) =>
 		ipcRenderer.invoke("workspace:openInNewWindow", payload),
-	setActiveFilePath: (payload) =>
-		ipcRenderer.invoke("workspace:setActiveFilePath", payload),
-	setOpenFilePaths: (payload) =>
-		ipcRenderer.invoke("workspace:setOpenFilePaths", payload),
 	exportLixFile: () => ipcRenderer.invoke("workspace:exportLixFile"),
 	resetLixRepository: () => ipcRenderer.invoke("workspace:resetLixRepository"),
 	disableTrackChanges: () =>

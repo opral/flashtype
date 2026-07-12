@@ -79,15 +79,15 @@ export async function ensureFilesViewOpenInLeftPanel(
 	page: Page,
 ): Promise<void> {
 	const leftPanel = page.locator("aside").first();
-	const filesTab = leftPanel
-		.locator('[data-view-key="flashtype_files"]')
-		.first();
+	const filesTab = leftPanel.locator('[data-view-key="atelier_files"]').first();
+	const leftPanelToggle = page.getByLabel("Toggle left panel");
 
-	if ((await panelSize(filesTab)) <= 1) {
-		await page.getByLabel("Toggle left panel").click();
+	await expect(leftPanelToggle).toBeVisible();
+	if ((await leftPanelToggle.getAttribute("aria-pressed")) !== "true") {
+		await leftPanelToggle.click();
 	}
 
-	await expect.poll(() => panelSize(filesTab)).toBeGreaterThan(1);
+	await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
 	await expect(filesTab).toBeVisible();
 	await filesTab.click();
 	await expect(filesTab).toHaveAttribute("data-focused", "true");
@@ -98,28 +98,29 @@ export async function ensureHistoryViewOpenInLeftPanel(
 ): Promise<void> {
 	const leftPanel = page.locator("aside").first();
 	let historyTab = leftPanel
-		.locator('[data-view-key="flashtype_history"]')
+		.locator('[data-view-key="atelier_history"]')
 		.first();
+	const leftPanelToggle = page.getByLabel("Toggle left panel");
 
 	if ((await historyTab.count()) === 0) {
-		const addViewButton = leftPanel.getByLabel("Add view").first();
-		if ((await panelSize(addViewButton)) <= 1) {
-			await page.getByLabel("Toggle left panel").click();
+		await expect(leftPanelToggle).toBeVisible();
+		if ((await leftPanelToggle.getAttribute("aria-pressed")) !== "true") {
+			await leftPanelToggle.click();
 		}
-		await expect.poll(() => panelSize(addViewButton)).toBeGreaterThan(1);
+		await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
+		const addViewButton = leftPanel.getByLabel("Add view").first();
 		await expect(addViewButton).toBeVisible();
 		await addViewButton.click();
 		await page.getByRole("menuitem", { name: "History", exact: true }).click();
-		historyTab = leftPanel
-			.locator('[data-view-key="flashtype_history"]')
-			.first();
+		historyTab = leftPanel.locator('[data-view-key="atelier_history"]').first();
 	}
 
-	if ((await panelSize(historyTab)) <= 1) {
-		await page.getByLabel("Toggle left panel").click();
+	await expect(leftPanelToggle).toBeVisible();
+	if ((await leftPanelToggle.getAttribute("aria-pressed")) !== "true") {
+		await leftPanelToggle.click();
 	}
 
-	await expect.poll(() => panelSize(historyTab)).toBeGreaterThan(1);
+	await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
 	await expect(historyTab).toBeVisible();
 	await historyTab.click();
 	await expect(historyTab).toHaveAttribute("data-focused", "true");
@@ -251,17 +252,6 @@ export async function closeElectronApp(
 		`[e2e] Electron did not close within ${electronCloseTimeoutMs}ms; killing process`,
 	);
 	await killElectronProcess(childProcess);
-}
-
-async function panelSize(
-	locator: ReturnType<Page["locator"]>,
-): Promise<number> {
-	const rawSize = await locator.evaluate((element) => {
-		return element
-			.closest("[data-panel-size]")
-			?.getAttribute("data-panel-size");
-	});
-	return Number(rawSize ?? 0);
 }
 
 async function readBinaryFile(filePath: string): Promise<number> {

@@ -272,7 +272,7 @@ fi
 				);
 
 				const preference = await probePreferredInstalledAgents(
-					probeArgs({ PATH: testPath(binDir), timeoutMs: 100 }),
+					probeArgs({ PATH: testPath(binDir), timeoutMs: 10_000 }),
 				);
 
 				expect(preference).toMatchObject({

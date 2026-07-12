@@ -463,7 +463,7 @@ async function openStressMarkdown(page: Page): Promise<void> {
 		page.locator('[data-testid="tiptap-editor"] .ProseMirror'),
 	).toBeVisible();
 	await expect(
-		page.locator('[data-active="true"][data-view-key="flashtype_file"]'),
+		page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 	).toBeVisible();
 }
 

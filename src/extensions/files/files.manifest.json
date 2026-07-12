@@ -1,0 +1,6 @@
+{
+	"apiVersion": 1,
+	"id": "atelier_files",
+	"name": "Files",
+	"description": "Browse files from the local FlashType workspace."
+}

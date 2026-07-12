@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
@@ -13,11 +13,14 @@ import {
 
 test.skip(process.platform === "win32", "fake codex helper is POSIX-only");
 
-test.skip("restored markdown file shows a review after Codex edits it", async ({
+test("Atelier reveals a review after Codex edits restored markdown", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const userDataDir = testInfo.outputPath("user-data");
 	const workspaceDir = testInfo.outputPath("workspace");
+	const welcomeFilePath = path.join(workspaceDir, "welcome.md");
+	const changelogFilePath = path.join(workspaceDir, "changelog.md");
+	const createdFilePath = path.join(workspaceDir, "codex-created.md");
 	const fakeBinDir = testInfo.outputPath("fake-bin");
 	const originalPath = process.env.PATH;
 	const originalShell = process.env.SHELL;
@@ -25,6 +28,8 @@ test.skip("restored markdown file shows a review after Codex edits it", async ({
 	let electronApp: ElectronApplication | undefined;
 	try {
 		await writeStarterFiles(workspaceDir);
+		const newestMarkdownTime = new Date(Date.now() + 1_000);
+		await utimes(welcomeFilePath, newestMarkdownTime, newestMarkdownTime);
 		await writeFile(
 			path.join(workspaceDir, "binary.bin"),
 			new Uint8Array([0x80, 0xff, 0x00]),
@@ -52,19 +57,31 @@ test.skip("restored markdown file shows a review after Codex edits it", async ({
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
 		await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 
-		await page.getByRole("button", { name: "Use Codex instead" }).click();
+		await page.locator('[data-attr="agent-start-codex"]').click();
 		await expect
-			.poll(
-				async () =>
-					await readFile(path.join(workspaceDir, "welcome.md"), "utf8"),
-			)
+			.poll(async () => await readFile(welcomeFilePath, "utf8"))
 			.toContain("Codex e2e edit");
+		await expect
+			.poll(async () => await readFile(changelogFilePath, "utf8"))
+			.toContain("Codex unopened edit");
+		await expect
+			.poll(async () => await readFile(createdFilePath, "utf8"))
+			.toContain("Codex created file");
 
 		await expect(
 			page.getByRole("group", { name: "External write review actions" }),
 		).toBeVisible();
 		await expect(page.getByRole("button", { name: "Keep" })).toBeVisible();
 		await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+		await ensureFilesViewOpenInLeftPanel(page);
+		await expect(fileTreeFile(page, "/changelog.md")).toHaveAttribute(
+			"data-item-git-status",
+			"modified",
+		);
+		await expect(fileTreeFile(page, "/codex-created.md")).toHaveAttribute(
+			"data-item-git-status",
+			"modified",
+		);
 	} finally {
 		process.env.PATH = originalPath;
 		if (originalShell === undefined) {
@@ -84,7 +101,7 @@ async function openWelcomeMarkdown(page: Page): Promise<void> {
 	await expect(file).toHaveAttribute("data-item-selected", "true");
 	await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 	await expect(
-		page.locator('[data-active="true"][data-view-key="flashtype_file"]'),
+		page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 	).toBeVisible();
 }
 
@@ -100,7 +117,7 @@ async function expectOpenFilePersisted(
 					params: [key],
 				});
 				return JSON.stringify(result?.rows?.[0]?.[0] ?? null);
-			}, "flashtype_ui_state");
+			}, "atelier_ui_state");
 		})
 		.toContain(filePath);
 }
@@ -111,11 +128,15 @@ async function writeFakeCodex(binDir: string): Promise<void> {
 	await writeFile(
 		scriptPath,
 		`#!/usr/bin/env node
-import { appendFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
 const args = process.argv.slice(2);
+if (args.includes("--version")) {
+	console.log("codex-cli 0.134.0");
+	process.exit(0);
+}
 const configs = [];
 for (let index = 0; index < args.length; index += 1) {
 	if (args[index] === "-c") {
@@ -126,6 +147,8 @@ for (let index = 0; index < args.length; index += 1) {
 
 await runHook("UserPromptSubmit", "turn-start");
 await appendFile(join(process.cwd(), "welcome.md"), "\\nCodex e2e edit.\\n");
+await appendFile(join(process.cwd(), "changelog.md"), "\\nCodex unopened edit.\\n");
+await writeFile(join(process.cwd(), "codex-created.md"), "# Codex created file\\n");
 await runHook("Stop", "turn-stop");
 console.log("fake codex complete");
 

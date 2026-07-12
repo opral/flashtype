@@ -2,3 +2,7 @@
 	path = submodule/lix
 	url = https://github.com/opral/lix.git
 	branch = main
+[submodule "submodule/atelier"]
+	path = submodule/atelier
+	url = https://github.com/opral/atelier.git
+	branch = main

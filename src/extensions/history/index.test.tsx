@@ -119,10 +119,10 @@ describe("HistoryView", () => {
 		expect(active.value).toBe(initialActiveBranchId);
 	});
 
-	test("passes visible sorted checkpoint rows to the diff resolver", async () => {
+	test("passes the selected branch id to the revision API", async () => {
 		const branchB = await lix.createBranch({ name: "b-checkpoint" });
-		const branchA = await lix.createBranch({ name: "a-checkpoint" });
-		const showCheckpointDiff = vi.fn().mockResolvedValue(null);
+		await lix.createBranch({ name: "a-checkpoint" });
+		const showCheckpointDiff = vi.fn().mockResolvedValue(undefined);
 
 		await renderWithProviders({ showCheckpointDiff });
 
@@ -134,21 +134,7 @@ describe("HistoryView", () => {
 		});
 
 		expect(showCheckpointDiff).toHaveBeenCalledTimes(1);
-		expect(showCheckpointDiff).toHaveBeenCalledWith({
-			branchId: branchB.id,
-			branches: expect.arrayContaining([
-				expect.objectContaining({ id: branchA.id, name: "a-checkpoint" }),
-				expect.objectContaining({ id: branchB.id, name: "b-checkpoint" }),
-			]),
-		});
-		const diffArgs = showCheckpointDiff.mock.calls[0]?.[0] as
-			| { branches: Array<{ name: string }> }
-			| undefined;
-		expect(diffArgs?.branches.map((branch) => branch.name)).toEqual([
-			"a-checkpoint",
-			"b-checkpoint",
-			"main",
-		]);
+		expect(showCheckpointDiff).toHaveBeenCalledWith(branchB.id);
 		expect(checkpoint).not.toHaveAttribute("data-selected");
 		expect(selectedCheckpointButtons()).toHaveLength(0);
 	});
@@ -158,15 +144,7 @@ describe("HistoryView", () => {
 		const clearCheckpointDiff = vi.fn();
 
 		await renderWithProviders({
-			checkpointDiff: {
-				branchId: target.id,
-				branchName: target.name,
-				beforeBranchId: "before",
-				beforeBranchName: "before",
-				beforeCommitId: "before-commit",
-				afterCommitId: "after-commit",
-				files: [],
-			},
+			currentRevision: { branchId: target.id },
 			clearCheckpointDiff,
 		});
 

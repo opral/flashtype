@@ -1,0 +1,7 @@
+{
+	"apiVersion": 1,
+	"id": "flashtype_codex",
+	"name": "Codex",
+	"description": "Run Codex in this workspace.",
+	"multiInstance": true
+}

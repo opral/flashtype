@@ -216,6 +216,10 @@ export type DesktopAgentTurnEvent = {
 	createdAt: number;
 };
 
+export type DesktopAgentTurnFileCapturePayload = {
+	captureId: string;
+};
+
 export type DesktopAgentTurnEventResult =
 	| void
 	| string
@@ -290,6 +294,12 @@ export type DesktopWorkspaceApi = {
 	clearRecovery(): Promise<void>;
 	/** Returns workspace-relative file paths queued for editor opening. */
 	consumePendingOpenFiles(): Promise<string[]>;
+	beginAgentTurnFileCapture(
+		payload: DesktopAgentTurnFileCapturePayload,
+	): Promise<{ baselinePaths: string[] }>;
+	finishAgentTurnFileCapture(
+		payload: DesktopAgentTurnFileCapturePayload,
+	): Promise<string[]>;
 	setEphemeralWatchedDirectories(payload: {
 		ownerId: string;
 		paths: string[];
@@ -314,8 +324,6 @@ export type DesktopWorkspaceApi = {
 	 * directory picker. Resolves to null when the picker is canceled.
 	 */
 	openInNewWindow(payload?: { path: string }): Promise<DesktopWorkspace | null>;
-	setActiveFilePath(payload: { filePath: string | null }): Promise<void>;
-	setOpenFilePaths(payload: { filePaths: string[] }): Promise<void>;
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	disableTrackChanges(): Promise<DesktopWorkspace>;

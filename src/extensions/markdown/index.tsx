@@ -1,13 +1,8 @@
 import { Suspense, useEffect } from "react";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Check, ExternalLink, FileText, Github, Loader2 } from "lucide-react";
-import {
-	LixProvider,
-	useLix,
-	useQuery,
-	useQueryTakeFirst,
-} from "@/lib/lix-react";
+import { Check, ExternalLink, Github, Loader2 } from "lucide-react";
+import { useLix, useQuery, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
 import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
 import { EditorProvider } from "@/extensions/markdown/editor/editor-context";
@@ -21,8 +16,6 @@ import { renderMarkdownAstEditorHtml } from "@/extensions/markdown/editor/render
 import { parseMarkdown } from "@/extensions/markdown/editor/markdown";
 import { renderMarkdownReviewDiffHtml } from "./render-review-diff-html";
 import "./style.css";
-import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
-import { FILE_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import { FormattingToolbar } from "./components/formatting-toolbar";
 import { SlashCommandMenu } from "./components/slash-command-menu";
 import type { MarkdownBlockSnapshot, MarkdownReviewDiff } from "./review-diff";
@@ -1051,46 +1044,3 @@ function MarkdownLoadingSpinner(): ReactNode {
 		</div>
 	);
 }
-
-/**
- * Markdown content view definition used by the registry.
- *
- * @example
- * import { extension as markdownView } from "@/extensions/markdown";
- */
-export const extension = createReactExtensionDefinition({
-	kind: FILE_EXTENSION_KIND,
-	label: "File",
-	description: "Display file contents.",
-	icon: FileText,
-	fileExtensions: ["md", "markdown"],
-	component: ({ context, instance }) => (
-		<LixProvider lix={context.lix}>
-			<MarkdownView
-				fileId={instance.state?.fileId as string}
-				filePath={instance.state?.filePath as string | undefined}
-				isActiveView={context.isActiveView ?? false}
-				isPanelFocused={context.isPanelFocused ?? false}
-				focusOnLoad={Boolean(instance.state?.focusOnLoad)}
-				defaultBlock={
-					instance.state?.defaultBlock === "heading1" ? "heading1" : undefined
-				}
-				syncActiveFile={false}
-				checkpointDiff={context.checkpointDiff}
-				beforeCommitId={
-					typeof instance.state?.beforeCommitId === "string"
-						? instance.state.beforeCommitId
-						: null
-				}
-				afterCommitId={
-					typeof instance.state?.afterCommitId === "string"
-						? instance.state.afterCommitId
-						: null
-				}
-				registerExternalWriteReview={context.registerExternalWriteReview}
-				onAcceptReviewDiff={context.acceptExternalWriteReview}
-				onRejectReviewDiff={context.rejectExternalWriteReview}
-			/>
-		</LixProvider>
-	),
-});

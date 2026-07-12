@@ -1,8 +1,3 @@
-import {
-	DEFAULT_FLASHTYPE_UI_STATE,
-	type FlashtypeUiState,
-} from "@/shell/ui-state";
-
 export type KeyValueBranchId = "active" | "global" | string;
 
 export type KeyDef<V> = {
@@ -18,15 +13,6 @@ export const KEY_VALUE_DEFINITIONS = {
 		defaultBranchId: "global",
 		untracked: true,
 	} as KeyDef<string | null>,
-
-	/**
-	 * Serialized layout snapshot for the v2 prototype (panels, tabs, focus).
-	 */
-	flashtype_ui_state: {
-		defaultBranchId: "global",
-		untracked: true,
-		defaultValue: DEFAULT_FLASHTYPE_UI_STATE,
-	} as KeyDef<FlashtypeUiState>,
 
 	// Test-only keys used in unit tests to exercise tracked behavior
 	flashtype_test_tracked: {

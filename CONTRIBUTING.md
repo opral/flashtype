@@ -11,23 +11,27 @@
 ### Development
 
 1. Clone the repository
-2. Initialize the Lix submodule: `git submodule update --init --recursive`
+2. Initialize the Lix and Atelier submodules: `git submodule update --init --recursive`
 3. Install dependencies from the repo root: `pnpm install`
-4. Build Lix dependencies (cached via Nx): `pnpm run build:lix`
-5. Start the app: `pnpm run dev`
+4. Build the vendored dependencies: `pnpm run build:lix && pnpm run build:atelier`
+5. Start the app: `pnpm run dev` (the `predev` hook also builds both dependencies)
 
 ### Example
 
 > [!INFO]
-> `pnpm install` runs a postinstall step that installs Lix dependencies, so Nx can cache Lix builds.
+> Lix and Atelier are vendored submodules and pnpm workspace packages. Lix uses
+> Nx caching; Atelier builds its package output before FlashType starts or builds.
 
 > [!INFO]
-> `@glideapps/glide-data-grid` is used for the CSV viewer. Its published peer range has not caught up to React 19, so `package.json` intentionally allows the React 19 peer for Glide and lists Glide's peer packages explicitly.
+> `@glideapps/glide-data-grid` is used for the CSV viewer. Its published peer
+> range has not caught up to React 19, so `pnpm-workspace.yaml` intentionally
+> allows the React 19 peer for Glide.
 
 1. `git submodule update --init --recursive`
 2. `pnpm install`
 3. `pnpm run build:lix`
-4. `pnpm run dev`
+4. `pnpm run build:atelier`
+5. `pnpm run dev`
 
 ### Opening a PR
 

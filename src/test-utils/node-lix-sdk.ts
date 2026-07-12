@@ -2,7 +2,6 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import type {
 	BundledPluginArchive,
-	ExecuteOptions,
 	ExecuteResult,
 	Lix as SdkLix,
 	OpenLixOptions as SdkOpenLixOptions,
@@ -10,11 +9,14 @@ import type {
 } from "../../submodule/lix/packages/js-sdk/dist/index.js";
 import type {
 	Lix,
+	LixExecuteOptions,
 	ObserveEvents,
 	OpenLixKeyValueEntry,
 	SqlTransaction,
 	TransactionStatement,
 } from "@/lib/lix-types";
+
+type ExecuteOptions = LixExecuteOptions;
 
 export type { Lix, SqlTransaction } from "@/lib/lix-types";
 export type { BundledPluginArchive };
@@ -98,7 +100,7 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			params: ReadonlyArray<unknown> = [],
 			options?: ExecuteOptions,
 		) {
-			return await sdkLix.execute(sql, toSqlParams(params), options);
+			return await executeWithOptions(sdkLix, sql, params, options);
 		},
 		async beginTransaction() {
 			const transaction = await sdkLix.beginTransaction();
@@ -108,7 +110,7 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 					params: ReadonlyArray<unknown> = [],
 					options?: ExecuteOptions,
 				) {
-					return await transaction.execute(sql, toSqlParams(params), options);
+					return await executeWithOptions(transaction, sql, params, options);
 				},
 				async commit() {
 					await transaction.commit();
@@ -178,6 +180,20 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			await sdkLix.close();
 		},
 	};
+}
+
+async function executeWithOptions(
+	target: { execute(sql: string, params?: SqlParam[]): Promise<ExecuteResult> },
+	sql: string,
+	params: ReadonlyArray<unknown>,
+	options?: ExecuteOptions,
+): Promise<ExecuteResult> {
+	const execute = target.execute as (
+		sql: string,
+		params?: SqlParam[],
+		options?: ExecuteOptions,
+	) => Promise<ExecuteResult>;
+	return await execute.call(target, sql, toSqlParams(params), options);
 }
 
 function emptyExecuteResult(): ExecuteResult {

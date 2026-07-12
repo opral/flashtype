@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
-	activeFileDockLabel,
 	addRecentWorkspaceEntry,
 	filterExistingRecentWorkspaceEntries,
 	getMacDockRecentWorkspacePaths,
@@ -111,10 +110,7 @@ describe("recent workspaces", () => {
 		const missingPath = path.join(userDataPath, "missing");
 
 		await expect(
-			getMacDockRecentWorkspacePaths([
-				{ path: missingPath },
-				...entries,
-			]),
+			getMacDockRecentWorkspacePaths([{ path: missingPath }, ...entries]),
 		).resolves.toEqual(
 			entries
 				.slice(0, MACOS_DOCK_RECENT_WORKSPACES_LIMIT)
@@ -123,22 +119,10 @@ describe("recent workspaces", () => {
 		);
 	});
 
-	test("builds recent and active workspace labels", () => {
+	test("builds recent workspace labels", () => {
 		const workspacePath = path.join("/Users/example/Documents", "Project");
 
 		expect(recentWorkspaceLabel({ path: workspacePath })).toBe("Project");
-		expect(
-			activeFileDockLabel(
-				{ ephemeral: false, path: workspacePath, name: "Project" },
-				"/docs/readme.md",
-			),
-		).toBe("readme.md – Project");
-		expect(
-			activeFileDockLabel(
-				{ ephemeral: false, path: workspacePath, name: "Project" },
-				null,
-			),
-		).toBeNull();
 	});
 
 	test("does not record transient workspaces as recent folders", () => {

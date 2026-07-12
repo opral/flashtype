@@ -45,18 +45,37 @@ export async function getPendingExternalWriteReviewPaths(
 	}
 	await Promise.all(
 		files.map(async (file) => {
-			const review = await getAgentTurnExternalWriteReview(
+			const hasPendingReview = await hasPendingAgentTurnReview(
 				lix,
 				file.fileId,
-				file.path,
 				resolvedRanges,
 			);
-			if (review) {
+			if (hasPendingReview) {
 				pendingPaths.add(file.path);
 			}
 		}),
 	);
 	return pendingPaths;
+}
+
+async function hasPendingAgentTurnReview(
+	lix: Lix,
+	fileId: string,
+	ranges: readonly AgentTurnCommitRange[],
+): Promise<boolean> {
+	for (const range of ranges) {
+		if (range.beforeCommitId === range.afterCommitId) continue;
+		if (range.clearedFileIds?.includes(fileId)) continue;
+		const [beforeData, afterData] = await Promise.all([
+			getFileDataAtCommit(lix, fileId, range.beforeCommitId),
+			getFileDataAtCommit(lix, fileId, range.afterCommitId),
+		]);
+		if (!beforeData && !afterData) continue;
+		if (!beforeData || !afterData || !fileBytesEqual(beforeData, afterData)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 export function useExternalWriteReview(args: {

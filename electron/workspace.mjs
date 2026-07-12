@@ -16,6 +16,7 @@ import {
 	uniqueWorkspaceRelativeFilePaths,
 	workspaceRelativeFilePath,
 } from "./workspace-paths.mjs";
+import { createAgentTurnFileCapture } from "./agent-turn-file-capture.mjs";
 
 const LIX_DIRECTORY_NAME = ".lix";
 const LIX_DATABASE_FILE = path.join(".lix", ".internal", "db.sqlite");
@@ -151,6 +152,7 @@ export async function setWorkspaceFromTarget(target, window, options = {}) {
 			return state.workspace;
 		}
 		await options.beforeChange?.(nextWorkspace, window);
+		disposeAgentTurnFileCaptures(state);
 		disposeEphemeralFileTreeState(state);
 		await disposeExternalLixState(state);
 		state.workspace = nextWorkspace;
@@ -201,19 +203,24 @@ export function consumePendingOpenFiles(window) {
 	return pendingOpenFilePaths ?? [];
 }
 
-export function setWorkspaceOpenFilePaths(window, filePaths) {
-	const state = getWindowState(window);
-	if (!state?.workspace) {
-		return [];
-	}
-	const openFilePaths = uniqueWorkspaceRelativeFilePaths(filePaths);
-	if (state.workspace.ephemeral === true) {
-		state.workspace = {
-			...state.workspace,
-			openFilePaths,
-		};
-	}
-	return openFilePaths;
+export async function beginAgentTurnFileCapture(window, payload) {
+	const state = getOrCreateWindowState(window);
+	const captureId = normalizeAgentTurnFileCaptureId(payload?.captureId);
+	state.agentTurnFileCaptures.get(captureId)?.dispose();
+	state.agentTurnFileCaptures.delete(captureId);
+	if (state.workspace?.ephemeral !== true) return { baselinePaths: [] };
+	const capture = await createAgentTurnFileCapture(state.workspace.path);
+	state.agentTurnFileCaptures.set(captureId, capture);
+	return { baselinePaths: capture.baselinePaths };
+}
+
+export async function finishAgentTurnFileCapture(window, payload) {
+	const state = getOrCreateWindowState(window);
+	const captureId = normalizeAgentTurnFileCaptureId(payload?.captureId);
+	const capture = state.agentTurnFileCaptures.get(captureId);
+	if (!capture) return [];
+	state.agentTurnFileCaptures.delete(captureId);
+	return await capture.finish();
 }
 
 export async function setEphemeralWatchedDirectories(window, payload) {
@@ -407,6 +414,7 @@ export async function setWorkspaceTrackChanges(window, trackChanges) {
 			return workspace;
 		}
 		if (trackChanges) {
+			disposeAgentTurnFileCaptures(state);
 			disposeEphemeralFileTreeState(state);
 			await moveExternalLixBackIntoWorkspace(state);
 			state.workspace = createPersistentWorkspace(workspace.path);
@@ -428,6 +436,7 @@ export async function disableWorkspaceTrackChanges(window) {
 		if (!workspace) {
 			throw new Error("No workspace is open.");
 		}
+		disposeAgentTurnFileCaptures(state);
 		disposeEphemeralFileTreeState(state);
 		await disposeExternalLixState(state);
 		await removeWorkspaceLixDirectory(workspace.path);
@@ -445,6 +454,7 @@ export async function disposeWorkspaceWindowState(windowOrId) {
 	}
 	const state = windowStates.get(windowId);
 	windowStates.delete(windowId);
+	disposeAgentTurnFileCaptures(state);
 	disposeEphemeralFileTreeState(state);
 	await disposeExternalLixState(state);
 }
@@ -592,12 +602,14 @@ function normalizeWorkspaceDirectoryPaths(paths, state) {
 	if (!Array.isArray(paths)) {
 		throw new Error("workspace watched directory paths must be an array.");
 	}
+	const requestedPaths = new Set(paths);
 	const seen = new Set();
 	const normalizedPaths = [];
 	for (const directoryPath of paths) {
 		const normalizedPath = normalizeWorkspaceDirectoryPath(
 			directoryPath,
 			state,
+			requestedPaths,
 		);
 		if (seen.has(normalizedPath)) {
 			continue;
@@ -609,7 +621,7 @@ function normalizeWorkspaceDirectoryPaths(paths, state) {
 	return normalizedPaths;
 }
 
-function normalizeWorkspaceDirectoryPath(directoryPath, state) {
+function normalizeWorkspaceDirectoryPath(directoryPath, state, requestedPaths) {
 	if (directoryPath === "/") {
 		return "/";
 	}
@@ -620,12 +632,35 @@ function normalizeWorkspaceDirectoryPath(directoryPath, state) {
 	) {
 		throw new Error(`Invalid workspace directory path: ${directoryPath}`);
 	}
-	if (!isEphemeralWatchedDirectoryEntry(state, directoryPath)) {
+	if (
+		!isEphemeralWatchedDirectoryEntry(state, directoryPath) &&
+		!hasRequestedDirectoryAncestorChain(directoryPath, requestedPaths, state)
+	) {
 		throw new Error(
 			`Directory is not in the opened Files view: ${directoryPath}`,
 		);
 	}
 	return directoryPath;
+}
+
+function hasRequestedDirectoryAncestorChain(
+	directoryPath,
+	requestedPaths,
+	state,
+) {
+	let currentPath = directoryPath;
+	while (currentPath !== "/") {
+		const parentPath = parentDirectoryPathForDirectoryPath(currentPath);
+		if (!parentPath) return false;
+		if (
+			!requestedPaths.has(parentPath) &&
+			!isEphemeralWatchedDirectoryEntry(state, parentPath)
+		) {
+			return false;
+		}
+		currentPath = parentPath;
+	}
+	return true;
 }
 
 function parentDirectoryPathForDirectoryPath(directoryPath) {
@@ -934,6 +969,21 @@ function disposeEphemeralFileTreeState(state) {
 	state.ephemeralDirectoryWatchers.clear();
 	state.ephemeralFileTreeOwners.clear();
 	state.ephemeralWatchedEntries = [];
+}
+
+function normalizeAgentTurnFileCaptureId(captureId) {
+	if (typeof captureId !== "string" || captureId.length === 0) {
+		throw new Error("workspace agent turn file captureId is required.");
+	}
+	return captureId;
+}
+
+function disposeAgentTurnFileCaptures(state) {
+	if (!state) return;
+	for (const capture of state.agentTurnFileCaptures.values()) {
+		capture.dispose();
+	}
+	state.agentTurnFileCaptures.clear();
 }
 
 function median(values) {
@@ -1254,6 +1304,23 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 	});
 
 	ipcMain.handle(
+		"workspace:beginAgentTurnFileCapture",
+		async (event, payload) => {
+			return await beginAgentTurnFileCapture(getWindowForEvent(event), payload);
+		},
+	);
+
+	ipcMain.handle(
+		"workspace:finishAgentTurnFileCapture",
+		async (event, payload) => {
+			return await finishAgentTurnFileCapture(
+				getWindowForEvent(event),
+				payload,
+			);
+		},
+	);
+
+	ipcMain.handle(
 		"workspace:setEphemeralWatchedDirectories",
 		async (event, payload) => {
 			return await setEphemeralWatchedDirectories(
@@ -1321,6 +1388,7 @@ function getOrCreateWindowState(window) {
 	const state = {
 		workspace: null,
 		pendingOpenFilePaths: [],
+		agentTurnFileCaptures: new Map(),
 		externalLixParent: null,
 		externalLixDir: null,
 		ephemeralFileTreeOwners: new Map(),

@@ -5,14 +5,6 @@
 	"type": "module",
 	"main": "electron/main.mjs",
 	"packageManager": "pnpm@10.13.1",
-	"pnpm": {
-		"peerDependencyRules": {
-			"allowedVersions": {
-				"@glideapps/glide-data-grid>react": "^19.0.0",
-				"@glideapps/glide-data-grid>react-dom": "^19.0.0"
-			}
-		}
-	},
 	"scripts": {
 		"dev": "node scripts/dev.mjs",
 		"dev:renderer": "vite --host 127.0.0.1 --port 4173 --strictPort",
@@ -26,11 +18,12 @@
 		"install:mac": "pnpm run package:mac && node scripts/install-mac.mjs",
 		"release:mac": "pnpm run build:icons && pnpm run build && pnpm run build:posthog-sourcemaps && pnpm run build:env-variables && pnpm run rebuild:electron-native && pnpm run fix:lix-native-macos && electron-builder --mac --publish always",
 		"dev:web": "vite",
-		"predev": "pnpm run build:lix && pnpm run rebuild:electron-native",
+		"predev": "pnpm run build:lix && pnpm run build:atelier && pnpm run rebuild:electron-native",
 		"build": "vite build",
-		"prebuild": "pnpm run build:lix",
+		"prebuild": "pnpm run build:lix && pnpm run build:atelier",
 		"postinstall": "command -v cargo >/dev/null 2>&1 && cargo fetch --manifest-path submodule/lix/Cargo.toml || true",
 		"build:lix": "node scripts/build-lix.mjs",
+		"build:atelier": "pnpm --filter @opral/atelier build",
 		"preview": "vite preview --strictPort --port 5173",
 		"typecheck": "tsc -p . --pretty false",
 		"format": "prettier --write .",
@@ -46,6 +39,7 @@
 		"ci": "pnpm run build && pnpm test"
 	},
 	"dependencies": {
+		"@opral/atelier": "workspace:*",
 		"@base-ui-components/react": "1.0.0-beta.4",
 		"@dnd-kit/core": "^6.3.1",
 		"@dnd-kit/sortable": "^10.0.0",

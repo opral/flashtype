@@ -13,7 +13,6 @@ import {
 	getWorkspace,
 	registerWorkspaceIpc,
 	resolveWorkspaceTargets,
-	setWorkspaceOpenFilePaths,
 	setWorkspaceFromTarget,
 	setWorkspaceTrackChanges,
 	showWorkspaceDialog,
@@ -48,7 +47,6 @@ import {
 	writeWorkspaceSessionEntriesSync,
 } from "./workspace-session.mjs";
 import {
-	activeFileDockLabel,
 	addRecentWorkspaceEntry,
 	filterExistingRecentWorkspaceEntries,
 	getMacDockRecentWorkspacePaths,
@@ -89,8 +87,6 @@ const CRASH_LIKE_PROCESS_GONE_REASONS = new Set([
 const workspaceWindows = new Set();
 const openWorkspaceEntriesByWindowId = new Map();
 const closedWorkspaceEntryWindowIds = new Set();
-const activeFilePathsByWindowId = new Map();
-const openFilePathsByWindowId = new Map();
 const pendingWorkspaceOpenRequests = [];
 let readyForWorkspaceOpens = false;
 let initialWorkspaceOpenInProgress = false;
@@ -457,10 +453,8 @@ function createWorkspaceChangeOptions() {
 	return {
 		beforeChange: (_nextWorkspace, window) =>
 			closeLixSession(window, { ignoreOpenError: true }),
-		afterChange: (workspace, window, workspaceTarget) => {
-			recordOpenWorkspacePath(window, workspace, {
-				pendingOpenFilePaths: workspaceTarget?.pendingOpenFilePaths ?? [],
-			});
+		afterChange: (workspace, window) => {
+			recordOpenWorkspacePath(window, workspace);
 		},
 	};
 }
@@ -576,20 +570,16 @@ async function openFolderFromApplicationMenu() {
 	return getWorkspace(sourceWindow);
 }
 
-function recordOpenWorkspacePath(window, workspace, options = {}) {
+function recordOpenWorkspacePath(window, workspace) {
 	if (!window || window.isDestroyed() || !workspace) {
 		return;
 	}
 	const openFilePaths =
-		openFilePathsByWindowId.get(window.id) ??
-		options.openFilePaths ??
-		options.pendingOpenFilePaths ??
-		[];
+		workspace.ephemeral === true ? (workspace.openFilePaths ?? []) : [];
 	const workspaceEntry = workspaceToSessionEntry(workspace, openFilePaths);
 	if (!workspaceEntry) {
 		return;
 	}
-	openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
 	recordRecentWorkspace(workspace);
@@ -605,8 +595,6 @@ function forgetOpenWorkspacePath(window, { persist = true } = {}) {
 	}
 	closedWorkspaceEntryWindowIds.delete(window.id);
 	openWorkspaceEntriesByWindowId.delete(window.id);
-	activeFilePathsByWindowId.delete(window.id);
-	openFilePathsByWindowId.delete(window.id);
 	if (persist && !isQuitting) {
 		persistOpenWorkspacePathsSoon();
 	}
@@ -627,8 +615,6 @@ function getOpenWorkspaceEntries({ includeClosed = false } = {}) {
 function pruneClosedWorkspaceEntries() {
 	for (const windowId of closedWorkspaceEntryWindowIds) {
 		openWorkspaceEntriesByWindowId.delete(windowId);
-		activeFilePathsByWindowId.delete(windowId);
-		openFilePathsByWindowId.delete(windowId);
 	}
 	closedWorkspaceEntryWindowIds.clear();
 }
@@ -738,9 +724,7 @@ async function createMainWindow(workspaceRequest) {
 				: (await resolveWorkspaceTargets([taggedRequest.request]))[0];
 		await setWorkspaceFromTarget(workspaceTarget, window, {
 			afterChange: (workspace, changedWindow) =>
-				recordOpenWorkspacePath(changedWindow, workspace, {
-					pendingOpenFilePaths: workspaceTarget?.pendingOpenFilePaths ?? [],
-				}),
+				recordOpenWorkspacePath(changedWindow, workspace),
 		});
 	} else {
 		applyWorkspaceWindowChrome(window);
@@ -1136,46 +1120,6 @@ function registerAppIpc() {
 		const url = validateExternalUrl(payload?.url);
 		await shell.openExternal(url);
 		return { status: "opened" };
-	});
-	ipcMain.handle("workspace:setActiveFilePath", (event, payload) => {
-		const window = BrowserWindow.fromWebContents(event.sender);
-		if (!window || window.isDestroyed()) {
-			return;
-		}
-		const filePath =
-			typeof payload?.filePath === "string" && payload.filePath.length > 0
-				? payload.filePath
-				: null;
-		if (filePath) {
-			activeFilePathsByWindowId.set(window.id, filePath);
-		} else {
-			activeFilePathsByWindowId.delete(window.id);
-		}
-		applyDockWindowChrome(window);
-		updateDockMenu();
-		installApplicationMenu();
-	});
-	ipcMain.handle("workspace:setOpenFilePaths", (event, payload) => {
-		const window = BrowserWindow.fromWebContents(event.sender);
-		if (!window || window.isDestroyed()) {
-			return;
-		}
-		const workspace = getWorkspace(window);
-		if (!workspace) {
-			openFilePathsByWindowId.delete(window.id);
-			return;
-		}
-		const filePaths = Array.isArray(payload?.filePaths)
-			? payload.filePaths
-			: [];
-		const workspaceEntry = workspaceToSessionEntry(workspace, filePaths);
-		if (!workspaceEntry) {
-			return;
-		}
-		setWorkspaceOpenFilePaths(window, workspaceEntry.openFilePaths);
-		openFilePathsByWindowId.set(window.id, workspaceEntry.openFilePaths);
-		openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
-		persistOpenWorkspacePathsSoon();
 	});
 }
 
@@ -1829,9 +1773,6 @@ function buildFileMenu() {
 	const trackingWorkspace = trackingWindow
 		? getWorkspace(trackingWindow)
 		: null;
-	const hasActiveDocument = trackingWindow
-		? activeFilePathsByWindowId.has(trackingWindow.id)
-		: false;
 	return {
 		label: "File",
 		submenu: [
@@ -1862,7 +1803,7 @@ function buildFileMenu() {
 			{
 				id: "close-file",
 				label: "Close File",
-				enabled: hasActiveDocument,
+				enabled: Boolean(trackingWindow),
 				click: () => {
 					requestCloseFileFromApplicationMenu();
 				},
@@ -1940,15 +1881,7 @@ function applyDockWindowChrome(window) {
 	}
 
 	const workspace = getWorkspace(window);
-	const activeFilePath = activeFilePathsByWindowId.get(window.id);
-	const activeFileLabel = activeFileDockLabel(workspace, activeFilePath);
-	if (activeFileLabel && activeFilePath) {
-		window.setTitle(activeFileLabel);
-		window.setRepresentedFilename(activeFilePath);
-		return;
-	}
-
-	applyWorkspaceWindowChrome(window, workspace ?? undefined);
+	applyWorkspaceWindowChrome(window);
 	if (workspace?.representedPath || workspace?.path) {
 		window.setRepresentedFilename(workspace.representedPath ?? workspace.path);
 	} else {

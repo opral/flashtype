@@ -1,15 +1,5 @@
-import type { LucideIcon } from "lucide-react";
 import type { Lix } from "@/lib/lix-types";
-import type { CheckpointDiff, ShowCheckpointDiffArgs } from "./checkpoint-diff";
-import type { ExternalWriteReview } from "./external-write-review";
-
-/**
- * Union of registry keys for views available in the layout.
- *
- * @example
- * const activeView: ExtensionKind = "flashtype_files";
- */
-export type ExtensionKind = string;
+import type { CheckpointDiff } from "./checkpoint-diff";
 
 /**
  * Persisted view state. Only include values that should survive reloads.
@@ -51,85 +41,12 @@ export type WorkspaceContext =
 export type ExtensionLaunchArgs = Record<string, unknown>;
 
 /**
- * Per-panel instance payload used to track which views are open.
+ * FlashType host context consumed by its Files view.
  *
- * @example
- * const instance: ExtensionInstance = { instance: "files-1", kind: "flashtype_files" };
- */
-export interface ExtensionInstance {
-	readonly instance: string;
-	readonly kind: ExtensionKind;
-	readonly isPending?: boolean;
-	/**
-	 * Persisted view state (serializable).
-	 */
-	readonly state?: ExtensionState;
-	/**
-	 * Transient launch args (never persisted).
-	 */
-	readonly launchArgs?: ExtensionLaunchArgs;
-}
-
-/**
- * Shape of the static metadata that powers the view switcher UI.
- *
- * @example
- * const filesView: ExtensionDefinition = EXTENSION_DEFINITIONS[0];
- */
-export interface ExtensionDefinition {
-	readonly kind: ExtensionKind;
-	readonly label: string;
-	readonly description: string;
-	readonly icon: LucideIcon;
-	/**
-	 * Lowercase file extensions this extension can render when a file is opened.
-	 *
-	 * @example
-	 * fileExtensions: ["md", "markdown"]
-	 */
-	readonly fileExtensions?: readonly string[];
-	/**
-	 * Allows several instances of this extension in one panel (e.g. multiple
-	 * agent terminal sessions). Single-instance kinds are hidden from the
-	 * add-view menu once open.
-	 */
-	readonly multiInstance?: boolean;
-	readonly activate?: (args: {
-		context: ExtensionContext;
-		instance: ExtensionInstance;
-	}) => void | (() => void);
-	readonly render: (args: {
-		context: ExtensionContext;
-		instance: ExtensionInstance;
-		target: HTMLElement;
-	}) => void | (() => void);
-}
-
-/**
- * Context passed to views for interacting with the layout.
- *
- * The host sets `isActiveView` when the view's tab is visible so consumers can
- * avoid mutating shared state while hidden.
- *
- * @example
- * context.openExtension?.({
- *   panel: "central",
- *   kind: "file-content",
- *   instance: "file-content:file-123",
- *   state: { fileId: "file-123", filePath: "/docs/guide.md" },
- *   pending: true,
- * });
+ * Atelier owns extension registration and panel state. This adapter contains
+ * only the desktop filesystem behavior that remains owned by FlashType.
  */
 export interface ExtensionContext {
-	readonly openExtension?: (args: {
-		readonly panel: PanelSide;
-		readonly kind: ExtensionKind;
-		readonly state?: ExtensionState;
-		readonly launchArgs?: ExtensionLaunchArgs;
-		readonly focus?: boolean;
-		readonly instance?: string;
-		readonly pending?: boolean;
-	}) => void;
 	readonly openFile?: (args: {
 		readonly panel: PanelSide;
 		readonly fileId: string;
@@ -143,29 +60,8 @@ export interface ExtensionContext {
 		readonly trackDocumentOpenAttempt?: boolean;
 		readonly trackDocumentViewed?: boolean;
 	}) => void | Promise<void>;
-	readonly acceptExternalWriteReview?: (args: {
-		readonly fileId: string;
-		readonly reviewId: string;
-		readonly review?: ExternalWriteReview;
-	}) => Promise<void>;
-	readonly rejectExternalWriteReview?: (args: {
-		readonly fileId: string;
-		readonly reviewId: string;
-		readonly review?: ExternalWriteReview;
-	}) => Promise<void>;
-	readonly registerExternalWriteReview?: (
-		review: ExternalWriteReview,
-	) => () => void;
 	readonly checkpointDiff?: CheckpointDiff | null;
-	readonly showCheckpointDiff?: (
-		args: ShowCheckpointDiffArgs,
-	) => Promise<CheckpointDiff | null>;
-	readonly clearCheckpointDiff?: () => void;
-	readonly closeExtension?: (args: {
-		readonly panel?: PanelSide;
-		readonly instance?: string;
-		readonly kind?: ExtensionKind;
-	}) => void;
+	readonly checkpointBranchId?: string | null;
 	readonly closeFileViews?: (args: {
 		readonly panel?: PanelSide;
 		readonly fileId: string;
@@ -176,12 +72,6 @@ export interface ExtensionContext {
 	readonly activeFilePath?: string | null;
 	readonly isPanelFocused?: boolean;
 	readonly setTabBadgeCount: (count: number | null | undefined) => void;
-	readonly moveExtensionToPanel?: (
-		targetPanel: PanelSide,
-		instance?: string,
-	) => void;
-	readonly resizePanel?: (side: PanelSide, size: number) => void;
-	readonly focusPanel?: (side: PanelSide) => void;
 	readonly panelSide?: PanelSide;
 	readonly viewInstance?: string;
 	readonly isActiveView?: boolean;
@@ -193,17 +83,6 @@ export interface ExtensionContext {
 	}) => () => void;
 	readonly workspace?: WorkspaceContext;
 	readonly lix: Lix;
-}
-
-/**
- * Lightweight state container that represents one panel island.
- *
- * @example
- * const leftPanel: PanelState = { views: [], activeInstance: null };
- */
-export interface PanelState {
-	readonly views: ExtensionInstance[];
-	readonly activeInstance: string | null;
 }
 
 /**

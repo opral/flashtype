@@ -124,16 +124,20 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await expectPathMissing(path.join(workspaceDir, ".lix"));
 		await ensureFilesViewOpenInLeftPanel(page);
+		await expect(
+			page.locator(
+				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]',
+			),
+		).toBeVisible();
 
 		const firstFile = fileTreeFiles(page).first();
 		await expect(firstFile).toBeVisible();
 		await firstFile.click();
 		await expect(firstFile).toHaveAttribute("data-item-selected", "true");
 		await expect(
-			page.locator('[data-view-key="flashtype_file"]').first(),
+			page.locator('[data-view-key="atelier_file"]').first(),
 		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);

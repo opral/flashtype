@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, Files, FileUp, FilePlus, Github } from "lucide-react";
-import { LixProvider, useLix, useQuery } from "@/lib/lix-react";
+import { ExternalLink, FileUp, FilePlus, Github } from "lucide-react";
+import { useLix, useQuery } from "@/lib/lix-react";
 import { isMarkdownFilePath } from "@/extension-runtime/file-handlers";
 import { selectFilesystemEntries } from "@/queries";
 import {
@@ -14,11 +14,11 @@ import {
 	type FileTreeCreateRequest,
 	type FileTreeRenameRequest,
 } from "./file-tree";
-import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
 import { qb } from "@/lib/lix-kysely";
-import { FILES_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import type { FilesystemEntryRow } from "@/queries";
 import type {
+	CheckpointDiff,
+	CheckpointDiffBranchRow,
 	CheckpointDiffFile,
 	CheckpointDiffVisibleFile,
 } from "@/extension-runtime/checkpoint-diff";
@@ -31,6 +31,7 @@ import {
 	getPendingExternalWriteReviewPaths,
 	type ExternalWriteReviewFile,
 } from "@/shell/external-write-review-history";
+import { resolveCheckpointDiff } from "@/shell/checkpoint-diff";
 
 type FilesViewProps = {
 	readonly context?: ExtensionContext;
@@ -41,14 +42,131 @@ type FilesViewProps = {
  * that opens the inline creation prompt for a new markdown file.
  *
  * @example
- * <FilesView context={{ openExtension: console.log }} />
+ * <FilesView context={hostContext} />
  */
 export function FilesView({ context }: FilesViewProps) {
 	const lix = useLix();
 	const entries = useQuery<FilesystemEntryRow>((lix) =>
 		selectFilesystemEntries(lix),
 	);
-	return <FilesViewContent context={context} lix={lix} entries={entries} />;
+	return (
+		<FilesActiveFileLoader context={context} lix={lix} entries={entries} />
+	);
+}
+
+function FilesActiveFileLoader({
+	context,
+	lix,
+	entries,
+}: FilesViewProps & {
+	readonly lix: Lix;
+	readonly entries: FilesystemEntryRow[];
+}) {
+	const activeFileRows = useQuery<{ value: unknown }>((queryLix) =>
+		qb(queryLix)
+			.selectFrom("lix_key_value")
+			.select("value")
+			.where("key", "=", "atelier_active_file_id"),
+	);
+	const activeFileId =
+		typeof activeFileRows[0]?.value === "string"
+			? activeFileRows[0].value
+			: null;
+	return (
+		<FilesCheckpointBranchesLoader
+			context={context}
+			lix={lix}
+			entries={entries}
+			activeFileId={activeFileId}
+		/>
+	);
+}
+
+function FilesCheckpointBranchesLoader({
+	context,
+	lix,
+	entries,
+	activeFileId,
+}: FilesViewProps & {
+	readonly lix: Lix;
+	readonly entries: FilesystemEntryRow[];
+	readonly activeFileId: string | null;
+}) {
+	const branches = useQuery<CheckpointDiffBranchRow>((queryLix) =>
+		qb(queryLix)
+			.selectFrom("lix_branch")
+			.select(["id", "name", "commit_id"])
+			.orderBy("name", "asc"),
+	);
+	return (
+		<FilesRuntimeState
+			context={context}
+			lix={lix}
+			entries={entries}
+			activeFileId={activeFileId}
+			branches={branches}
+		/>
+	);
+}
+
+function FilesRuntimeState({
+	context,
+	lix,
+	entries,
+	activeFileId,
+	branches,
+}: FilesViewProps & {
+	readonly lix: Lix;
+	readonly entries: FilesystemEntryRow[];
+	readonly activeFileId: string | null;
+	readonly branches: readonly CheckpointDiffBranchRow[];
+}) {
+	const resolvedCheckpointDiff = useResolvedCheckpointDiff(
+		lix,
+		branches,
+		context?.checkpointBranchId ?? null,
+	);
+	return (
+		<FilesViewContent
+			context={{
+				...context,
+				lix: context?.lix ?? lix,
+				setTabBadgeCount: context?.setTabBadgeCount ?? (() => {}),
+				activeFileId: context?.activeFileId ?? activeFileId,
+				checkpointDiff: context?.checkpointDiff ?? resolvedCheckpointDiff,
+			}}
+			lix={lix}
+			entries={entries}
+		/>
+	);
+}
+
+function useResolvedCheckpointDiff(
+	lix: Lix,
+	branches: readonly CheckpointDiffBranchRow[],
+	branchId: string | null,
+): CheckpointDiff | null {
+	const [resolved, setResolved] = useState<{
+		readonly branchId: string;
+		readonly diff: CheckpointDiff | null;
+	} | null>(null);
+	useEffect(() => {
+		if (!branchId) return;
+		let cancelled = false;
+		void resolveCheckpointDiff({ lix, branches, branchId })
+			.then((diff) => {
+				if (!cancelled) setResolved({ branchId, diff });
+			})
+			.catch((error: unknown) => {
+				if (cancelled) return;
+				console.warn("Failed to resolve checkpoint files", error);
+				setResolved({ branchId, diff: null });
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [branchId, branches, lix]);
+	return branchId && resolved?.branchId === branchId ? resolved.diff : null;
 }
 
 function FilesViewContent({
@@ -610,6 +728,12 @@ function FilesViewContent({
 					).find((file) => file.fileId === fileId)
 				: undefined;
 			setSelectedSource(checkpointVisibleFile ? "checkpoint-diff" : "lix");
+			const isActiveWorkspaceFile =
+				!checkpointVisibleFile &&
+				(activeFileId === fileId ||
+					(typeof activeFilePath === "string" &&
+						normalizeFilePath(activeFilePath) === normalizeFilePath(path)));
+			if (isActiveWorkspaceFile) return;
 			void context?.openFile?.({
 				panel: "central",
 				fileId,
@@ -628,7 +752,7 @@ function FilesViewContent({
 				trackDocumentViewed: checkpointVisibleFile ? false : undefined,
 			});
 		},
-		[context],
+		[activeFileId, activeFilePath, context],
 	);
 
 	const handleOpenDirectoriesChange = useCallback(
@@ -1098,24 +1222,6 @@ function sameStringSet(
 	}
 	return true;
 }
-
-/**
- * Files panel view definition used by the registry.
- *
- * @example
- * import { extension as filesView } from "@/extensions/files";
- */
-export const extension = createReactExtensionDefinition({
-	kind: FILES_EXTENSION_KIND,
-	label: "Files",
-	description: "Browse and pin project documents.",
-	icon: Files,
-	component: ({ context }) => (
-		<LixProvider lix={context.lix}>
-			<FilesView context={context} />
-		</LixProvider>
-	),
-});
 
 function isInteractiveTarget(target: EventTarget | null): boolean {
 	if (!target || !(target instanceof HTMLElement)) {

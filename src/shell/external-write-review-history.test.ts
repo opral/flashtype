@@ -8,11 +8,13 @@ import type { ExternalWriteReview } from "@/extension-runtime/external-write-rev
 import {
 	getExternalWriteReview,
 	getExternalWriteReviewData,
+	getPendingExternalWriteReviewPaths,
 	useExternalWriteReview,
 } from "./external-write-review-history";
 import {
 	appendAgentTurnCommitRange,
 	clearAgentTurnCommitRangeFile,
+	isAgentTurnCommitRangeStore,
 	readAgentTurnCommitRanges,
 	type AgentTurnCommitRange,
 } from "./agent-turn-review-range";
@@ -144,7 +146,7 @@ describe("getExternalWriteReview", () => {
 		try {
 			await appendAgentTurnCommitRange(lix, {
 				id: "range-without-optional-ids",
-				agent: "codex",
+				sourceId: "codex",
 				beforeCommitId: "commit-before",
 				afterCommitId: "commit-after",
 				sessionId: undefined,
@@ -158,6 +160,62 @@ describe("getExternalWriteReview", () => {
 			expect(range?.id).toBe("range-without-optional-ids");
 			expect(Object.hasOwn(range ?? {}, "sessionId")).toBe(false);
 			expect(Object.hasOwn(range ?? {}, "turnId")).toBe(false);
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("accepts Atelier-shaped source metadata without an agent field", () => {
+		expect(
+			isAgentTurnCommitRangeStore({
+				ranges: [
+					{
+						id: "atelier-range",
+						sourceId: "custom-agent-host",
+						beforeCommitId: "commit-before",
+						afterCommitId: "commit-after",
+						startedAt: 1,
+						completedAt: 2,
+					},
+				],
+			}),
+		).toBe(true);
+		expect(
+			isAgentTurnCommitRangeStore({
+				ranges: [
+					{
+						id: "legacy-range",
+						agent: "codex",
+						beforeCommitId: "commit-before",
+						afterCommitId: "commit-after",
+						startedAt: 1,
+						completedAt: 2,
+					},
+				],
+			}),
+		).toBe(false);
+	});
+
+	test("marks a file added during an agent turn as pending", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "existing-file", "/docs/existing.md", "before");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "added-file", "/docs/added.md", "created");
+			const afterCommitId = await activeCommitId(lix);
+			const range = agentRange({
+				id: "range-added-file",
+				beforeCommitId,
+				afterCommitId,
+			});
+
+			await expect(
+				getPendingExternalWriteReviewPaths(
+					lix,
+					[{ fileId: "added-file", path: "/docs/added.md" }],
+					[range],
+				),
+			).resolves.toEqual(new Set(["/docs/added.md"]));
 		} finally {
 			await lix.close();
 		}
@@ -559,7 +617,7 @@ function agentRange(
 	>,
 ): AgentTurnCommitRange {
 	return {
-		agent: "codex",
+		sourceId: "codex",
 		sessionId: "session-1",
 		turnId: "turn-1",
 		startedAt: 1,

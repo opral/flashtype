@@ -15,13 +15,11 @@ import {
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
 	getMostRecentMarkdownFile,
-	getWorkspace,
 	getWorkspaceFsBackendOptions,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
 	resolveWorkspaceTargets,
 	setEphemeralWatchedDirectories,
-	setWorkspaceOpenFilePaths,
 	setWorkspaceFromPath,
 } from "./workspace.mjs";
 
@@ -602,14 +600,16 @@ describe("workspace resolution", () => {
 			"workspace",
 		);
 		const childDirectory = path.join(directory, "docs");
+		const grandchildDirectory = path.join(childDirectory, "guides");
 		const targetPath = path.join(directory, "notes.txt");
 		const symlinkPath = path.join(directory, "linked.md");
-		await mkdir(childDirectory, { recursive: true });
+		await mkdir(grandchildDirectory, { recursive: true });
 		await mkdir(path.join(directory, ".lix"), { recursive: true });
 		await writeFile(path.join(directory, "alpha.md"), "# Alpha\n");
 		await writeFile(path.join(directory, "data.csv"), "name,value\nA,1\n");
 		await writeFile(targetPath, "Notes\n");
 		await writeFile(path.join(childDirectory, "nested.txt"), "Nested\n");
+		await writeFile(path.join(grandchildDirectory, "deep.md"), "# Deep\n");
 		await writeFile(path.join(directory, ".hidden.md"), "# Hidden\n");
 		await writeFile(path.join(directory, ".lix", "ignored.md"), "# Ignored\n");
 		await symlink(targetPath, symlinkPath);
@@ -636,9 +636,18 @@ describe("workspace resolution", () => {
 				"/alpha.md",
 				"/data.csv",
 				"/docs/",
+				"/docs/guides/",
 				"/docs/nested.txt",
 				"/notes.txt",
 			]);
+
+			const deepEntries = await setEphemeralWatchedDirectories(window, {
+				ownerId: "files",
+				paths: ["/", "/docs/", "/docs/guides/"],
+			});
+			expect(deepEntries.map((entry) => entry.path).sort()).toContain(
+				"/docs/guides/deep.md",
+			);
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}
@@ -813,35 +822,6 @@ describe("workspace resolution", () => {
 				syncAllFiles: false,
 			});
 			expect(options.lixDir).toEqual(expect.any(String));
-		} finally {
-			await disposeWorkspaceWindowState(window);
-		}
-	});
-
-	test("tracks transient open file paths on the workspace state", async () => {
-		const directory = path.join(
-			tmpdir(),
-			"flashtype-workspace-test",
-			randomUUID(),
-			"workspace",
-		);
-		await mkdir(path.join(directory, "docs"), { recursive: true });
-
-		const window = createTestWindow();
-		try {
-			await setWorkspaceFromPath(directory, window);
-
-			expect(
-				setWorkspaceOpenFilePaths(window, [
-					"docs/readme.md",
-					"../outside.md",
-					"docs/readme.md",
-				]),
-			).toEqual(["docs/readme.md"]);
-			expect(getWorkspace(window)).toMatchObject({
-				ephemeral: true,
-				openFilePaths: ["docs/readme.md"],
-			});
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}

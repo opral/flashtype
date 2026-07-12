@@ -456,7 +456,7 @@ test("macOS open-file events create workspace windows for folders and files", as
 		).toBeVisible();
 		await expect(
 			filePage
-				.locator('[data-view-key="flashtype_file"][data-active="true"]')
+				.locator('[data-view-key="atelier_file"][data-active="true"]')
 				.first(),
 		).toBeVisible();
 		await expect(filePage.getByTestId("central-panel-empty-state")).toHaveCount(
@@ -492,7 +492,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 		await expect(firstRunPage).toHaveTitle("Flashtype");
 		await expect(
 			filePage
-				.locator('[data-view-key="flashtype_file"][data-active="true"]')
+				.locator('[data-view-key="atelier_file"][data-active="true"]')
 				.first(),
 		).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();

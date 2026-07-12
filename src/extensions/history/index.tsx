@@ -9,12 +9,7 @@ import {
 	RotateCcw,
 	Trash2,
 } from "lucide-react";
-import {
-	LixProvider,
-	useLix,
-	useQuery,
-	useQueryTakeFirstOrThrow,
-} from "@/lib/lix-react";
+import { useLix, useQuery, useQueryTakeFirstOrThrow } from "@/lib/lix-react";
 import { qb, sql } from "@/lib/lix-kysely";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,13 +18,14 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
-import { HISTORY_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
+import type {
+	AtelierRevisionSelection,
+	AtelierExtensionRuntime,
+} from "@opral/atelier";
 import type {
 	CheckpointDiff,
 	CheckpointDiffBranchRow,
 	CheckpointDiffFile,
-	ShowCheckpointDiffArgs,
 } from "../../extension-runtime/checkpoint-diff";
 import { resolveCheckpointDiff } from "@/shell/checkpoint-diff";
 
@@ -41,10 +37,8 @@ type BranchRow = {
 };
 
 type HistoryViewProps = {
-	readonly checkpointDiff?: CheckpointDiff | null;
-	readonly showCheckpointDiff?: (
-		args: ShowCheckpointDiffArgs,
-	) => Promise<CheckpointDiff | null>;
+	readonly currentRevision?: AtelierRevisionSelection | null;
+	readonly showCheckpointDiff?: AtelierExtensionRuntime["revisions"]["show"];
 	readonly clearCheckpointDiff?: () => void;
 };
 
@@ -112,7 +106,7 @@ function HistoryBranchesLoader({
 function HistoryActiveBranchLoader({
 	lix,
 	branches,
-	checkpointDiff,
+	currentRevision,
 	showCheckpointDiff,
 	clearCheckpointDiff,
 }: HistoryViewProps & {
@@ -130,7 +124,7 @@ function HistoryActiveBranchLoader({
 			lix={lix}
 			branches={branches}
 			activeBranchId={activeBranch.value}
-			checkpointDiff={checkpointDiff}
+			currentRevision={currentRevision}
 			showCheckpointDiff={showCheckpointDiff}
 			clearCheckpointDiff={clearCheckpointDiff}
 		/>
@@ -141,17 +135,15 @@ function HistoryViewContent({
 	lix,
 	branches,
 	activeBranchId,
-	checkpointDiff,
+	currentRevision,
 	showCheckpointDiff,
 	clearCheckpointDiff,
 }: {
 	readonly lix: ReturnType<typeof useLix>;
 	readonly branches: BranchRow[];
 	readonly activeBranchId: string;
-	readonly checkpointDiff?: CheckpointDiff | null;
-	readonly showCheckpointDiff?: (
-		args: ShowCheckpointDiffArgs,
-	) => Promise<CheckpointDiff | null>;
+	readonly currentRevision?: AtelierRevisionSelection | null;
+	readonly showCheckpointDiff?: AtelierExtensionRuntime["revisions"]["show"];
 	readonly clearCheckpointDiff?: () => void;
 }) {
 	const activeBranchRow =
@@ -194,17 +186,14 @@ function HistoryViewContent({
 
 	const handleSelectBranch = useCallback(
 		async (branchId: string) => {
-			if (checkpointDiff?.branchId === branchId) {
+			if (currentRevision?.branchId === branchId) {
 				clearCheckpointDiff?.();
 				return;
 			}
 			if (!showCheckpointDiff) return;
 			setPendingAction(branchId);
 			try {
-				const nextDiff = await showCheckpointDiff({ branchId, branches });
-				if (!nextDiff) {
-					clearCheckpointDiff?.();
-				}
+				await showCheckpointDiff(branchId);
 			} catch (error) {
 				console.error("Failed to resolve checkpoint diff", error);
 				clearCheckpointDiff?.();
@@ -212,12 +201,7 @@ function HistoryViewContent({
 				setPendingAction(null);
 			}
 		},
-		[
-			branches,
-			checkpointDiff?.branchId,
-			clearCheckpointDiff,
-			showCheckpointDiff,
-		],
+		[currentRevision?.branchId, clearCheckpointDiff, showCheckpointDiff],
 	);
 
 	const handleCreateBranch = useCallback(async () => {
@@ -348,7 +332,7 @@ function HistoryViewContent({
 					<div className="flex flex-col gap-0.5" role="list">
 						{branches.map((branch) => {
 							const isActive = branch.id === activeBranchRow.id;
-							const isReviewing = checkpointDiff?.branchId === branch.id;
+							const isReviewing = currentRevision?.branchId === branch.id;
 							const isRestoreDisabled = isActive;
 							const isDeleteDisabled = isActive;
 							const branchDisplayName = displayBranchName(branch.name);
@@ -572,11 +556,7 @@ function summarizeCheckpointDiffFile(file: CheckpointDiffFile): string[] {
 }
 
 function formatCheckpointDiffPath(file: CheckpointDiffFile): string {
-	if (
-		file.beforePath &&
-		file.afterPath &&
-		file.beforePath !== file.afterPath
-	) {
+	if (file.beforePath && file.afterPath && file.beforePath !== file.afterPath) {
 		return `${file.beforePath} -> ${file.afterPath}`;
 	}
 	return file.path;
@@ -636,8 +616,7 @@ function formatCheckpointSnippet(
 	const formatted = [
 		`${label}${lines.length > preview.length ? ` (${preview.length} of ${lines.length} changed lines)` : ""}:`,
 		...preview.map(
-			(line) =>
-				`  ${truncateCheckpointSnippetLine(line) || "<blank line>"}`,
+			(line) => `  ${truncateCheckpointSnippetLine(line) || "<blank line>"}`,
 		),
 	];
 	return formatted;
@@ -657,19 +636,3 @@ function formatLocalTimestamp(date = new Date()): string {
 		`${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
 	].join(" ");
 }
-
-export const extension = createReactExtensionDefinition({
-	kind: HISTORY_EXTENSION_KIND,
-	label: "History",
-	description: "Review and restore checkpoints.",
-	icon: HistoryIcon,
-	component: ({ context }) => (
-		<LixProvider lix={context.lix}>
-			<HistoryView
-				checkpointDiff={context.checkpointDiff}
-				showCheckpointDiff={context.showCheckpointDiff}
-				clearCheckpointDiff={context.clearCheckpointDiff}
-			/>
-		</LixProvider>
-	),
-});

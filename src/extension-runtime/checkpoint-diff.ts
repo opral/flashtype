@@ -39,8 +39,3 @@ export type CheckpointDiffBranchRow = {
 	readonly name: string;
 	readonly commit_id: string | null;
 };
-
-export type ShowCheckpointDiffArgs = {
-	readonly branchId: string;
-	readonly branches: readonly CheckpointDiffBranchRow[];
-};

@@ -1,17 +1,29 @@
 packages:
   - .
+  - submodule/atelier
   - submodule/lix/packages/js-sdk
   - "!submodule/lix/packages/**/dist"
 
+# FlashType and Atelier currently resolve different compatible patch releases
+# through their TipTap graphs. Keep ProseMirror nominal types single-instance.
+overrides:
+  prosemirror-model: 1.25.10
+
+peerDependencyRules:
+  allowedVersions:
+    "@glideapps/glide-data-grid>react": "^19.0.0"
+    "@glideapps/glide-data-grid>react-dom": "^19.0.0"
+
 allowBuilds:
-  '@parcel/watcher': set this to true or false
-  '@posthog/cli': set this to true or false
+  "@parcel/watcher": set this to true or false
+  "@posthog/cli": set this to true or false
   core-js: set this to true or false
   electron: set this to true or false
   electron-winstaller: set this to true or false
-  esbuild: set this to true or false
+  esbuild: true
   node-pty: set this to true or false
-
+  sharp: false
+  workerd: false
 onlyBuiltDependencies:
   - electron
   - node-pty

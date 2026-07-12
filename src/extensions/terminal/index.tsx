@@ -1,16 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, RotateCcw, TerminalSquare } from "lucide-react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import { captureTelemetry, captureTelemetryException } from "@/lib/telemetry";
-import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
-import { TERMINAL_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
-import {
-	type TerminalLaunchConfig,
-	buildTerminalLaunchConfig,
-} from "../../extension-runtime/agent-terminal-command";
+import type { TerminalLaunchConfig } from "../../extension-runtime/agent-terminal-command";
 import { createTerminalOutputNormalizer } from "./ansi-style-normalizer";
 
 function cssColor(name: string, fallback: string): string {
@@ -367,19 +362,3 @@ function formatTerminalStartupError(error: TerminalStartupError): {
 			};
 	}
 }
-
-export const extension = createReactExtensionDefinition({
-	kind: TERMINAL_EXTENSION_KIND,
-	label: "Terminal",
-	description: "Run shell commands in a native terminal session.",
-	icon: TerminalSquare,
-	multiInstance: true,
-	component: ({ instance }) => (
-		<TerminalView
-			launchConfig={buildTerminalLaunchConfig({
-				state: instance.state,
-				launchArgs: instance.launchArgs,
-			})}
-		/>
-	),
-});

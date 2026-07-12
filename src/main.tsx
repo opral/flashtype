@@ -1,28 +1,39 @@
 import {
-	StrictMode,
 	Suspense,
+	lazy,
 	useCallback,
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import {
+	Atelier,
+	createAtelier,
+	type AtelierInstance,
+	type AtelierExtensionRegistration,
+} from "@opral/atelier";
+import "@opral/atelier/style.css";
 import "./index.css";
-import { LixProvider } from "@/lib/lix-react";
 import type { Lix } from "@/lib/lix-types";
-import { KeyValueProvider } from "./hooks/key-value/use-key-value";
-import { KEY_VALUE_DEFINITIONS } from "./hooks/key-value/schema";
 import { ErrorFallback } from "./main.error";
-import { V2LayoutShell } from "./shell/layout-shell";
 import { FirstRunScreen } from "./shell/first-run-screen";
+import { AgentInvite } from "./shell/agent-invite";
 import { WorkspaceLoadingScreen } from "./shell/workspace-loading-screen";
 import { openDesktopLix } from "./lib/lix-client";
 import { captureWorkspaceProfile } from "./lib/workspace-profile-telemetry";
-import { MarkdownEditorFuzzHarness } from "./extensions/markdown/editor/markdown-editor-fuzz-harness";
 import {
 	activatePostHogRecording,
 	syncPostHogWorkspaceContext,
 } from "./lib/posthog-client";
+import { createFlashTypeAtelierExtensions } from "./extensions/atelier-host-extensions";
+import {
+	createAgentPromptTelemetryHandler,
+	createAtelierTelemetryHandler,
+} from "./lib/atelier-telemetry";
+import { createAgentTurnReviewHandler } from "./lib/agent-turn-review-bridge";
+import { connectAtelierWorkspace } from "./lib/atelier-workspace-bridge";
 
 type Workspace = Awaited<
 	ReturnType<NonNullable<Window["flashtypeDesktop"]>["workspace"]["get"]>
@@ -33,27 +44,51 @@ type WorkspaceRecovery = Awaited<
 	>
 >;
 
+const DEFAULT_OPEN_ATELIER_PANELS = ["right"] as const;
+
 /**
  * The workspace gates the app: without a folder, only the first-run screen
  * renders — no lix, no panels. Lix opens once a workspace exists.
  */
 export const AppRoot = () => {
+	const isMacDesktop = window.flashtypeDesktop?.platform === "darwin";
 	// undefined = still asking the main process; null = first run.
 	const [workspace, setWorkspace] = useState<Workspace | undefined>(undefined);
 	const [workspaceRecovery, setWorkspaceRecovery] = useState<
 		WorkspaceRecovery | null | undefined
 	>(undefined);
 	const [lix, setLix] = useState<Lix | null>(null);
-	const [pendingOpenFilePaths, setPendingOpenFilePaths] = useState<string[]>(
-		[],
-	);
-	const [pendingOpenFilesConsumed, setPendingOpenFilesConsumed] =
-		useState(false);
 	const [error, setError] = useState<unknown>(null);
 	const [openingWorkspaceName, setOpeningWorkspaceName] = useState<
 		string | null | undefined
 	>(undefined);
 	const [isUpdateReady, setIsUpdateReady] = useState(false);
+	const atelierExtensions = useMemo(
+		() =>
+			workspace
+				? createFlashTypeAtelierExtensions(workspace)
+				: ([] as readonly AtelierExtensionRegistration[]),
+		[workspace],
+	);
+	const handleAtelierEvent = useMemo(
+		() => (lix ? createAtelierTelemetryHandler(lix) : undefined),
+		[lix],
+	);
+	const atelier = useMemo(
+		() =>
+			lix
+				? createAtelier({
+						// FlashType's renderer-side Lix proxy implements Atelier's runtime
+						// contract but intentionally hides native SDK internals.
+						lix: lix as unknown as AtelierInstance["lix"],
+						extensions: atelierExtensions,
+						filesViewMode: "sidebar",
+						defaultOpenPanels: DEFAULT_OPEN_ATELIER_PANELS,
+						onEvent: handleAtelierEvent,
+					})
+				: null,
+		[lix, atelierExtensions, handleAtelierEvent],
+	);
 
 	useEffect(() => {
 		void activatePostHogRecording();
@@ -214,33 +249,31 @@ export const AppRoot = () => {
 	}, [lix, workspace]);
 
 	useEffect(() => {
-		setPendingOpenFilesConsumed(false);
-		setPendingOpenFilePaths([]);
-		if (!workspace || !lix) return;
-		let cancelled = false;
-		(async () => {
-			try {
-				const filePaths =
-					(await window.flashtypeDesktop?.workspace.consumePendingOpenFiles()) ??
-					[];
-				if (!cancelled) {
-					setPendingOpenFilePaths(filePaths);
-					setPendingOpenFilesConsumed(true);
-				}
-			} catch (e) {
-				if (!cancelled) setError(e);
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [lix, workspace]);
+		const desktopWorkspace = window.flashtypeDesktop?.workspace;
+		if (!atelier || !lix || !desktopWorkspace) return;
+		const connection = connectAtelierWorkspace({
+			documents: atelier.documents,
+			lix,
+			workspace: desktopWorkspace,
+			onError: setError,
+		});
+		return connection.dispose;
+	}, [atelier, lix]);
 
-	const handlePendingOpenFileHandled = useCallback((filePath: string) => {
-		setPendingOpenFilePaths((current) =>
-			current.filter((pendingFilePath) => pendingFilePath !== filePath),
+	useEffect(() => {
+		if (!lix || !atelier) return;
+		const handlePromptTelemetry = createAgentPromptTelemetryHandler(lix);
+		const handleAgentTurnReview = createAgentTurnReviewHandler(atelier, {
+			fileCapture: window.flashtypeDesktop?.workspace,
+		});
+		const unsubscribe = window.flashtypeDesktop?.agentHooks?.onTurnEvent(
+			(event) => {
+				handlePromptTelemetry(event);
+				return handleAgentTurnReview(event);
+			},
 		);
-	}, []);
+		return () => unsubscribe?.();
+	}, [atelier, lix]);
 
 	if (workspaceRecovery) return <ErrorFallback recovery={workspaceRecovery} />;
 	if (error) return <ErrorFallback error={error} />;
@@ -258,7 +291,7 @@ export const AppRoot = () => {
 			/>
 		);
 	}
-	if (!lix) {
+	if (!lix || !atelier) {
 		return (
 			<WorkspaceLoadingScreen
 				workspaceName={openingWorkspaceName ?? workspace.name}
@@ -267,25 +300,34 @@ export const AppRoot = () => {
 	}
 
 	return (
-		<LixProvider lix={lix}>
-			<KeyValueProvider defs={KEY_VALUE_DEFINITIONS}>
-				<Suspense fallback={<BootPlaceholder />}>
-					<V2LayoutShell
-						workspace={workspace}
-						workspaceName={workspace.name}
-						onOpenWorkspace={handleOpenFolder}
-						pendingOpenFilePaths={pendingOpenFilePaths}
-						canPersistOpenFileSession={
-							pendingOpenFilesConsumed && pendingOpenFilePaths.length === 0
-						}
-						onPendingOpenFileHandled={handlePendingOpenFileHandled}
-						onError={setError}
-						isUpdateReady={isUpdateReady}
-						onInstallUpdate={handleInstallUpdate}
-					/>
-				</Suspense>
-			</KeyValueProvider>
-		</LixProvider>
+		<Suspense fallback={<BootPlaceholder />}>
+			<Atelier
+				instance={atelier}
+				slots={{
+					navbarStart: isMacDesktop ? (
+						<span
+							aria-hidden="true"
+							className="flashtype-traffic-light-spacer"
+						/>
+					) : null,
+					navbarEnd: isUpdateReady ? (
+						<button
+							type="button"
+							className="flashtype-update-button"
+							onClick={() => void handleInstallUpdate()}
+						>
+							Update
+						</button>
+					) : null,
+					rightPanelEmpty: ({ openExtension }) => (
+						<AgentInvite
+							onStartClaude={() => openExtension("flashtype_claude")}
+							onStartCodex={() => openExtension("flashtype_codex")}
+						/>
+					),
+				}}
+			/>
+		</Suspense>
 	);
 };
 
@@ -303,14 +345,27 @@ function workspaceNameFromPath(path: string): string | null {
 }
 
 const root = createRoot(document.getElementById("root")!);
-if (shouldRenderMarkdownEditorFuzzHarness()) {
-	root.render(<MarkdownEditorFuzzHarness />);
-} else {
+const MarkdownEditorFuzzHarness = import.meta.env.DEV
+	? lazy(async () => {
+			const module =
+				await import("./extensions/markdown/editor/markdown-editor-fuzz-harness");
+			return { default: module.MarkdownEditorFuzzHarness };
+		})
+	: null;
+
+if (shouldRenderMarkdownEditorFuzzHarness() && MarkdownEditorFuzzHarness) {
 	root.render(
-		<StrictMode>
-			<AppRoot />
-		</StrictMode>,
+		<Suspense fallback={<BootPlaceholder />}>
+			<MarkdownEditorFuzzHarness />
+		</Suspense>,
 	);
+} else {
+	// Atelier hosts extensions through imperative nested React roots. Rendering
+	// the desktop shell in StrictMode would synchronously simulate teardown of
+	// those roots (and the shared Lix connection) during development startup.
+	// Use the same lifecycle as the packaged Electron app; editor components keep
+	// dedicated StrictMode coverage in their tests.
+	root.render(<AppRoot />);
 }
 
 function shouldRenderMarkdownEditorFuzzHarness(): boolean {
