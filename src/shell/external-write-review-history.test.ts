@@ -12,6 +12,7 @@ import {
 	useExternalWriteReview,
 } from "./external-write-review-history";
 import {
+	AGENT_TURN_COMMIT_RANGE_KEY,
 	appendAgentTurnCommitRange,
 	clearAgentTurnCommitRangeFile,
 	isAgentTurnCommitRangeStore,
@@ -438,8 +439,9 @@ describe("getExternalWriteReview", () => {
 		}
 	});
 
-	test("updates an already mounted review hook when the persisted range appears", async () => {
+	test("does not miss a range persisted before the first observer snapshot", async () => {
 		const lix = await openLix();
+		const observerGate = gateInitialReviewRangeSnapshot(lix);
 		let utils: ReturnType<typeof render> | undefined;
 		try {
 			await writeFile(lix, "live-file", "/docs/live.md", "live before");
@@ -452,7 +454,7 @@ describe("getExternalWriteReview", () => {
 				utils = render(
 					createElement(
 						LixProvider as ComponentType<{ lix: Lix }>,
-						{ lix },
+						{ lix: observerGate.lix },
 						createElement(
 							Suspense,
 							{ fallback: null },
@@ -470,6 +472,7 @@ describe("getExternalWriteReview", () => {
 				expect(reviews.length).toBeGreaterThan(0);
 				expect(reviews.at(-1)).toBeNull();
 			});
+			await observerGate.started;
 
 			await act(async () => {
 				await appendAgentTurnCommitRange(
@@ -480,6 +483,7 @@ describe("getExternalWriteReview", () => {
 						afterCommitId,
 					}),
 				);
+				observerGate.release();
 			});
 
 			await waitFor(() => {
@@ -489,6 +493,7 @@ describe("getExternalWriteReview", () => {
 				expect(review?.afterCommitId).toBe(afterCommitId);
 			});
 		} finally {
+			observerGate.release();
 			await act(async () => {
 				utils?.unmount();
 			});
@@ -582,6 +587,46 @@ function ExternalWriteReviewProbe({
 		onReview(review);
 	}, [onReview, review]);
 	return null;
+}
+
+function gateInitialReviewRangeSnapshot(lix: Lix): {
+	readonly lix: Lix;
+	readonly started: Promise<void>;
+	readonly release: () => void;
+} {
+	const originalObserve = lix.observe.bind(lix);
+	let markStarted: (() => void) | undefined;
+	let releaseSnapshot: (() => void) | undefined;
+	const started = new Promise<void>((resolve) => {
+		markStarted = resolve;
+	});
+	const snapshotGate = new Promise<void>((resolve) => {
+		releaseSnapshot = resolve;
+	});
+
+	return {
+		lix: {
+			...lix,
+			observe(sql, params = []) {
+				const events = originalObserve(sql, params);
+				if (!params.includes(AGENT_TURN_COMMIT_RANGE_KEY)) return events;
+				let isFirstSnapshot = true;
+				return {
+					async next() {
+						if (isFirstSnapshot) {
+							isFirstSnapshot = false;
+							markStarted?.();
+							await snapshotGate;
+						}
+						return await events.next();
+					},
+					close: () => events.close(),
+				};
+			},
+		},
+		started,
+		release: () => releaseSnapshot?.(),
+	};
 }
 
 async function writeFile(

@@ -17,19 +17,27 @@ describe("agent turn file capture", () => {
 				"before\n",
 			);
 			await writeFile(
+				path.join(workspacePath, "notes", "deleted.md"),
+				"delete me\n",
+			);
+			await writeFile(
 				path.join(workspacePath, "notes", "reference.txt"),
 				"x\n",
 			);
 			await writeFile(path.join(workspacePath, ".git", "ignored.md"), "x\n");
 
 			const capture = await createAgentTurnFileCapture(workspacePath);
-			expect(capture.baselinePaths).toEqual(["notes/unopened.md"]);
+			expect(capture.baselinePaths).toEqual([
+				"notes/deleted.md",
+				"notes/unopened.md",
+			]);
 
 			await writeFile(
 				path.join(workspacePath, "notes", "unopened.md"),
 				"after\n",
 			);
 			await writeFile(path.join(workspacePath, "created.md"), "new\n");
+			await rm(path.join(workspacePath, "notes", "deleted.md"));
 			await writeFile(
 				path.join(workspacePath, ".git", "ignored.md"),
 				"after\n",
@@ -38,6 +46,7 @@ describe("agent turn file capture", () => {
 			expect(await capture.finish()).toEqual([
 				"created.md",
 				"notes/unopened.md",
+				"notes/deleted.md",
 			]);
 		} finally {
 			await rm(workspacePath, { recursive: true, force: true });

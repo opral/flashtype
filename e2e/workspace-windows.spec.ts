@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
 import { FsBackend, openLix } from "@lix-js/sdk";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
@@ -130,6 +130,52 @@ test("relaunch reopens saved directory and transient file workspaces", async ({
 			fileTreeFile(directoryPage, "/directory-marker.md"),
 		).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
+	} finally {
+		await closeElectronApp(electronApp);
+	}
+});
+
+test("relaunch restores the last document opened in a transient directory", async ({
+	browserName: _browserName,
+}, testInfo) => {
+	const userDataDir = testInfo.outputPath("user-data");
+	const workspaceDir = testInfo.outputPath("directory-workspace");
+	const secondFilePath = path.join(workspaceDir, "second.md");
+
+	let electronApp: ElectronApplication | undefined;
+	try {
+		await writeMarkerFile(workspaceDir, "first.md");
+		await writeMarkerFile(workspaceDir, "second.md");
+		const newestMarkdownTime = new Date(Date.now() + 1_000);
+		await utimes(secondFilePath, newestMarkdownTime, newestMarkdownTime);
+
+		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
+			userDataDir,
+		});
+		const page = await pageWithTitle(electronApp, path.basename(workspaceDir));
+		registerRendererConsoleLogging(page);
+		await expect(
+			page.getByRole("heading", { name: "second.md" }),
+		).toBeVisible();
+
+		await fileTreeFile(page, "/first.md").click();
+		await expect(page.getByRole("heading", { name: "first.md" })).toBeVisible();
+		await expectWorkspaceSessionOpenFilePaths(userDataDir, workspaceDir, [
+			"first.md",
+		]);
+
+		await closeElectronApp(electronApp);
+		electronApp = undefined;
+
+		electronApp = await launchDevElectronAppWithArgs([], { userDataDir });
+		const restoredPage = await pageWithTitle(
+			electronApp,
+			path.basename(workspaceDir),
+		);
+		registerRendererConsoleLogging(restoredPage);
+		await expect(
+			restoredPage.getByRole("heading", { name: "first.md" }),
+		).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
@@ -977,6 +1023,28 @@ async function expectWorkspaceSessionPaths(
 			}
 		})
 		.toEqual(workspacePaths);
+}
+
+async function expectWorkspaceSessionOpenFilePaths(
+	userDataDir: string,
+	workspacePath: string,
+	openFilePaths: string[],
+): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				const store = JSON.parse(
+					await readFile(workspaceSessionPath(userDataDir), "utf8"),
+				);
+				const workspace = Array.isArray(store.workspaces)
+					? store.workspaces.find((entry: any) => entry.path === workspacePath)
+					: undefined;
+				return workspace?.openFilePaths ?? null;
+			} catch {
+				return null;
+			}
+		})
+		.toEqual(openFilePaths);
 }
 
 function workspaceSessionPath(userDataDir: string): string {

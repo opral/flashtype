@@ -1119,14 +1119,11 @@ function usePendingExternalWriteReviewPaths(
 		const watchEvents = async (
 			events: ReturnType<Lix["observe"]>,
 		): Promise<void> => {
-			let receivedInitialSnapshot = false;
 			while (!cancelled) {
 				const event = await events.next();
 				if (!event || cancelled) break;
-				if (!receivedInitialSnapshot) {
-					receivedInitialSnapshot = true;
-					continue;
-				}
+				// A mutation can land between the initial badge query and observer
+				// startup, making the first snapshot the only notification for it.
 				setReviewRevision((current) => current + 1);
 			}
 		};

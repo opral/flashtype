@@ -103,14 +103,12 @@ export function useExternalWriteReview(args: {
 		const watchEvents = async (
 			events: ReturnType<Lix["observe"]>,
 		): Promise<void> => {
-			let receivedInitialSnapshot = false;
 			while (!cancelled) {
 				const event = await events.next();
 				if (!event || cancelled) break;
-				if (!receivedInitialSnapshot) {
-					receivedInitialSnapshot = true;
-					continue;
-				}
+				// The first snapshot may already contain a mutation that landed after
+				// the initial review read but before the observer started. Treat every
+				// snapshot as an invalidation so that ordering cannot lose a review.
 				setReviewRevision((current) => current + 1);
 			}
 		};

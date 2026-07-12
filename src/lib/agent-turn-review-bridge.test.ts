@@ -163,12 +163,26 @@ describe("createAgentTurnReviewHandler", () => {
 		expect(result.status).toBe("added");
 		expect(result.imports).toEqual([["notes/created.md"]]);
 	});
+
+	test("keeps a deleted Markdown file in the baseline so its turn diff is deleted", async () => {
+		const result = await runCapturedFileTurn({
+			path: "notes/deleted.md",
+			before: "delete me\n",
+			baselinePaths: ["notes/deleted.md"],
+		});
+
+		expect(result.status).toBe("deleted");
+		expect(result.imports).toEqual([
+			["notes/deleted.md"],
+			["notes/deleted.md"],
+		]);
+	});
 });
 
 async function runCapturedFileTurn(args: {
 	readonly path: string;
 	readonly before?: string;
-	readonly after: string;
+	readonly after?: string;
 	readonly baselinePaths: readonly string[];
 }) {
 	const disk = new Map<string, string>();
@@ -188,7 +202,8 @@ async function runCapturedFileTurn(args: {
 		syncDiskToLix: vi.fn(async () => {
 			for (const path of tracked.keys()) {
 				const content = disk.get(path);
-				if (content !== undefined) tracked.set(path, content);
+				if (content === undefined) tracked.delete(path);
+				else tracked.set(path, content);
 			}
 		}),
 		execute: vi.fn(async (query: string) => {
@@ -204,7 +219,7 @@ async function runCapturedFileTurn(args: {
 			throw new Error(`Unexpected query: ${query}`);
 		}),
 	} as unknown as Lix;
-	let status: "added" | "modified" | "unchanged" = "unchanged";
+	let status: "added" | "deleted" | "modified" | "unchanged" = "unchanged";
 	const atelier = {
 		lix,
 		diff: {
@@ -214,9 +229,11 @@ async function runCapturedFileTurn(args: {
 				status =
 					before === undefined
 						? "added"
-						: before === after
-							? "unchanged"
-							: "modified";
+						: after === undefined
+							? "deleted"
+							: before === after
+								? "unchanged"
+								: "modified";
 			}),
 		},
 	} as unknown as AtelierInstance;
@@ -240,7 +257,8 @@ async function runCapturedFileTurn(args: {
 		phase: "turn-start",
 		createdAt: 10,
 	});
-	disk.set(args.path, args.after);
+	if (args.after === undefined) disk.delete(args.path);
+	else disk.set(args.path, args.after);
 	await handle({
 		...event,
 		id: "stop",

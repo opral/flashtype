@@ -203,6 +203,20 @@ export function consumePendingOpenFiles(window) {
 	return pendingOpenFilePaths ?? [];
 }
 
+/** Updates only the relaunch projection for a transient workspace. */
+export function setWorkspaceSessionOpenFilePaths(window, filePaths) {
+	const state = getWindowState(window);
+	if (state?.workspace?.ephemeral !== true) {
+		return [];
+	}
+	const openFilePaths = uniqueWorkspaceRelativeFilePaths(filePaths);
+	state.workspace = {
+		...state.workspace,
+		openFilePaths,
+	};
+	return openFilePaths;
+}
+
 export async function beginAgentTurnFileCapture(window, payload) {
 	const state = getOrCreateWindowState(window);
 	const captureId = normalizeAgentTurnFileCaptureId(payload?.captureId);

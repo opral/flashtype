@@ -13,6 +13,7 @@ import {
 	getWorkspace,
 	registerWorkspaceIpc,
 	resolveWorkspaceTargets,
+	setWorkspaceSessionOpenFilePaths,
 	setWorkspaceFromTarget,
 	setWorkspaceTrackChanges,
 	showWorkspaceDialog,
@@ -1120,6 +1121,20 @@ function registerAppIpc() {
 		const url = validateExternalUrl(payload?.url);
 		await shell.openExternal(url);
 		return { status: "opened" };
+	});
+	ipcMain.handle("workspace:setSessionOpenFilePaths", (event, payload) => {
+		const window = BrowserWindow.fromWebContents(event.sender);
+		if (!window || window.isDestroyed()) return;
+		const workspace = getWorkspace(window);
+		if (workspace?.ephemeral !== true) return;
+		const filePaths = setWorkspaceSessionOpenFilePaths(
+			window,
+			Array.isArray(payload?.filePaths) ? payload.filePaths : [],
+		);
+		const workspaceEntry = workspaceToSessionEntry(workspace, filePaths);
+		if (!workspaceEntry) return;
+		openWorkspaceEntriesByWindowId.set(window.id, workspaceEntry);
+		persistOpenWorkspacePathsSoon();
 	});
 }
 

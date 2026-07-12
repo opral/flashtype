@@ -23,11 +23,15 @@ export async function createAgentTurnFileCapture(workspacePath) {
 			if (closed) return [];
 			closed = true;
 			const current = await scanReviewableMarkdownFiles(rootPath);
-			return [...current.entries()]
+			const changedPaths = [...current.entries()]
 				.filter(([filePath, fingerprint]) => {
 					return baseline.get(filePath) !== fingerprint;
 				})
 				.map(([filePath]) => filePath);
+			const deletedPaths = [...baseline.keys()].filter(
+				(filePath) => !current.has(filePath),
+			);
+			return [...changedPaths, ...deletedPaths];
 		},
 		dispose() {
 			closed = true;

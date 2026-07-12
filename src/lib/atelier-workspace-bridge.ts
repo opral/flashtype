@@ -1,7 +1,10 @@
 import type { AtelierDocumentsApi } from "@opral/atelier";
 import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
-import { readCurrentAtelierDocumentPath } from "./atelier-document-state";
+import {
+	readAtelierDocumentSessionState,
+	readCurrentAtelierDocumentPath,
+} from "./atelier-document-state";
 
 type DesktopWorkspaceBridge = Pick<
 	NonNullable<Window["flashtypeDesktop"]>["workspace"],
@@ -9,6 +12,7 @@ type DesktopWorkspaceBridge = Pick<
 	| "getMostRecentMarkdownFile"
 	| "onCloseFile"
 	| "onNewFile"
+	| "setSessionOpenFilePaths"
 >;
 
 type ConnectAtelierWorkspaceOptions = {
@@ -54,6 +58,46 @@ export function connectAtelierWorkspace(
 	const unsubscribeCloseFile = workspace.onCloseFile(() => {
 		void documents.closeActive().catch(reportError);
 	});
+	const uiStateEvents = options.lix.observe(
+		`SELECT value
+		 FROM lix_key_value_by_branch
+		 WHERE key = $1
+		   AND lixcol_branch_id = $2`,
+		["atelier_ui_state", "global"],
+	);
+	const filePathEvents = options.lix.observe(
+		`SELECT id, path
+		 FROM lix_file
+		 WHERE path NOT LIKE '/.lix/%'
+		 ORDER BY id`,
+	);
+	let startupReady = false;
+	let sessionPersistenceQueue = Promise.resolve();
+	const persistSessionDocuments = () => {
+		if (!startupReady || abortController.signal.aborted) return;
+		sessionPersistenceQueue = sessionPersistenceQueue
+			.catch(() => undefined)
+			.then(async () => {
+				if (abortController.signal.aborted) return;
+				const state = await readAtelierDocumentSessionState(options.lix);
+				if (abortController.signal.aborted) return;
+				await workspace.setSessionOpenFilePaths({
+					filePaths: state.openPaths.map((path) => path.replace(/^\/+/, "")),
+				});
+			})
+			.catch(reportError);
+	};
+	const watchSessionEvents = async (
+		events: ReturnType<Lix["observe"]>,
+	): Promise<void> => {
+		while (!abortController.signal.aborted) {
+			const event = await events.next();
+			if (!event || abortController.signal.aborted) return;
+			persistSessionDocuments();
+		}
+	};
+	void watchSessionEvents(uiStateEvents).catch(reportError);
+	void watchSessionEvents(filePathEvents).catch(reportError);
 
 	const ready = (async () => {
 		const pendingOpenFiles = await workspace.consumePendingOpenFiles();
@@ -81,12 +125,18 @@ export function connectAtelierWorkspace(
 			await openWorkspacePath(recent.path);
 		}
 	})().catch(reportError);
+	void ready.finally(() => {
+		startupReady = true;
+		persistSessionDocuments();
+	});
 
 	return {
 		ready,
 		dispose: () => {
 			if (abortController.signal.aborted) return;
 			abortController.abort();
+			uiStateEvents.close();
+			filePathEvents.close();
 			unsubscribeNewFile();
 			unsubscribeCloseFile();
 		},

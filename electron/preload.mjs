@@ -30,6 +30,8 @@ const workspace = {
 	clearRecovery: () => ipcRenderer.invoke("workspace:clearRecovery"),
 	consumePendingOpenFiles: () =>
 		ipcRenderer.invoke("workspace:consumePendingOpenFiles"),
+	setSessionOpenFilePaths: (payload) =>
+		ipcRenderer.invoke("workspace:setSessionOpenFilePaths", payload),
 	beginAgentTurnFileCapture: (payload) =>
 		ipcRenderer.invoke("workspace:beginAgentTurnFileCapture", payload),
 	finishAgentTurnFileCapture: (payload) =>

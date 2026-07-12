@@ -294,6 +294,8 @@ export type DesktopWorkspaceApi = {
 	clearRecovery(): Promise<void>;
 	/** Returns workspace-relative file paths queued for editor opening. */
 	consumePendingOpenFiles(): Promise<string[]>;
+	/** Persists the central documents that should reopen with this window. */
+	setSessionOpenFilePaths(payload: { filePaths: string[] }): Promise<void>;
 	beginAgentTurnFileCapture(
 		payload: DesktopAgentTurnFileCapturePayload,
 	): Promise<{ baselinePaths: string[] }>;

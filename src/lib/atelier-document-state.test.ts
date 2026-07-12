@@ -1,6 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 import type { Lix, LixRuntimeQueryResult } from "@/lib/lix-types";
-import { readCurrentAtelierDocumentPath } from "./atelier-document-state";
+import {
+	readAtelierDocumentSessionState,
+	readCurrentAtelierDocumentPath,
+} from "./atelier-document-state";
 
 describe("readCurrentAtelierDocumentPath", () => {
 	test("returns the current Lix path for Atelier's active central document", async () => {
@@ -27,6 +30,25 @@ describe("readCurrentAtelierDocumentPath", () => {
 		});
 
 		await expect(readCurrentAtelierDocumentPath(lix)).resolves.toBe("/one.md");
+	});
+
+	test("returns validated active and open central document paths for sessions", async () => {
+		const lix = createTestLix({
+			state: uiState(
+				[
+					documentView("file_one", "/old-one.md"),
+					documentView("file_two", "/old-two.md"),
+					documentView("file_missing", "/missing.md"),
+				],
+				"atelier_file:file_two",
+			),
+			files: { file_one: "/one.md", file_two: "/renamed-two.md" },
+		});
+
+		await expect(readAtelierDocumentSessionState(lix)).resolves.toEqual({
+			activePath: "/renamed-two.md",
+			openPaths: ["/renamed-two.md", "/one.md"],
+		});
 	});
 
 	test("returns null for the Files landing view", async () => {

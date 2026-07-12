@@ -15,12 +15,14 @@ import {
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
 	getMostRecentMarkdownFile,
+	getWorkspace,
 	getWorkspaceFsBackendOptions,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
 	resolveWorkspaceTargets,
 	setEphemeralWatchedDirectories,
 	setWorkspaceFromPath,
+	setWorkspaceSessionOpenFilePaths,
 } from "./workspace.mjs";
 
 vi.mock("electron", () => ({
@@ -822,6 +824,34 @@ describe("workspace resolution", () => {
 				syncAllFiles: false,
 			});
 			expect(options.lixDir).toEqual(expect.any(String));
+		} finally {
+			await disposeWorkspaceWindowState(window);
+		}
+	});
+
+	test("projects current central documents into transient session state", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, "notes"), { recursive: true });
+		const window = createTestWindow();
+		try {
+			await setWorkspaceFromPath(directory, window);
+
+			expect(
+				setWorkspaceSessionOpenFilePaths(window, [
+					"notes/current.md",
+					"notes/current.md",
+					"../outside.md",
+				]),
+			).toEqual(["notes/current.md"]);
+			expect(getWorkspace(window)).toMatchObject({
+				ephemeral: true,
+				openFilePaths: ["notes/current.md"],
+			});
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}

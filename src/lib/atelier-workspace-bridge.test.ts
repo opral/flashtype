@@ -89,6 +89,71 @@ describe("connectAtelierWorkspace", () => {
 		expect(harness.unsubscribeCloseFile).toHaveBeenCalledOnce();
 	});
 
+	test("persists Atelier's validated central documents as session paths", async () => {
+		const harness = createHarness({ activeDocumentPath: "/docs/active.md" });
+		const connection = connectAtelierWorkspace(harness.options);
+		await connection.ready;
+
+		await waitFor(() => {
+			expect(harness.workspace.setSessionOpenFilePaths).toHaveBeenCalledWith({
+				filePaths: ["docs/active.md"],
+			});
+		});
+		connection.dispose();
+		expect(harness.observeClose).toHaveBeenCalledTimes(2);
+	});
+
+	test("persists observation-driven document changes after startup", async () => {
+		const harness = createHarness({ activeDocumentPath: "/first.md" });
+		const connection = connectAtelierWorkspace(harness.options);
+		await connection.ready;
+		await waitFor(() =>
+			expect(harness.workspace.setSessionOpenFilePaths).toHaveBeenCalledWith({
+				filePaths: ["first.md"],
+			}),
+		);
+
+		harness.setActiveDocument("/second.md");
+		harness.emitUiStateChange();
+
+		await waitFor(() =>
+			expect(
+				harness.workspace.setSessionOpenFilePaths,
+			).toHaveBeenLastCalledWith({
+				filePaths: ["second.md"],
+			}),
+		);
+		connection.dispose();
+	});
+
+	test("persists external active-file renames and deletions", async () => {
+		const harness = createHarness({ activeDocumentPath: "/first.md" });
+		const connection = connectAtelierWorkspace(harness.options);
+		await connection.ready;
+		await waitFor(() =>
+			expect(harness.workspace.setSessionOpenFilePaths).toHaveBeenCalledWith({
+				filePaths: ["first.md"],
+			}),
+		);
+
+		harness.setActiveFilePath("/renamed.md");
+		harness.emitFilePathChange();
+		await waitFor(() =>
+			expect(
+				harness.workspace.setSessionOpenFilePaths,
+			).toHaveBeenLastCalledWith({ filePaths: ["renamed.md"] }),
+		);
+
+		harness.setActiveFilePath(null);
+		harness.emitFilePathChange();
+		await waitFor(() =>
+			expect(
+				harness.workspace.setSessionOpenFilePaths,
+			).toHaveBeenLastCalledWith({ filePaths: [] }),
+		);
+		connection.dispose();
+	});
+
 	test("imports a lazy filesystem path before opening the document", async () => {
 		const harness = createHarness();
 
@@ -113,8 +178,63 @@ function createHarness(
 			filesById.set(`imported:${path}`, `/${path.replace(/^\/+/, "")}`);
 		}
 	});
+	const observeClose = vi.fn();
+	type ObservedEvent = {
+		sequence: number;
+		mutationSequence: number;
+		result: LixRuntimeQueryResult;
+	};
+	const createObservedEvents = (columns: readonly string[]) => {
+		const queued: ObservedEvent[] = [
+			{
+				sequence: 1,
+				mutationSequence: 0,
+				result: queryResult([], columns),
+			},
+		];
+		let resolveNext: ((event: ObservedEvent | undefined) => void) | undefined;
+		return {
+			emit() {
+				const event = {
+					sequence: 2,
+					mutationSequence: 1,
+					result: queryResult([], columns),
+				};
+				if (resolveNext) {
+					const resolve = resolveNext;
+					resolveNext = undefined;
+					resolve(event);
+				} else {
+					queued.push(event);
+				}
+			},
+			next: vi.fn(async () => {
+				const event = queued.shift();
+				if (event) return event;
+				return await new Promise<ObservedEvent | undefined>((resolve) => {
+					resolveNext = resolve;
+				});
+			}),
+			close() {
+				observeClose();
+				resolveNext?.(undefined);
+				resolveNext = undefined;
+			},
+		};
+	};
+	const uiStateEvents = createObservedEvents(["value"]);
+	const filePathEvents = createObservedEvents(["id", "path"]);
 	const lix = {
 		importFilesystemPaths,
+		observe: vi.fn((sql: string) => {
+			const events = sql.includes("lix_key_value_by_branch")
+				? uiStateEvents
+				: filePathEvents;
+			return {
+				next: events.next,
+				close: events.close,
+			};
+		}),
 		execute: vi.fn(async (sql: string, params?: ReadonlyArray<unknown>) => {
 			if (sql.includes("lix_key_value_by_branch")) {
 				return activeDocumentPath
@@ -137,7 +257,11 @@ function createHarness(
 	} as unknown as Lix;
 	const setActiveDocument = (path: string | null) => {
 		activeDocumentPath = path;
+		setActiveFilePath(path);
+	};
+	const setActiveFilePath = (path: string | null) => {
 		if (path) filesById.set("active-file", path);
+		else filesById.delete("active-file");
 	};
 	setActiveDocument(activeDocumentPath);
 
@@ -166,6 +290,7 @@ function createHarness(
 			closeFileListener = listener;
 			return unsubscribeCloseFile;
 		}),
+		setSessionOpenFilePaths: vi.fn(async () => {}),
 	};
 	const openWorkspacePath = vi.fn(async () => {});
 
@@ -177,7 +302,11 @@ function createHarness(
 		importFilesystemPaths,
 		unsubscribeNewFile,
 		unsubscribeCloseFile,
+		observeClose,
+		emitUiStateChange: uiStateEvents.emit,
+		emitFilePathChange: filePathEvents.emit,
 		setActiveDocument,
+		setActiveFilePath,
 		async emitNewFile() {
 			await newFileListener?.();
 		},
