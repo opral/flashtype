@@ -15,6 +15,7 @@ export default defineConfig({
 		setupFiles: ["setup-tests.ts"],
 		testTimeout: 60_000,
 		hookTimeout: 60_000,
+		maxWorkers: process.env.CI ? 4 : undefined,
 		exclude: [
 			...configDefaults.exclude,
 			"e2e/**",

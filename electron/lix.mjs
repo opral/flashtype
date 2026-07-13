@@ -43,8 +43,9 @@ export async function ensureLixOpen(window) {
 						);
 					}
 					const backendOptions = await getWorkspaceFsBackendOptions(window);
+					const backend = new FsBackend(backendOptions);
 					nativeLix = await openLix({
-						backend: new FsBackend(backendOptions),
+						backend,
 					});
 					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
 					if (tracksPersistentWorkspace) {
@@ -52,6 +53,7 @@ export async function ensureLixOpen(window) {
 					}
 					return createDesktopLixHandle(
 						nativeLix,
+						backend,
 						workspace.path,
 						backendOptions.lixDir ??
 							path.join(workspace.path, LIX_DATABASE_DIR),
@@ -275,7 +277,7 @@ function getOrCreateSession(window) {
 	return session;
 }
 
-function createDesktopLixHandle(nativeLix, workspaceDir, storageDir) {
+function createDesktopLixHandle(nativeLix, backend, workspaceDir, storageDir) {
 	let operationQueue = Promise.resolve();
 
 	async function acquireOperationSlot() {
@@ -410,12 +412,10 @@ function createDesktopLixHandle(nativeLix, workspaceDir, storageDir) {
 			});
 		},
 		async importFilesystemPaths(paths = []) {
-			return await runQueued(() =>
-				nativeLix.importFilesystemPaths([...(paths ?? [])]),
-			);
+			return await runQueued(() => backend.importPaths([...(paths ?? [])]));
 		},
 		async syncDiskToLix() {
-			return await runQueued(() => nativeLix.syncDiskToLix());
+			return await runQueued(() => backend.syncDiskToLix());
 		},
 		async close() {
 			await runQueued(() => nativeLix.close());

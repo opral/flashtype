@@ -35,7 +35,9 @@ export async function openLix(options: OpenTestLixOptions = {}): Promise<Lix> {
 	const { keyValues, ...sdkOptions } = options;
 	const sdk = await loadSdk();
 	const sdkLix = await sdk.openLix(sdkOptions);
-	const lix = createTestLixAdapter(sdkLix);
+	const fsBackend =
+		sdkOptions.backend instanceof sdk.FsBackend ? sdkOptions.backend : undefined;
+	const lix = createTestLixAdapter(sdkLix, fsBackend);
 	if (Array.isArray(keyValues)) {
 		await seedKeyValues(lix, keyValues);
 	}
@@ -93,7 +95,10 @@ async function seedKeyValues(
 	}
 }
 
-function createTestLixAdapter(sdkLix: SdkLix): Lix {
+function createTestLixAdapter(
+	sdkLix: SdkLix,
+	fsBackend?: InstanceType<SdkModule["FsBackend"]>,
+): Lix {
 	const observations = new Set<ObserveEvents>();
 	let closing = false;
 
@@ -188,10 +193,16 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			return await sdkLix.switchBranch(options);
 		},
 		async importFilesystemPaths(paths) {
-			await sdkLix.importFilesystemPaths(paths);
+			if (!fsBackend) {
+				throw new Error("importFilesystemPaths requires a filesystem backend");
+			}
+			await fsBackend.importPaths(paths);
 		},
 		async syncDiskToLix() {
-			await sdkLix.syncDiskToLix();
+			if (!fsBackend) {
+				throw new Error("syncDiskToLix requires a filesystem backend");
+			}
+			await fsBackend.syncDiskToLix();
 		},
 		async mergeBranchPreview(options) {
 			return await sdkLix.mergeBranchPreview(options);
