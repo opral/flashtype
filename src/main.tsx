@@ -63,6 +63,8 @@ export const AppRoot = () => {
 		string | null | undefined
 	>(undefined);
 	const [isUpdateReady, setIsUpdateReady] = useState(false);
+	const [connectedAtelier, setConnectedAtelier] =
+		useState<AtelierInstance | null>(null);
 	const atelierExtensions = useMemo(
 		() =>
 			workspace
@@ -251,13 +253,20 @@ export const AppRoot = () => {
 	useEffect(() => {
 		const desktopWorkspace = window.flashtypeDesktop?.workspace;
 		if (!atelier || !lix || !desktopWorkspace) return;
+		let cancelled = false;
 		const connection = connectAtelierWorkspace({
 			documents: atelier.documents,
 			lix,
 			workspace: desktopWorkspace,
 			onError: setError,
 		});
-		return connection.dispose;
+		void connection.ready.then(() => {
+			if (!cancelled) setConnectedAtelier(atelier);
+		});
+		return () => {
+			cancelled = true;
+			connection.dispose();
+		};
 	}, [atelier, lix]);
 
 	useEffect(() => {
@@ -301,32 +310,39 @@ export const AppRoot = () => {
 
 	return (
 		<Suspense fallback={<BootPlaceholder />}>
-			<Atelier
-				instance={atelier}
-				slots={{
-					navbarStart: isMacDesktop ? (
-						<span
-							aria-hidden="true"
-							className="flashtype-traffic-light-spacer"
-						/>
-					) : null,
-					navbarEnd: isUpdateReady ? (
-						<button
-							type="button"
-							className="flashtype-update-button"
-							onClick={() => void handleInstallUpdate()}
-						>
-							Update
-						</button>
-					) : null,
-					rightPanelEmpty: ({ openExtension }) => (
-						<AgentInvite
-							onStartClaude={() => openExtension("flashtype_claude")}
-							onStartCodex={() => openExtension("flashtype_codex")}
-						/>
-					),
-				}}
-			/>
+			<div className="relative h-dvh">
+				<Atelier
+					instance={atelier}
+					slots={{
+						navbarStart: isMacDesktop ? (
+							<span
+								aria-hidden="true"
+								className="flashtype-traffic-light-spacer"
+							/>
+						) : null,
+						navbarEnd: isUpdateReady ? (
+							<button
+								type="button"
+								className="flashtype-update-button"
+								onClick={() => void handleInstallUpdate()}
+							>
+								Update
+							</button>
+						) : null,
+						rightPanelEmpty: ({ openExtension }) => (
+							<AgentInvite
+								onStartClaude={() => openExtension("flashtype_claude")}
+								onStartCodex={() => openExtension("flashtype_codex")}
+							/>
+						),
+					}}
+				/>
+				{connectedAtelier !== atelier ? (
+					<div className="absolute inset-0 z-50">
+						<WorkspaceLoadingScreen workspaceName={workspace.name} />
+					</div>
+				) : null}
+			</div>
 		</Suspense>
 	);
 };
