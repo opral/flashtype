@@ -58,6 +58,9 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 
 		await page.locator('[data-attr="agent-start-codex"]').click();
+		await expect(
+			page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
+		).toBeVisible();
 		await expect
 			.poll(async () => await readFile(welcomeFilePath, "utf8"))
 			.toContain("Codex e2e edit");
@@ -127,90 +130,29 @@ async function writeFakeCodex(binDir: string): Promise<void> {
 	const scriptPath = path.join(binDir, "codex");
 	await writeFile(
 		scriptPath,
-		`#!/usr/bin/env node
-import { appendFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { spawn } from "node:child_process";
+		`#!/bin/sh
+set -eu
 
-const args = process.argv.slice(2);
-if (args.includes("--version")) {
-	console.log("codex-cli 0.134.0");
-	process.exit(0);
-}
-const configs = [];
-for (let index = 0; index < args.length; index += 1) {
-	if (args[index] === "-c") {
-		configs.push(args[index + 1] ?? "");
-		index += 1;
-	}
-}
+case " $* " in
+	*" --version "*)
+		printf '%s\\n' 'codex-cli 0.134.0'
+		exit 0
+		;;
+esac
 
-await runHook("UserPromptSubmit", "turn-start");
-await appendFile(join(process.cwd(), "welcome.md"), "\\nCodex e2e edit.\\n");
-await appendFile(join(process.cwd(), "changelog.md"), "\\nCodex unopened edit.\\n");
-await writeFile(join(process.cwd(), "codex-created.md"), "# Codex created file\\n");
-await runHook("Stop", "turn-stop");
-console.log("fake codex complete");
-
-async function runHook(eventName, phase) {
-	const command = hookCommand(eventName);
-	if (!command) {
-		throw new Error(\`Missing \${eventName} hook command\`);
-	}
-	await new Promise((resolve, reject) => {
-		const child = spawn(command, {
-			cwd: process.cwd(),
-			env: process.env,
-			shell: true,
-			stdio: ["pipe", "ignore", "inherit"],
-		});
-		child.stdin.end(
-			JSON.stringify({
-				hook_event_name: eventName,
-				session_id: "e2e-codex-session",
-				turn_id: "e2e-codex-turn",
-				cwd: process.cwd(),
-			}),
-		);
-		child.on("error", reject);
-		child.on("exit", (code) => {
-			if (code === 0) {
-				resolve();
-			} else {
-				reject(new Error(\`\${phase} hook exited with code \${code}\`));
-			}
-		});
-	});
+run_hook() {
+	event_name="$1"
+	phase="$2"
+	printf '{"hook_event_name":"%s","session_id":"e2e-codex-session","turn_id":"e2e-codex-turn","cwd":"%s"}' "$event_name" "$PWD" |
+		ELECTRON_RUN_AS_NODE=1 "$FLASHTYPE_AGENT_HOOK_NODE" "$FLASHTYPE_AGENT_HOOK_SCRIPT" codex "$phase"
 }
 
-function hookCommand(eventName) {
-	const config = configs.find((candidate) =>
-		candidate.includes(\`hooks.\${eventName}=\`),
-	);
-	if (!config) return null;
-	const prefix = 'command="';
-	const start = config.indexOf(prefix);
-	if (start === -1) return null;
-	let raw = "";
-	let escaped = false;
-	for (let index = start + prefix.length; index < config.length; index += 1) {
-		const char = config[index];
-		if (escaped) {
-			raw += \`\\\\\${char}\`;
-			escaped = false;
-			continue;
-		}
-		if (char === "\\\\") {
-			escaped = true;
-			continue;
-		}
-		if (char === '"') {
-			break;
-		}
-		raw += char;
-	}
-	return JSON.parse(\`"\${raw}"\`);
-}
+run_hook UserPromptSubmit turn-start
+printf '\\nCodex e2e edit.\\n' >> welcome.md
+printf '\\nCodex unopened edit.\\n' >> changelog.md
+printf '# Codex created file\\n' > codex-created.md
+run_hook Stop turn-stop
+printf '%s\\n' 'fake codex complete'
 `,
 		"utf8",
 	);

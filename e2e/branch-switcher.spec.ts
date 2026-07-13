@@ -150,12 +150,12 @@ test("checkpoint row click marks files without auto-opening a diff", async ({
 		await expectMarkdownDiff(page);
 		await expect(
 			page
-				.locator(".markdown-review-overlay [data-diff-status='removed']")
+				.locator(".markdown-review-overlay [data-review-status='removed']")
 				.filter({ hasText: "Previous" }),
 		).toBeVisible();
 		await expect(
 			page
-				.locator(".markdown-review-overlay [data-diff-status='added']")
+				.locator(".markdown-review-overlay [data-review-status='added']")
 				.filter({ hasText: "Target" }),
 		).toBeVisible();
 		await expect(
@@ -1163,19 +1163,21 @@ async function expectMarkdownDiff(
 ): Promise<void> {
 	const overlay = page
 		.locator(".markdown-review-overlay")
-		.filter({ has: page.locator("[data-diff-status]") })
+		.filter({ has: page.locator("[data-review-status]") })
 		.first();
 	await expect(overlay).toBeVisible();
 	await expectReadonlyMarkdown(page);
-	await expect(overlay.locator("[data-diff-status]").first()).toBeVisible();
+	await expect(overlay.locator("[data-review-status]").first()).toBeVisible();
 	for (const text of expected.added ?? []) {
 		await expect(
-			overlay.locator("[data-diff-status='added']").filter({ hasText: text }),
+			overlay.locator("[data-review-status='added']").filter({ hasText: text }),
 		).toBeVisible();
 	}
 	for (const text of expected.removed ?? []) {
 		await expect(
-			overlay.locator("[data-diff-status='removed']").filter({ hasText: text }),
+			overlay
+				.locator("[data-review-status='removed']")
+				.filter({ hasText: text }),
 		).toBeVisible();
 	}
 	await expect(
