@@ -10,6 +10,7 @@ import {
 } from "./diff-fixtures";
 import { renderMarkdownReviewDiffHtml } from "./render-review-diff-html";
 import type { MarkdownBlockSnapshot } from "./review-diff";
+import { historicalMarkdownNodeBlocks } from "./markdown-node-history";
 
 describe("renderMarkdownReviewDiffHtml", () => {
 	test("marks added headings and blocks", () => {
@@ -534,7 +535,7 @@ describe("renderMarkdownReviewDiffHtml", () => {
 			assertions: assertMixedGfmDocumentDiff,
 		},
 	])(
-		"renders $id fixture diff from real lix markdown_block state and history",
+		"renders $id fixture diff from real Lix markdown_node history",
 		async ({ id, assertions }) => {
 			const fixture = fixtureById(id);
 			const { html, beforeBlocks, afterBlocks } =
@@ -579,11 +580,13 @@ async function renderFixtureDiffFromRealLix(
 			lix,
 			beforeCommitId,
 			fileId,
+			fixture.beforeMarkdown,
 		);
 		const afterBlocks = await historicalMarkdownBlocks(
 			lix,
 			afterCommitId,
 			fileId,
+			fixture.afterMarkdown,
 		);
 
 		const html = renderMarkdownReviewDiffHtml({
@@ -866,6 +869,7 @@ async function historicalMarkdownBlocks(
 	lix: Lix,
 	commitId: string,
 	fileId: string,
+	markdown: string,
 ): Promise<MarkdownBlockSnapshot[]> {
 	const result = await lix.execute(
 		`
@@ -879,7 +883,7 @@ async function historicalMarkdownBlocks(
 				FROM lix_state_history
 				WHERE start_commit_id = ?
 					AND file_id = ?
-					AND schema_key = 'markdown_block'
+					AND schema_key = 'markdown_node'
 			)
 			SELECT snapshot_content
 			FROM ranked
@@ -888,34 +892,14 @@ async function historicalMarkdownBlocks(
 		`,
 		[commitId, fileId],
 	);
-	return result.rows
-		.map((row) => parseMarkdownBlockSnapshot(row.get("snapshot_content")))
-		.filter((block): block is MarkdownBlockSnapshot => block !== null)
-		.sort(
-			(left, right) =>
-				left.orderKey.localeCompare(right.orderKey) ||
-				left.id.localeCompare(right.id),
-		);
-}
-
-function parseMarkdownBlockSnapshot(
-	value: unknown,
-): MarkdownBlockSnapshot | null {
-	const content =
-		typeof value === "string"
-			? JSON.parse(value)
-			: (value as Record<string, any>);
-	if (
-		!content ||
-		typeof content.id !== "string" ||
-		typeof content.order_key !== "string" ||
-		typeof content.block !== "string"
-	) {
-		return null;
-	}
-	return {
-		id: content.id,
-		orderKey: content.order_key,
-		block: content.block,
-	};
+	return (
+		historicalMarkdownNodeBlocks(
+			result.rows.map((row) => ({
+				start_commit_id: commitId,
+				snapshot_content: row.get("snapshot_content"),
+			})),
+			commitId,
+			markdown,
+		) ?? []
+	);
 }

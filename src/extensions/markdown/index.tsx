@@ -14,6 +14,10 @@ import {
 import type { EmptyMarkdownDefaultBlock } from "@/extensions/markdown/editor/tiptap-markdown-bridge";
 import { renderMarkdownAstEditorHtml } from "@/extensions/markdown/editor/render-markdown-html";
 import { parseMarkdown } from "@/extensions/markdown/editor/markdown";
+import {
+	historicalMarkdownNodeBlocks,
+	type HistoricalMarkdownNodeRow,
+} from "./markdown-node-history";
 import { renderMarkdownReviewDiffHtml } from "./render-review-diff-html";
 import "./style.css";
 import { FormattingToolbar } from "./components/formatting-toolbar";
@@ -68,11 +72,6 @@ type MarkdownViewProps = {
 		readonly reviewId: string;
 		readonly review?: ExternalWriteReview;
 	}) => Promise<void>;
-};
-
-type HistoricalMarkdownBlockRow = {
-	readonly start_commit_id: string;
-	readonly snapshot_content: unknown;
 };
 
 type MarkdownFileRow = {
@@ -552,6 +551,8 @@ function MarkdownReviewOverlay({
 		fileId,
 		beforeCommitId,
 		afterCommitId,
+		reviewDiff.beforeMarkdown,
+		reviewDiff.afterMarkdown,
 	);
 
 	if (!workspaceDirState.loaded) {
@@ -636,11 +637,13 @@ function useMarkdownBlocksAtCommits(
 	fileId: string,
 	beforeCommitId: string | undefined,
 	afterCommitId: string | undefined,
+	beforeMarkdown: string,
+	afterMarkdown: string,
 ): {
 	readonly beforeBlocks: MarkdownBlockSnapshot[] | undefined;
 	readonly afterBlocks: MarkdownBlockSnapshot[] | undefined;
 } {
-	const rows = useQuery<HistoricalMarkdownBlockRow>(
+	const rows = useQuery<HistoricalMarkdownNodeRow>(
 		(lix) =>
 			beforeCommitId && afterCommitId
 				? historicalMarkdownBlocksQuery(lix, {
@@ -655,24 +658,17 @@ function useMarkdownBlocksAtCommits(
 		return { beforeBlocks: undefined, afterBlocks: undefined };
 	}
 	return {
-		beforeBlocks: parseHistoricalMarkdownBlocks(rows, beforeCommitId),
-		afterBlocks: parseHistoricalMarkdownBlocks(rows, afterCommitId),
+		beforeBlocks: historicalMarkdownNodeBlocks(
+			rows,
+			beforeCommitId,
+			beforeMarkdown,
+		),
+		afterBlocks: historicalMarkdownNodeBlocks(
+			rows,
+			afterCommitId,
+			afterMarkdown,
+		),
 	};
-}
-
-function parseHistoricalMarkdownBlocks(
-	rows: readonly HistoricalMarkdownBlockRow[],
-	commitId: string,
-): MarkdownBlockSnapshot[] {
-	return rows
-		.filter((row) => row.start_commit_id === commitId)
-		.map((row) => parseHistoricalMarkdownBlock(row.snapshot_content))
-		.filter((block): block is MarkdownBlockSnapshot => block !== null)
-		.sort(
-			(left, right) =>
-				left.orderKey.localeCompare(right.orderKey) ||
-				left.id.localeCompare(right.id),
-		);
 }
 
 function historicalMarkdownBlocksQuery(
@@ -697,7 +693,7 @@ function historicalMarkdownBlocksQuery(
 			FROM lix_state_history
 			WHERE start_commit_id IN (?, ?)
 				AND file_id = ?
-				AND schema_key = 'markdown_block'
+				AND schema_key = 'markdown_node'
 		)
 		SELECT start_commit_id, snapshot_content
 		FROM ranked
@@ -714,7 +710,7 @@ function historicalMarkdownBlocksQuery(
 		execute: async () => {
 			const result = await lix.execute(sql, parameters);
 			return result.rows.map(
-				(row) => row.toObject() as HistoricalMarkdownBlockRow,
+				(row) => row.toObject() as HistoricalMarkdownNodeRow,
 			);
 		},
 	};
@@ -723,25 +719,8 @@ function historicalMarkdownBlocksQuery(
 function emptyMarkdownBlocksQuery() {
 	return {
 		compile: () => ({ sql: "SELECT 1 WHERE 0", parameters: [] }),
-		execute: async () => [] as HistoricalMarkdownBlockRow[],
+		execute: async () => [] as HistoricalMarkdownNodeRow[],
 	};
-}
-
-function parseHistoricalMarkdownBlock(
-	value: unknown,
-): MarkdownBlockSnapshot | null {
-	const snapshot = typeof value === "string" ? safeJsonParse(value) : value;
-	if (!snapshot || typeof snapshot !== "object") return null;
-	const record = snapshot as Record<string, unknown>;
-	const { id, order_key: orderKey, block } = record;
-	if (
-		typeof id !== "string" ||
-		typeof orderKey !== "string" ||
-		typeof block !== "string"
-	) {
-		return null;
-	}
-	return { id, orderKey, block };
 }
 
 function safeJsonParse(value: string): unknown {
