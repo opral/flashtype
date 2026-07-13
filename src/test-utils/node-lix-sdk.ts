@@ -94,6 +94,9 @@ async function seedKeyValues(
 }
 
 function createTestLixAdapter(sdkLix: SdkLix): Lix {
+	const observations = new Set<ObserveEvents>();
+	let closing = false;
+
 	return {
 		async execute(
 			sql: string,
@@ -153,7 +156,27 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			}
 		},
 		observe(sql: string, params: ReadonlyArray<unknown> = []): ObserveEvents {
-			return sdkLix.observe(sql, toSqlParams(params));
+			const sdkEvents = sdkLix.observe(sql, toSqlParams(params));
+			let closed = false;
+			const events: ObserveEvents = {
+				async next() {
+					if (closed || closing) return undefined;
+					try {
+						return await sdkEvents.next();
+					} catch (error) {
+						if (closed || closing) return undefined;
+						throw error;
+					}
+				},
+				close() {
+					if (closed) return;
+					closed = true;
+					observations.delete(events);
+					sdkEvents.close();
+				},
+			};
+			observations.add(events);
+			return events;
 		},
 		async activeBranchId() {
 			return await sdkLix.activeBranchId();
@@ -177,6 +200,10 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			return await sdkLix.mergeBranch(options);
 		},
 		async close() {
+			closing = true;
+			for (const observation of [...observations]) {
+				observation.close();
+			}
 			await sdkLix.close();
 		},
 	};
