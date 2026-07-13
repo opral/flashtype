@@ -8,6 +8,8 @@ packages:
 # through their TipTap graphs. Keep ProseMirror nominal types single-instance.
 overrides:
   prosemirror-model: 1.25.10
+  prosemirror-transform: 1.12.0
+  prosemirror-view: 1.42.0
 
 peerDependencyRules:
   allowedVersions:
