@@ -120,7 +120,7 @@ jobs:
 
       - name: Install Rust wasm tools
         run: |
-          cargo install wasm-bindgen-cli@0.2.108 cargo-bash resvg@0.47.0 --locked
+          cargo install wasm-bindgen-cli@0.2.122 cargo-bash resvg@0.47.0 --locked
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
