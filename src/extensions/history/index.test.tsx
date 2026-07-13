@@ -3,6 +3,7 @@ import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import { qb } from "@/lib/lix-kysely";
 import {
 	act,
+	cleanup,
 	fireEvent,
 	render,
 	screen,
@@ -75,6 +76,7 @@ describe("HistoryView", () => {
 	afterEach(async () => {
 		vi.restoreAllMocks();
 		window.flashtypeDesktop = originalDesktop;
+		cleanup();
 
 		for (const fn of cleanupFns.splice(0)) {
 			await fn();

@@ -419,8 +419,13 @@ export const MarkdownWcShortcuts = Extension.create({
 					}
 				}
 				if (!inListItem) {
-					// Default behavior outside lists: split the block (new paragraph)
-					return this.editor.commands.splitBlock();
+					// Enter replaces a range selection before splitting the remaining block.
+					// Running both commands in one chain keeps the split position mapped to
+					// the document produced by the deletion.
+					if (state.selection.empty) {
+						return this.editor.commands.splitBlock();
+					}
+					return this.editor.chain().deleteSelection().splitBlock().run();
 				}
 				// If current paragraph is empty, exit the list (lift)
 				const para: any = $from.parent;
