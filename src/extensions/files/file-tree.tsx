@@ -400,6 +400,7 @@ export function FileTree({
 			treePath,
 		);
 		if (info?.kind !== "file" || !info.id) return;
+		stateRef.current.onSelectItem?.(info.appPath, info.kind, info.source);
 		void stateRef.current.openFileView?.(info.id, info.appPath);
 	}, []);
 
@@ -513,33 +514,6 @@ export function FileTree({
 		});
 	}, [model]);
 
-	useEffect(() => {
-		if (treeInput.paths.length === 0) return;
-		let cancelled = false;
-		let timeoutId: number | null = null;
-		let removeListener: (() => void) | null = null;
-		const attach = () => {
-			if (cancelled || removeListener) return;
-			const shadowRoot = model.getFileTreeContainer()?.shadowRoot;
-			if (!shadowRoot) {
-				timeoutId = window.setTimeout(attach, 0);
-				return;
-			}
-			shadowRoot.addEventListener("click", openFileFromTreeEvent);
-			removeListener = () => {
-				shadowRoot.removeEventListener("click", openFileFromTreeEvent);
-			};
-		};
-		attach();
-		return () => {
-			cancelled = true;
-			if (timeoutId !== null) {
-				window.clearTimeout(timeoutId);
-			}
-			removeListener?.();
-		};
-	}, [model, openFileFromTreeEvent, treeInput.paths.length, treePathsKey]);
-
 	if (treeInput.paths.length === 0) {
 		// The "New file" row above the tree is the affordance; no extra copy.
 		return null;
@@ -549,6 +523,7 @@ export function FileTree({
 		<PierreFileTree
 			aria-label="Files"
 			model={model}
+			onClick={(event) => openFileFromTreeEvent(event.nativeEvent)}
 			onClickCapture={handleTreeClickCapture}
 			style={treeHostStyle(isPanelFocused)}
 		/>

@@ -14,7 +14,7 @@ import {
 	type FileTreeCreateRequest,
 	type FileTreeRenameRequest,
 } from "./file-tree";
-import { qb } from "@/lib/lix-kysely";
+import { qb, sql } from "@/lib/lix-kysely";
 import type { FilesystemEntryRow } from "@/queries";
 import type {
 	CheckpointDiff,
@@ -31,7 +31,7 @@ import {
 	getPendingExternalWriteReviewPaths,
 	type ExternalWriteReviewFile,
 } from "@/shell/external-write-review-history";
-import { resolveCheckpointDiff } from "@/shell/checkpoint-diff";
+import { resolveCheckpointDiffForBranch } from "@/shell/checkpoint-diff";
 
 type FilesViewProps = {
 	readonly context?: ExtensionContext;
@@ -92,10 +92,16 @@ function FilesCheckpointBranchesLoader({
 	readonly entries: FilesystemEntryRow[];
 	readonly activeFileId: string | null;
 }) {
-	const branches = useQuery<CheckpointDiffBranchRow>((queryLix) =>
+	// Keep the asynchronously resolved diff fresh when HEAD or checkpoint commits
+	// move while the same revision remains selected.
+	const checkpointBranches = useQuery<CheckpointDiffBranchRow>((queryLix) =>
 		qb(queryLix)
 			.selectFrom("lix_branch")
 			.select(["id", "name", "commit_id"])
+			.where(
+				() =>
+					sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+			)
 			.orderBy("name", "asc"),
 	);
 	return (
@@ -104,7 +110,7 @@ function FilesCheckpointBranchesLoader({
 			lix={lix}
 			entries={entries}
 			activeFileId={activeFileId}
-			branches={branches}
+			checkpointBranches={checkpointBranches}
 		/>
 	);
 }
@@ -114,17 +120,17 @@ function FilesRuntimeState({
 	lix,
 	entries,
 	activeFileId,
-	branches,
+	checkpointBranches,
 }: FilesViewProps & {
 	readonly lix: Lix;
 	readonly entries: FilesystemEntryRow[];
 	readonly activeFileId: string | null;
-	readonly branches: readonly CheckpointDiffBranchRow[];
+	readonly checkpointBranches: readonly CheckpointDiffBranchRow[];
 }) {
 	const resolvedCheckpointDiff = useResolvedCheckpointDiff(
 		lix,
-		branches,
 		context?.checkpointBranchId ?? null,
+		checkpointBranches,
 	);
 	return (
 		<FilesViewContent
@@ -143,8 +149,8 @@ function FilesRuntimeState({
 
 function useResolvedCheckpointDiff(
 	lix: Lix,
-	branches: readonly CheckpointDiffBranchRow[],
 	branchId: string | null,
+	checkpointBranches: readonly CheckpointDiffBranchRow[],
 ): CheckpointDiff | null {
 	const [resolved, setResolved] = useState<{
 		readonly branchId: string;
@@ -153,7 +159,7 @@ function useResolvedCheckpointDiff(
 	useEffect(() => {
 		if (!branchId) return;
 		let cancelled = false;
-		void resolveCheckpointDiff({ lix, branches, branchId })
+		void resolveCheckpointDiffForBranch({ lix, branchId })
 			.then((diff) => {
 				if (!cancelled) setResolved({ branchId, diff });
 			})
@@ -165,7 +171,7 @@ function useResolvedCheckpointDiff(
 		return () => {
 			cancelled = true;
 		};
-	}, [branchId, branches, lix]);
+	}, [branchId, checkpointBranches, lix]);
 	return branchId && resolved?.branchId === branchId ? resolved.diff : null;
 }
 
@@ -728,12 +734,6 @@ function FilesViewContent({
 					).find((file) => file.fileId === fileId)
 				: undefined;
 			setSelectedSource(checkpointVisibleFile ? "checkpoint-diff" : "lix");
-			const isActiveWorkspaceFile =
-				!checkpointVisibleFile &&
-				(activeFileId === fileId ||
-					(typeof activeFilePath === "string" &&
-						normalizeFilePath(activeFilePath) === normalizeFilePath(path)));
-			if (isActiveWorkspaceFile) return;
 			void context?.openFile?.({
 				panel: "central",
 				fileId,
@@ -752,7 +752,7 @@ function FilesViewContent({
 				trackDocumentViewed: checkpointVisibleFile ? false : undefined,
 			});
 		},
-		[activeFileId, activeFilePath, context],
+		[context],
 	);
 
 	const handleOpenDirectoriesChange = useCallback(
@@ -800,14 +800,43 @@ function FilesViewContent({
 		try {
 			if (selectedKind === "file") {
 				if (!selectedFileId) return;
-				await qb(lix)
-					.deleteFrom("lix_file")
-					.where("id", "=", selectedFileId)
-					.execute();
+				let fileId = selectedFileId;
+				if (
+					selectedSource === "watched" ||
+					selectedFileId.startsWith("watched:")
+				) {
+					let canonicalFile = await qb(lix)
+						.selectFrom("lix_file")
+						.select("id")
+						.where("path", "=", normalizedPath)
+						.executeTakeFirst();
+					if (!canonicalFile?.id) {
+						await lix.importFilesystemPaths([
+							normalizedPath.replace(/^\/+/, ""),
+						]);
+						canonicalFile = await qb(lix)
+							.selectFrom("lix_file")
+							.select("id")
+							.where("path", "=", normalizedPath)
+							.executeTakeFirst();
+					}
+					if (!canonicalFile?.id) {
+						throw new Error(
+							`Imported file id not found for '${normalizedPath}'.`,
+						);
+					}
+					fileId = canonicalFile.id as string;
+					setUpgradedWatchedFilePaths((prev) => {
+						const next = new Set(prev);
+						next.add(normalizedPath);
+						return next;
+					});
+				}
+				await qb(lix).deleteFrom("lix_file").where("id", "=", fileId).execute();
 				setPendingPaths((prev) =>
 					prev.filter((path) => path !== normalizedPath),
 				);
-				context?.closeFileViews?.({ fileId: selectedFileId });
+				context?.closeFileViews?.({ fileId });
 			} else {
 				await qb(lix)
 					.deleteFrom("lix_directory")

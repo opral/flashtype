@@ -984,16 +984,23 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
-	test("does not ask the host to reopen the active file", async () => {
+	test("forwards clicks even when the active-file projection still matches", async () => {
 		const lix = await openLix();
 		const openFile = vi.fn();
 		await qb(lix)
 			.insertInto("lix_file")
-			.values({
-				id: "file_active",
-				path: "/active.md",
-				data: new Uint8Array(),
-			})
+			.values([
+				{
+					id: "file_active",
+					path: "/active.md",
+					data: new Uint8Array(),
+				},
+				{
+					id: "file_other",
+					path: "/other.md",
+					data: new Uint8Array(),
+				},
+			])
 			.execute();
 
 		let utils: ReturnType<typeof render>;
@@ -1015,10 +1022,19 @@ describe("FilesView", () => {
 		await waitForFilesViewReady(utils!);
 
 		await act(async () => {
+			fireEvent.click(await findTreeItemByLabel(utils!, "other.md"));
+		});
+		openFile.mockClear();
+		await act(async () => {
 			fireEvent.click(await findTreeItemByLabel(utils!, "active.md"));
 		});
 
-		expect(openFile).not.toHaveBeenCalled();
+		expect(openFile).toHaveBeenCalledWith({
+			panel: "central",
+			fileId: "file_active",
+			filePath: "/active.md",
+			focus: false,
+		});
 		expect(queryTreeItemByLabel(utils!, "active.md")).toHaveAttribute(
 			"data-item-selected",
 			"true",
@@ -1609,6 +1625,91 @@ describe("FilesView", () => {
 
 			utils!.unmount();
 		} finally {
+			window.flashtypeDesktop = originalDesktop;
+			await lix.close();
+		}
+	});
+
+	test("Cmd+Backspace resolves a watched file to its canonical Lix id", async () => {
+		const lix = await openLix();
+		const originalDesktop = window.flashtypeDesktop;
+		const closeFileViews = vi.fn();
+		const importFilesystemPaths = vi
+			.spyOn(lix, "importFilesystemPaths")
+			.mockImplementation(async ([path]) => {
+				if (!path) return;
+				await qb(lix)
+					.insertInto("lix_file")
+					.values({
+						id: "imported_loose",
+						path: `/${path.replace(/^\/+/, "")}`,
+						data: new TextEncoder().encode("from disk"),
+					})
+					.execute();
+			});
+		const rootEntries = [
+			{
+				id: "watched:/loose.txt",
+				parent_id: null,
+				path: "/loose.txt",
+				display_name: "loose.txt",
+				kind: "file" as const,
+				source: "watched" as const,
+			},
+		];
+		window.flashtypeDesktop = {
+			workspace: {
+				setEphemeralWatchedDirectories: vi.fn(async () => rootEntries),
+				onEphemeralWatchedFileTreeChanged: vi.fn(() => () => {}),
+			},
+		} as unknown as Window["flashtypeDesktop"];
+
+		let utils: ReturnType<typeof render> | undefined;
+		try {
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView
+								context={createViewContext(lix, {
+									closeFileViews,
+									viewInstance: "files-delete-watched",
+									workspace: {
+										ephemeral: true,
+										path: "/tmp/workspace",
+										name: "workspace",
+										openFilePaths: [],
+									},
+								})}
+							/>
+						</Suspense>
+					</LixProvider>,
+				);
+			});
+
+			await waitForFilesViewReady(utils!);
+			await act(async () => {
+				fireEvent.click(await findTreeItemByLabel(utils!, "loose.txt"));
+			});
+			await act(async () => {
+				fireEvent.keyDown(document, { key: "Backspace", metaKey: true });
+			});
+
+			await waitFor(async () => {
+				expect(importFilesystemPaths).toHaveBeenCalledWith(["loose.txt"]);
+				const file = await qb(lix)
+					.selectFrom("lix_file")
+					.select("id")
+					.where("path", "=", "/loose.txt")
+					.executeTakeFirst();
+				expect(file).toBeUndefined();
+				expect(queryTreeItemByLabel(utils!, "loose.txt")).toBeNull();
+			});
+			expect(closeFileViews).toHaveBeenCalledWith({
+				fileId: "imported_loose",
+			});
+		} finally {
+			utils?.unmount();
 			window.flashtypeDesktop = originalDesktop;
 			await lix.close();
 		}
