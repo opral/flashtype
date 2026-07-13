@@ -72,10 +72,14 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 			.toContain("Codex created file");
 
 		await expect(
-			page.getByRole("group", { name: "External write review actions" }),
+			page.getByRole("group", { name: /^Review change 1 of \d+$/ }),
 		).toBeVisible();
-		await expect(page.getByRole("button", { name: "Keep" })).toBeVisible();
-		await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Keep change" }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Undo change" }),
+		).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(fileTreeFile(page, "/changelog.md")).toHaveAttribute(
 			"data-item-git-status",
