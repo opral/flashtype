@@ -22,8 +22,11 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 	const changelogFilePath = path.join(workspaceDir, "changelog.md");
 	const createdFilePath = path.join(workspaceDir, "codex-created.md");
 	const fakeBinDir = testInfo.outputPath("fake-bin");
+	const fakeCodexCompletionPath = testInfo.outputPath("fake-codex-complete");
 	const originalPath = process.env.PATH;
 	const originalShell = process.env.SHELL;
+	const originalCompletionPath =
+		process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH;
 
 	let electronApp: ElectronApplication | undefined;
 	try {
@@ -37,6 +40,7 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		await writeFakeCodex(fakeBinDir);
 		process.env.PATH = `${fakeBinDir}:${originalPath ?? ""}`;
 		process.env.SHELL = "/bin/sh";
+		process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH = fakeCodexCompletionPath;
 
 		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
 			userDataDir,
@@ -62,7 +66,15 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 			page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
 		).toBeVisible();
 		await expect
-			.poll(async () => await readFile(welcomeFilePath, "utf8"))
+			.poll(() => readCompletionMarker(fakeCodexCompletionPath), {
+				message: "the fake Codex command did not complete",
+				timeout: 30_000,
+			})
+			.toBe("complete");
+		await expect
+			.poll(async () => await readFile(welcomeFilePath, "utf8"), {
+				timeout: 30_000,
+			})
 			.toContain("Codex e2e edit");
 		await expect
 			.poll(async () => await readFile(changelogFilePath, "utf8"))
@@ -95,6 +107,11 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 			delete process.env.SHELL;
 		} else {
 			process.env.SHELL = originalShell;
+		}
+		if (originalCompletionPath === undefined) {
+			delete process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH;
+		} else {
+			process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH = originalCompletionPath;
 		}
 		await closeElectronApp(electronApp);
 	}
@@ -156,9 +173,19 @@ printf '\\nCodex e2e edit.\\n' >> welcome.md
 printf '\\nCodex unopened edit.\\n' >> changelog.md
 printf '# Codex created file\\n' > codex-created.md
 run_hook Stop turn-stop
+printf '%s\\n' 'complete' > "$FLASHTYPE_E2E_CODEX_COMPLETION_PATH"
 printf '%s\\n' 'fake codex complete'
 `,
 		"utf8",
 	);
 	await chmod(scriptPath, 0o755);
+}
+
+async function readCompletionMarker(filePath: string): Promise<string> {
+	try {
+		return (await readFile(filePath, "utf8")).trim();
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return "pending";
+		throw error;
+	}
 }
