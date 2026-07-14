@@ -98,7 +98,7 @@ const lix = {
 	importFilesystemPaths: (payload) =>
 		ipcRenderer.invoke("lix:importFilesystemPaths", payload),
 	syncDiskToLix: () => ipcRenderer.invoke("lix:syncDiskToLix"),
-	close: () => ipcRenderer.invoke("lix:close"),
+	close: (payload) => ipcRenderer.invoke("lix:close", payload),
 };
 
 const terminal = {

@@ -184,7 +184,9 @@ export function TerminalView({
 				}
 				terminalId = created.id;
 				handleResize();
-				const command = attemptLaunchConfig.initialCommand;
+				const command = created.pathWrapperExecutablePath
+					? shellQuote(created.pathWrapperExecutablePath)
+					: attemptLaunchConfig.initialCommand;
 				if (command) {
 					await terminalApi.write({ id: created.id, data: `${command}\r` });
 				}
@@ -227,6 +229,10 @@ export function TerminalView({
 			<div ref={containerRef} className="h-full w-full p-2" />
 		</div>
 	);
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function captureAgentStartFailure(

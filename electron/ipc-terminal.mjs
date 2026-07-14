@@ -49,6 +49,7 @@ export function registerTerminalIpc() {
 		let terminal;
 		try {
 			pathWrapper = await createTerminalPathWrapper(payload?.pathWrapper, {
+				pathPrefix: env.PATH ?? process.env.PATH,
 				shell,
 			});
 			if (pathWrapper) {
@@ -122,6 +123,9 @@ export function registerTerminalIpc() {
 		return {
 			status: "created",
 			id,
+			...(pathWrapper
+				? { pathWrapperExecutablePath: pathWrapper.executablePath }
+				: {}),
 		};
 	});
 

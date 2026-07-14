@@ -46,7 +46,7 @@ export type DesktopObserveEvent = {
 };
 
 export type DesktopLixApi = {
-	open(): Promise<void>;
+	open(): Promise<{ sessionId: string }>;
 	workspaceDir(): Promise<string>;
 	storageDir(): Promise<string>;
 	execute(payload: {
@@ -86,7 +86,7 @@ export type DesktopLixApi = {
 	}): Promise<DesktopSwitchBranchResult>;
 	importFilesystemPaths(payload: { paths: readonly string[] }): Promise<void>;
 	syncDiskToLix(): Promise<void>;
-	close(): Promise<void>;
+	close(payload?: { sessionId?: string }): Promise<void>;
 };
 
 export type DesktopTerminalCreatePayload = {
@@ -163,6 +163,7 @@ export type DesktopTerminalCreateResult =
 	| {
 			status: "created";
 			id: string;
+			pathWrapperExecutablePath?: string;
 	  }
 	| {
 			status: "agentVersionError";

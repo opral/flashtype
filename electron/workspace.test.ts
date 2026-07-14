@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
+	acquireWorkspaceFsBackendOptions,
 	profileWorkspaceFilesystem,
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
@@ -827,6 +828,26 @@ describe("workspace resolution", () => {
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}
+	});
+
+	test("keeps leased transient Lix storage until the backend releases it", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(directory, { recursive: true });
+		const window = createTestWindow();
+		await setWorkspaceFromPath(directory, window);
+
+		const acquired = await acquireWorkspaceFsBackendOptions(window);
+		const parent = path.dirname(acquired.options.lixDir);
+		await disposeWorkspaceWindowState(window);
+		await expect(stat(parent)).resolves.toBeDefined();
+
+		await acquired.release();
+		await expect(stat(parent)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	test("projects current central documents into transient session state", async () => {

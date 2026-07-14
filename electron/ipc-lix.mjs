@@ -31,7 +31,8 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 	registerOptions = options;
 
 	ipcMain.handle("lix:open", async (event) => {
-		await ensureLixOpenForEvent(event);
+		const lix = await ensureLixOpenForEvent(event);
+		return { sessionId: lix.sessionId() };
 	});
 
 	ipcMain.handle("lix:workspaceDir", async (event) => {
@@ -290,8 +291,11 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		await lix.syncDiskToLix();
 	});
 
-	ipcMain.handle("lix:close", async (event) => {
-		await closeLixSession(getWindowForIpcEvent(event));
+	ipcMain.handle("lix:close", async (event, payload) => {
+		await closeLixSession(getWindowForIpcEvent(event), {
+			expectedSessionId:
+				typeof payload?.sessionId === "string" ? payload.sessionId : undefined,
+		});
 	});
 
 	ipcMain.handle("workspace:resetLixRepository", async (event) => {

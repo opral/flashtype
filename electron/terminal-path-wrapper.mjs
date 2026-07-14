@@ -19,6 +19,7 @@ export async function createTerminalPathWrapper(rawWrapper, options = {}) {
 			executablePath,
 			terminalPathWrapperScriptSource({
 				command: wrapper.command,
+				pathPrefix: options.pathPrefix,
 				shell: options.shell,
 			}),
 			{ mode: 0o700 },
@@ -48,7 +49,11 @@ export function prependPathEntry(entry, currentPath) {
 export function terminalPathWrapperScriptSource(args) {
 	const shell = normalizeShellPath(args?.shell);
 	const command = normalizeWrapperCommand(args?.command);
-	return `#!${shell}\n${command}\n`;
+	const pathPrefix = normalizePathPrefix(args?.pathPrefix);
+	const pathSetup = pathPrefix
+		? `PATH=${shellSingleQuote(pathPrefix)}:"$PATH"\nexport PATH\n`
+		: "";
+	return `#!${shell}\n${pathSetup}${command}\n`;
 }
 
 function normalizeTerminalPathWrapper(value) {
@@ -78,6 +83,14 @@ function normalizeShellPath(shell) {
 		return shell;
 	}
 	return "/bin/sh";
+}
+
+function normalizePathPrefix(value) {
+	return typeof value === "string" && !value.includes("\0") ? value : "";
+}
+
+function shellSingleQuote(value) {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function normalizeWrapperCommand(command) {

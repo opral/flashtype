@@ -414,6 +414,48 @@ export async function getWorkspaceFsBackendOptions(window) {
 	return { path: workspace.path, syncAllFiles: true };
 }
 
+export async function acquireWorkspaceFsBackendOptions(window) {
+	const workspace = getWorkspace(window);
+	if (!workspace) {
+		throw new Error("No workspace is open. Open a folder before using lix.");
+	}
+	if (workspace.ephemeral !== true) {
+		return {
+			options: { path: workspace.path, syncAllFiles: true },
+			release: async () => {},
+		};
+	}
+	const state = getOrCreateWindowState(window);
+	if (!state.externalLixDir) {
+		await createExternalLixSlot(state);
+	}
+	const lixDir = state.externalLixDir;
+	const parent = state.externalLixParent;
+	if (!lixDir || !parent) {
+		throw new Error("Failed to allocate temporary Lix storage.");
+	}
+	const lease = state.externalLixLeases.get(parent) ?? {
+		count: 0,
+		retired: false,
+	};
+	lease.count += 1;
+	state.externalLixLeases.set(parent, lease);
+	let released = false;
+	return {
+		options: {
+			path: workspace.path,
+			lixDir,
+			syncAllFiles: false,
+		},
+		release: async () => {
+			if (released) return;
+			released = true;
+			lease.count -= 1;
+			await cleanupExternalLixLease(state, parent, lease);
+		},
+	};
+}
+
 export async function setWorkspaceTrackChanges(window, trackChanges) {
 	const state = getOrCreateWindowState(window);
 	return await enqueueWorkspaceChange(state, async () => {
@@ -1078,6 +1120,10 @@ async function createExternalLixSlot(state) {
 	);
 	state.externalLixParent = externalLixParent;
 	state.externalLixDir = path.join(externalLixParent, LIX_DIRECTORY_NAME);
+	state.externalLixLeases.set(externalLixParent, {
+		count: 0,
+		retired: false,
+	});
 }
 
 async function moveWorkspaceLixToExternalStorage(state) {
@@ -1117,7 +1163,19 @@ async function disposeExternalLixState(state) {
 	const externalLixParent = state.externalLixParent;
 	state.externalLixParent = null;
 	state.externalLixDir = null;
-	await rm(externalLixParent, { force: true, recursive: true }).catch(() => {});
+	const lease = state.externalLixLeases.get(externalLixParent) ?? {
+		count: 0,
+		retired: false,
+	};
+	lease.retired = true;
+	state.externalLixLeases.set(externalLixParent, lease);
+	await cleanupExternalLixLease(state, externalLixParent, lease);
+}
+
+async function cleanupExternalLixLease(state, parent, lease) {
+	if (!lease.retired || lease.count > 0) return;
+	state.externalLixLeases.delete(parent);
+	await rm(parent, { force: true, recursive: true }).catch(() => {});
 }
 
 async function movePath(source, target) {
@@ -1405,6 +1463,7 @@ function getOrCreateWindowState(window) {
 		agentTurnFileCaptures: new Map(),
 		externalLixParent: null,
 		externalLixDir: null,
+		externalLixLeases: new Map(),
 		ephemeralFileTreeOwners: new Map(),
 		ephemeralDirectoryWatchers: new Map(),
 		ephemeralWatchedEntries: [],

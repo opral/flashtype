@@ -3,8 +3,8 @@ import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
 import path from "node:path";
 import { readFile, rm } from "node:fs/promises";
 import {
+	acquireWorkspaceFsBackendOptions,
 	getWorkspace,
-	getWorkspaceFsBackendOptions,
 	getWorkspaceLixDatabasePath,
 } from "./workspace.mjs";
 import {
@@ -31,6 +31,7 @@ export async function ensureLixOpen(window) {
 					);
 				}
 				let nativeLix;
+				let releaseBackendOptions = async () => {};
 				const tracksPersistentWorkspace = workspace.ephemeral !== true;
 				const userDataPath = app.getPath("userData");
 				try {
@@ -42,7 +43,10 @@ export async function ensureLixOpen(window) {
 							}),
 						);
 					}
-					const backendOptions = await getWorkspaceFsBackendOptions(window);
+					const acquiredBackend =
+						await acquireWorkspaceFsBackendOptions(window);
+					const backendOptions = acquiredBackend.options;
+					releaseBackendOptions = acquiredBackend.release;
 					const backend = new FsBackend(backendOptions);
 					nativeLix = await openLix({
 						backend,
@@ -57,9 +61,12 @@ export async function ensureLixOpen(window) {
 						workspace.path,
 						backendOptions.lixDir ??
 							path.join(workspace.path, LIX_DATABASE_DIR),
+						crypto.randomUUID(),
+						releaseBackendOptions,
 					);
 				} catch (error) {
 					await nativeLix?.close().catch(() => {});
+					await releaseBackendOptions();
 					let recovery;
 					if (tracksPersistentWorkspace) {
 						clearWorkspaceLixOpenPendingSync(userDataPath, workspace.path);
@@ -211,15 +218,23 @@ async function closeCurrentLix(session, options = {}) {
 		return;
 	}
 	const currentPromise = session.lixPromise;
+	let preserveCurrentSession = false;
 	try {
 		const lix = await currentPromise;
+		if (
+			options.expectedSessionId &&
+			lix.sessionId() !== options.expectedSessionId
+		) {
+			preserveCurrentSession = true;
+			return;
+		}
 		await lix.close();
 	} catch (error) {
 		if (!options.ignoreOpenError) {
 			throw error;
 		}
 	} finally {
-		if (session.lixPromise === currentPromise) {
+		if (!preserveCurrentSession && session.lixPromise === currentPromise) {
 			session.lixPromise = null;
 		}
 	}
@@ -277,7 +292,14 @@ function getOrCreateSession(window) {
 	return session;
 }
 
-function createDesktopLixHandle(nativeLix, backend, workspaceDir, storageDir) {
+function createDesktopLixHandle(
+	nativeLix,
+	backend,
+	workspaceDir,
+	storageDir,
+	sessionId,
+	releaseBackendOptions,
+) {
 	let operationQueue = Promise.resolve();
 
 	async function acquireOperationSlot() {
@@ -311,6 +333,9 @@ function createDesktopLixHandle(nativeLix, backend, workspaceDir, storageDir) {
 	}
 
 	return {
+		sessionId() {
+			return sessionId;
+		},
 		workspaceDir() {
 			return workspaceDir;
 		},
@@ -418,7 +443,11 @@ function createDesktopLixHandle(nativeLix, backend, workspaceDir, storageDir) {
 			return await runQueued(() => backend.syncDiskToLix());
 		},
 		async close() {
-			await runQueued(() => nativeLix.close());
+			try {
+				await runQueued(() => nativeLix.close());
+			} finally {
+				await releaseBackendOptions();
+			}
 		},
 	};
 }

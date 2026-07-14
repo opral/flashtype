@@ -20,7 +20,7 @@ let desktopOperationQueue: Promise<void> = Promise.resolve();
 
 export async function openDesktopLix(): Promise<Lix> {
 	const desktop = getDesktopApi();
-	await desktop.lix.open();
+	const { sessionId } = await desktop.lix.open();
 
 	let closed = false;
 	const openSqlTransactions = new Set<{
@@ -268,7 +268,7 @@ export async function openDesktopLix(): Promise<Lix> {
 			}
 		}
 		openSqlTransactions.clear();
-		await desktop.lix.close();
+		await desktop.lix.close({ sessionId });
 	};
 
 	const lix = {

@@ -83,7 +83,7 @@ function createDesktop(args: {
 	});
 	const api = {
 		lix: {
-			open: vi.fn(async () => {}),
+			open: vi.fn(async () => ({ sessionId: "desktop-session" })),
 			execute,
 			importFilesystemPaths,
 			syncDiskToLix,
