@@ -30,7 +30,7 @@ import {
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
 
-const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4173";
+const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4174";
 const rendererUrl = `http://127.0.0.1:${rendererPort}`;
 const uiFuzzFilePath = "/fuzz.md";
 
