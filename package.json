@@ -1,7 +1,7 @@
 {
 	"name": "@opral/flashtype",
 	"private": true,
-	"version": "0.7.3",
+	"version": "0.9.0",
 	"type": "module",
 	"main": "electron/main.mjs",
 	"packageManager": "pnpm@10.13.1",
