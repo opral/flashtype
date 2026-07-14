@@ -19,6 +19,7 @@ export async function createTerminalPathWrapper(rawWrapper, options = {}) {
 			executablePath,
 			terminalPathWrapperScriptSource({
 				command: wrapper.command,
+				cwd: options.cwd,
 				pathPrefix: options.pathPrefix,
 				shell: options.shell,
 			}),
@@ -49,11 +50,13 @@ export function prependPathEntry(entry, currentPath) {
 export function terminalPathWrapperScriptSource(args) {
 	const shell = normalizeShellPath(args?.shell);
 	const command = normalizeWrapperCommand(args?.command);
+	const cwd = normalizeWorkingDirectory(args?.cwd);
 	const pathPrefix = normalizePathPrefix(args?.pathPrefix);
 	const pathSetup = pathPrefix
 		? `PATH=${shellSingleQuote(pathPrefix)}:"$PATH"\nexport PATH\n`
 		: "";
-	return `#!${shell}\n${pathSetup}${command}\n`;
+	const cwdSetup = cwd ? `cd ${shellSingleQuote(cwd)}\n` : "";
+	return `#!${shell}\n${pathSetup}${cwdSetup}${command}\n`;
 }
 
 function normalizeTerminalPathWrapper(value) {
@@ -87,6 +90,14 @@ function normalizeShellPath(shell) {
 
 function normalizePathPrefix(value) {
 	return typeof value === "string" && !value.includes("\0") ? value : "";
+}
+
+function normalizeWorkingDirectory(value) {
+	return typeof value === "string" &&
+		path.isAbsolute(value) &&
+		!value.includes("\0")
+		? value
+		: "";
 }
 
 function shellSingleQuote(value) {

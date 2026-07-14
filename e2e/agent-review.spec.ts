@@ -70,7 +70,7 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 				message: "the fake Codex command did not complete",
 				timeout: 30_000,
 			})
-			.toBe("complete");
+			.toBe(workspaceDir);
 		await expect
 			.poll(async () => await readFile(welcomeFilePath, "utf8"), {
 				timeout: 30_000,
@@ -173,7 +173,7 @@ printf '\\nCodex e2e edit.\\n' >> welcome.md
 printf '\\nCodex unopened edit.\\n' >> changelog.md
 printf '# Codex created file\\n' > codex-created.md
 run_hook Stop turn-stop
-printf '%s\\n' 'complete' > "$FLASHTYPE_E2E_CODEX_COMPLETION_PATH"
+printf '%s\\n' "$PWD" > "$FLASHTYPE_E2E_CODEX_COMPLETION_PATH"
 printf '%s\\n' 'fake codex complete'
 `,
 		"utf8",

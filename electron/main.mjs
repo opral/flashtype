@@ -106,6 +106,7 @@ let autoUpdatesSetup = false;
 let recoveryUpdateCheckStarted = false;
 let telemetryShutdownComplete = false;
 let closeLixSession = async () => {};
+let runWithLixSessionClosed = async (_window, operation) => await operation();
 let disposeLixIpc = async () => {};
 let registerLixIpc = () => {};
 let disposeTerminalIpc = () => {};
@@ -514,8 +515,11 @@ async function toggleTrackChangesFromApplicationMenu(trackChanges) {
 	if (!window || window.isDestroyed() || !getWorkspace(window)) {
 		return null;
 	}
-	await closeLixSession(window, { ignoreOpenError: true });
-	const workspace = await setWorkspaceTrackChanges(window, trackChanges);
+	const workspace = await runWithLixSessionClosed(
+		window,
+		() => setWorkspaceTrackChanges(window, trackChanges),
+		{ ignoreOpenError: true },
+	);
 	if (!trackChanges) {
 		clearWorkspaceRecoveryForWorkspace(workspace);
 	}
@@ -853,6 +857,7 @@ async function loadNativeIpcModules() {
 		import("./ipc-terminal.mjs"),
 	]);
 	closeLixSession = lixIpc.closeLixSession;
+	runWithLixSessionClosed = lixIpc.runWithLixSessionClosed;
 	disposeLixIpc = lixIpc.disposeLixIpc;
 	registerLixIpc = lixIpc.registerLixIpc;
 	disposeTerminalIpc = terminalIpc.disposeTerminalIpc;

@@ -167,6 +167,18 @@ export async function closeLix(window, options = {}) {
 	});
 }
 
+export async function runWithLixClosed(window, operation, options = {}) {
+	if (typeof operation !== "function") {
+		throw new TypeError("runWithLixClosed requires an operation");
+	}
+	const session = getOrCreateSession(window);
+	return await enqueue(session, async () => {
+		await options.beforeClose?.();
+		await closeCurrentLix(session, options);
+		return await operation();
+	});
+}
+
 export async function resetLixRepository(window) {
 	const session = getOrCreateSession(window);
 	await enqueue(session, async () => {
