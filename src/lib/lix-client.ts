@@ -288,7 +288,7 @@ export async function openDesktopLix(): Promise<Lix> {
 }
 
 /**
- * A filtered FsBackend keeps its selected paths in memory. Reopening the
+ * Filtered local filesystem storage keeps its selected paths in memory. Reopening the
  * native Lix preserves the tracked files in lix_file but loses that selection,
  * so a plain sync would ignore later disk edits. Restore only the paths the
  * workspace already tracks; this keeps transient workspaces lazy while making

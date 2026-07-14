@@ -1,12 +1,11 @@
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
 import type {
 	BundledPluginArchive,
 	ExecuteResult,
 	Lix as SdkLix,
 	OpenLixOptions as SdkOpenLixOptions,
 	SqlParam,
-} from "../../submodule/lix/packages/js-sdk/dist/index.js";
+} from "@lix-js/sdk";
 import type {
 	Lix,
 	LixExecuteOptions,
@@ -25,8 +24,7 @@ type OpenTestLixOptions = SdkOpenLixOptions & {
 	keyValues?: ReadonlyArray<OpenLixKeyValueEntry>;
 };
 
-type SdkModule =
-	typeof import("../../submodule/lix/packages/js-sdk/dist/index.js");
+type SdkModule = typeof import("@lix-js/sdk");
 
 let sdkModulePromise: Promise<SdkModule> | undefined;
 const require = createRequire(import.meta.url);
@@ -35,9 +33,11 @@ export async function openLix(options: OpenTestLixOptions = {}): Promise<Lix> {
 	const { keyValues, ...sdkOptions } = options;
 	const sdk = await loadSdk();
 	const sdkLix = await sdk.openLix(sdkOptions);
-	const fsBackend =
-		sdkOptions.backend instanceof sdk.FsBackend ? sdkOptions.backend : undefined;
-	const lix = createTestLixAdapter(sdkLix, fsBackend);
+	const localFilesystem =
+		sdkOptions.storage instanceof sdk.LocalFilesystem
+			? sdkOptions.storage
+			: undefined;
+	const lix = createTestLixAdapter(sdkLix, localFilesystem);
 	if (Array.isArray(keyValues)) {
 		await seedKeyValues(lix, keyValues);
 	}
@@ -51,10 +51,7 @@ export async function bundledPluginArchives(): Promise<BundledPluginArchive[]> {
 
 async function loadSdk(): Promise<SdkModule> {
 	if (!sdkModulePromise) {
-		const sdkPath = resolve(
-			process.cwd(),
-			"submodule/lix/packages/js-sdk/dist/index.js",
-		);
+		const sdkPath = require.resolve("@lix-js/sdk");
 		// Vitest aliases @lix-js/sdk to this helper; require the built SDK entry
 		// so Node, not Vite, owns the native addon's import.meta.url handling.
 		sdkModulePromise = Promise.resolve(require(sdkPath) as SdkModule);
@@ -97,7 +94,7 @@ async function seedKeyValues(
 
 function createTestLixAdapter(
 	sdkLix: SdkLix,
-	fsBackend?: InstanceType<SdkModule["FsBackend"]>,
+	localFilesystem?: InstanceType<SdkModule["LocalFilesystem"]>,
 ): Lix {
 	const observations = new Set<ObserveEvents>();
 	let closing = false;
@@ -193,16 +190,18 @@ function createTestLixAdapter(
 			return await sdkLix.switchBranch(options);
 		},
 		async importFilesystemPaths(paths) {
-			if (!fsBackend) {
-				throw new Error("importFilesystemPaths requires a filesystem backend");
+			if (!localFilesystem) {
+				throw new Error(
+					"importFilesystemPaths requires local filesystem storage",
+				);
 			}
-			await fsBackend.importPaths(paths);
+			await localFilesystem.importPaths(paths);
 		},
 		async syncDiskToLix() {
-			if (!fsBackend) {
-				throw new Error("syncDiskToLix requires a filesystem backend");
+			if (!localFilesystem) {
+				throw new Error("syncDiskToLix requires local filesystem storage");
 			}
-			await fsBackend.syncDiskToLix();
+			await localFilesystem.syncDiskToLix();
 		},
 		async mergeBranchPreview(options) {
 			return await sdkLix.mergeBranchPreview(options);

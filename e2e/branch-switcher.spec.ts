@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
-import { FsBackend, openLix } from "@lix-js/sdk";
+import { LocalFilesystem, openLix } from "@lix-js/sdk";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -447,7 +447,7 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 
 async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
 	const lix = await openLix({
-		backend: new FsBackend({ path: workspaceDir, syncAllFiles: true }),
+		storage: new LocalFilesystem({ path: workspaceDir, syncAllFiles: true }),
 	});
 	await lix.close();
 }

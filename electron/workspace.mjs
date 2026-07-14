@@ -50,8 +50,8 @@ export async function resolveWorkspaceTarget(requestedPath) {
 	try {
 		stats = await stat(resolved);
 	} catch {
-		// Keep the resolved path for directories and unreadable paths; the lix
-		// backend reports unreadable workspace folders.
+		// Keep the resolved path for directories and unreadable paths; Lix local
+		// filesystem storage reports unreadable workspace folders.
 	}
 	if (stats?.isFile()) {
 		const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
@@ -398,7 +398,7 @@ async function profileTransientWorkspaceSourceFiles(profile, workspace) {
 	profile.directory_count = directories.size;
 }
 
-export async function getWorkspaceFsBackendOptions(window) {
+export async function getWorkspaceLocalFilesystemOptions(window) {
 	const workspace = getWorkspace(window);
 	if (!workspace) {
 		throw new Error("No workspace is open. Open a folder before using lix.");
@@ -414,7 +414,7 @@ export async function getWorkspaceFsBackendOptions(window) {
 	return { path: workspace.path, syncAllFiles: true };
 }
 
-export async function acquireWorkspaceFsBackendOptions(window) {
+export async function acquireWorkspaceLocalFilesystemOptions(window) {
 	const workspace = getWorkspace(window);
 	if (!workspace) {
 		throw new Error("No workspace is open. Open a folder before using lix.");

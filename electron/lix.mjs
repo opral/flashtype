@@ -1,9 +1,9 @@
 import { app } from "electron";
-import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
+import { LocalFilesystem, bundledPluginArchives, openLix } from "@lix-js/sdk";
 import path from "node:path";
 import { readFile, rm } from "node:fs/promises";
 import {
-	acquireWorkspaceFsBackendOptions,
+	acquireWorkspaceLocalFilesystemOptions,
 	getWorkspace,
 	getWorkspaceLixDatabasePath,
 } from "./workspace.mjs";
@@ -31,7 +31,7 @@ export async function ensureLixOpen(window) {
 					);
 				}
 				let nativeLix;
-				let releaseBackendOptions = async () => {};
+				let releaseStorageOptions = async () => {};
 				const tracksPersistentWorkspace = workspace.ephemeral !== true;
 				const userDataPath = app.getPath("userData");
 				try {
@@ -43,13 +43,13 @@ export async function ensureLixOpen(window) {
 							}),
 						);
 					}
-					const acquiredBackend =
-						await acquireWorkspaceFsBackendOptions(window);
-					const backendOptions = acquiredBackend.options;
-					releaseBackendOptions = acquiredBackend.release;
-					const backend = new FsBackend(backendOptions);
+					const acquiredStorage =
+						await acquireWorkspaceLocalFilesystemOptions(window);
+					const storageOptions = acquiredStorage.options;
+					releaseStorageOptions = acquiredStorage.release;
+					const storage = new LocalFilesystem(storageOptions);
 					nativeLix = await openLix({
-						backend,
+						storage,
 					});
 					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
 					if (tracksPersistentWorkspace) {
@@ -57,16 +57,16 @@ export async function ensureLixOpen(window) {
 					}
 					return createDesktopLixHandle(
 						nativeLix,
-						backend,
+						storage,
 						workspace.path,
-						backendOptions.lixDir ??
+						storageOptions.lixDir ??
 							path.join(workspace.path, LIX_DATABASE_DIR),
 						crypto.randomUUID(),
-						releaseBackendOptions,
+						releaseStorageOptions,
 					);
 				} catch (error) {
 					await nativeLix?.close().catch(() => {});
-					await releaseBackendOptions();
+					await releaseStorageOptions();
 					let recovery;
 					if (tracksPersistentWorkspace) {
 						clearWorkspaceLixOpenPendingSync(userDataPath, workspace.path);
@@ -306,11 +306,11 @@ function getOrCreateSession(window) {
 
 function createDesktopLixHandle(
 	nativeLix,
-	backend,
+	storage,
 	workspaceDir,
 	storageDir,
 	sessionId,
-	releaseBackendOptions,
+	releaseStorageOptions,
 ) {
 	let operationQueue = Promise.resolve();
 
@@ -449,16 +449,16 @@ function createDesktopLixHandle(
 			});
 		},
 		async importFilesystemPaths(paths = []) {
-			return await runQueued(() => backend.importPaths([...(paths ?? [])]));
+			return await runQueued(() => storage.importPaths([...(paths ?? [])]));
 		},
 		async syncDiskToLix() {
-			return await runQueued(() => backend.syncDiskToLix());
+			return await runQueued(() => storage.syncDiskToLix());
 		},
 		async close() {
 			try {
 				await runQueued(() => nativeLix.close());
 			} finally {
-				await releaseBackendOptions();
+				await releaseStorageOptions();
 			}
 		},
 	};

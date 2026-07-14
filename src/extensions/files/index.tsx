@@ -37,6 +37,19 @@ type FilesViewProps = {
 	readonly context?: ExtensionContext;
 };
 
+type FilesSelection = {
+	readonly path: string;
+	readonly fileId: string | null;
+	readonly kind: "file" | "directory";
+	readonly source: FilesystemTreeSource;
+};
+
+type FilesSelectionOverride = {
+	/** The active selection this local choice was made against. */
+	readonly activeSelectionKey: string | null;
+	readonly selection: FilesSelection | null;
+};
+
 /**
  * Files view - Browse and pin project documents. Owns the Cmd/Ctrl + . shortcut
  * that opens the inline creation prompt for a new markdown file.
@@ -249,15 +262,8 @@ function FilesViewContent({
 	const [createRequest, setCreateRequest] =
 		useState<FileTreeCreateRequest | null>(null);
 	const nextCreateRequestIdRef = useRef(0);
-	const [selectedPath, setSelectedPath] = useState<string | null>(null);
-	const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
-	const [selectedKind, setSelectedKind] = useState<"file" | "directory" | null>(
-		null,
-	);
-	const [selectedSource, setSelectedSource] =
-		useState<FilesystemTreeSource | null>(null);
-	const selectedKindRef = useRef(selectedKind);
-	const syncedActiveFileSelectionRef = useRef<string | null>(null);
+	const [selectionOverride, setSelectionOverride] =
+		useState<FilesSelectionOverride | null>(null);
 	const [isDraggingOver, setIsDraggingOver] = useState(false);
 	const dragCounterRef = useRef(0);
 	const entryPathSet = useMemo(() => {
@@ -293,6 +299,53 @@ function FilesViewContent({
 			? context.activeFileId
 			: null;
 	const activeFilePath = context?.activeFilePath ?? null;
+	const normalizedActiveFilePath =
+		typeof activeFilePath === "string" && activeFilePath.length > 0
+			? normalizeFilePath(activeFilePath)
+			: null;
+	const activeIdentity = activeFileId
+		? `id:${activeFileId}`
+		: normalizedActiveFilePath
+			? `path:${normalizedActiveFilePath}`
+			: null;
+	const activeEntry = activeFileId
+		? combinedEntries.find(
+				(entry) => entry.kind === "file" && entry.id === activeFileId,
+			)
+		: combinedEntries.find(
+				(entry) =>
+					entry.kind === "file" &&
+					filesystemEntryPathKey(entry) === normalizedActiveFilePath,
+			);
+	const activeSelection = activeEntry
+		? {
+				path: filesystemEntryPathKey(activeEntry),
+				fileId: activeEntry.id,
+				kind: "file" as const,
+				source: activeEntry.source ?? ("lix" as const),
+			}
+		: null;
+	const activeSelectionKey = activeIdentity
+		? `${activeIdentity}:${activeSelection?.path ?? "missing"}`
+		: null;
+	const hasCurrentSelectionOverride =
+		selectionOverride?.activeSelectionKey === activeSelectionKey;
+	const selection = hasCurrentSelectionOverride
+		? selectionOverride.selection
+		: activeSelection;
+	const selectedPath = selection?.path ?? null;
+	const selectedFileId = selection?.fileId ?? null;
+	const selectedKind = selection?.kind ?? null;
+	const selectedSource = selection?.source ?? null;
+	const activeSelectionPath = activeSelection?.path ?? null;
+	useEffect(() => {
+		setSelectionOverride((current) => {
+			if (!current || current.activeSelectionKey === activeSelectionKey) {
+				return current;
+			}
+			return null;
+		});
+	}, [activeSelectionKey]);
 	useEffect(() => {
 		if (pendingPaths.length === 0) return;
 		setPendingPaths((prev) => prev.filter((path) => !entryPathSet.has(path)));
@@ -304,67 +357,11 @@ function FilesViewContent({
 		);
 	}, [entryDirectorySet, pendingDirectoryPaths.length]);
 	useEffect(() => {
-		selectedKindRef.current = selectedKind;
-	}, [selectedKind]);
-	useEffect(() => {
-		if (createRequest) return;
-		const activeIdentity = activeFileId
-			? `id:${activeFileId}`
-			: activeFilePath
-				? `path:${normalizeFilePath(activeFilePath)}`
-				: null;
-		const normalizedActiveFilePath =
-			typeof activeFilePath === "string" && activeFilePath.length > 0
-				? normalizeFilePath(activeFilePath)
-				: null;
-
-		if (!activeIdentity) {
-			syncedActiveFileSelectionRef.current = null;
-			if (selectedKindRef.current === "file") {
-				setSelectedPath(null);
-				setSelectedFileId(null);
-				setSelectedKind(null);
-				setSelectedSource(null);
-				selectedKindRef.current = null;
-			}
+		if (createRequest || hasCurrentSelectionOverride || !activeSelectionPath) {
 			return;
 		}
-
-		const activeEntry = activeFileId
-			? combinedEntries.find(
-					(entry) => entry.kind === "file" && entry.id === activeFileId,
-				)
-			: combinedEntries.find(
-					(entry) =>
-						entry.kind === "file" &&
-						filesystemEntryPathKey(entry) === normalizedActiveFilePath,
-				);
-
-		if (!activeEntry) {
-			if (selectedKindRef.current === "file") {
-				setSelectedPath(null);
-				setSelectedFileId(null);
-				setSelectedKind(null);
-				setSelectedSource(null);
-				selectedKindRef.current = null;
-			}
-			return;
-		}
-
-		const activeEntryPath = filesystemEntryPathKey(activeEntry);
-		const activeSelectionKey = `${activeIdentity}:${activeEntryPath}`;
-		if (syncedActiveFileSelectionRef.current === activeSelectionKey) {
-			return;
-		}
-
-		syncedActiveFileSelectionRef.current = activeSelectionKey;
-		selectedKindRef.current = "file";
-		setSelectedPath(activeEntryPath);
-		setSelectedFileId(activeEntry.id);
-		setSelectedKind("file");
-		setSelectedSource(activeEntry.source ?? "lix");
 		setOpenDirectoryPaths((prev) => {
-			const ancestors = ancestorDirectoryPathsForFilePath(activeEntryPath);
+			const ancestors = ancestorDirectoryPathsForFilePath(activeSelectionPath);
 			if (ancestors.length === 0) return prev;
 			const next = new Set(prev);
 			let changed = false;
@@ -376,7 +373,7 @@ function FilesViewContent({
 			}
 			return changed ? next : prev;
 		});
-	}, [activeFileId, activeFilePath, combinedEntries, createRequest]);
+	}, [activeSelectionPath, createRequest, hasCurrentSelectionOverride]);
 	const isMacPlatform = useMemo(() => detectMacPlatform(), []);
 	const isPanelFocused = context?.isPanelFocused ?? false;
 	const registerNewFileDraftHandler = context?.registerNewFileDraftHandler;
@@ -446,6 +443,16 @@ function FilesViewContent({
 		};
 	}, [isEphemeralWorkspace]);
 
+	const setLocalSelection = useCallback(
+		(nextSelection: FilesSelection | null) => {
+			setSelectionOverride({
+				activeSelectionKey,
+				selection: nextSelection,
+			});
+		},
+		[activeSelectionKey],
+	);
+
 	const resolveCreateDirectory = useCallback(() => {
 		if (!selectedPath) return "/";
 		if (selectedPath.endsWith("/")) return selectedPath;
@@ -456,44 +463,39 @@ function FilesViewContent({
 
 	const startCreateRequest = useCallback(
 		(kind: "file" | "directory") => {
+			if (createRequest) return;
 			const baseDirectory = resolveCreateDirectory();
 			const directoryPath = ensureDirectoryPath(baseDirectory);
-			setCreateRequest((prev) => {
-				if (prev) return prev;
-				setSelectedPath(null);
-				setSelectedFileId(null);
-				setSelectedKind(null);
-				setSelectedSource(null);
-				if (directoryPath !== "/") {
-					setOpenDirectoryPaths((openPaths) => {
-						const next = new Set(openPaths);
-						next.add(directoryPath);
-						return next;
-					});
-				}
-				nextCreateRequestIdRef.current += 1;
-				return {
-					directoryPath,
-					id: nextCreateRequestIdRef.current,
-					initialValue: kind === "directory" ? "new-directory" : "new-file",
-					kind,
-				};
+			setLocalSelection(null);
+			if (directoryPath !== "/") {
+				setOpenDirectoryPaths((openPaths) => {
+					const next = new Set(openPaths);
+					next.add(directoryPath);
+					return next;
+				});
+			}
+			nextCreateRequestIdRef.current += 1;
+			setCreateRequest({
+				directoryPath,
+				id: nextCreateRequestIdRef.current,
+				initialValue: kind === "directory" ? "new-directory" : "new-file",
+				kind,
 			});
 		},
-		[resolveCreateDirectory],
+		[createRequest, resolveCreateDirectory, setLocalSelection],
 	);
 
 	const handleNewFile = useCallback(() => {
 		startCreateRequest("file");
 	}, [startCreateRequest]);
 
-	const handleCreateCancel = useCallback((request: FileTreeCreateRequest) => {
-		setCreateRequest((prev) => (prev?.id === request.id ? null : prev));
-		setSelectedPath(null);
-		setSelectedFileId(null);
-		setSelectedKind(null);
-		setSelectedSource(null);
-	}, []);
+	const handleCreateCancel = useCallback(
+		(request: FileTreeCreateRequest) => {
+			setCreateRequest((prev) => (prev?.id === request.id ? null : prev));
+			setLocalSelection(null);
+		},
+		[setLocalSelection],
+	);
 
 	const handleCreateCommit = useCallback(
 		async (request: FileTreeCreateRequest, value: string) => {
@@ -532,10 +534,12 @@ function FilesViewContent({
 						throw new Error(`created file id not found for path '${path}'`);
 					}
 					setPendingPaths((prev) => [...prev, path]);
-					setSelectedPath(path);
-					setSelectedFileId(id);
-					setSelectedKind("file");
-					setSelectedSource("lix");
+					setLocalSelection({
+						path,
+						fileId: id,
+						kind: "file",
+						source: "lix",
+					});
 					context?.openFile?.({
 						panel: "central",
 						fileId: id,
@@ -569,9 +573,12 @@ function FilesViewContent({
 						.values({ path } as any)
 						.execute();
 					setPendingDirectoryPaths((prev) => [...prev, path]);
-					setSelectedPath(path);
-					setSelectedKind("directory");
-					setSelectedSource("lix");
+					setLocalSelection({
+						path,
+						fileId: null,
+						kind: "directory",
+						source: "lix",
+					});
 				} catch (error) {
 					console.error("Failed to create directory", error);
 				} finally {
@@ -585,7 +592,13 @@ function FilesViewContent({
 			}
 			return executeFileCreation();
 		},
-		[context, existingDirectoryPaths, existingFilePaths, lix],
+		[
+			context,
+			existingDirectoryPaths,
+			existingFilePaths,
+			lix,
+			setLocalSelection,
+		],
 	);
 
 	const handleCreateDirectory = useCallback(() => {
@@ -632,10 +645,12 @@ function FilesViewContent({
 					setPendingPaths((prev) =>
 						remapFilePathsInDirectory(prev, sourcePath, destinationPath),
 					);
-					setSelectedPath(destinationPath);
-					setSelectedFileId(null);
-					setSelectedKind("directory");
-					setSelectedSource("lix");
+					setLocalSelection({
+						path: destinationPath,
+						fileId: null,
+						kind: "directory",
+						source: "lix",
+					});
 					return;
 				}
 
@@ -672,10 +687,12 @@ function FilesViewContent({
 						return next;
 					});
 				}
-				setSelectedPath(destinationPath);
-				setSelectedFileId(resolvedFileId ?? null);
-				setSelectedKind("file");
-				setSelectedSource("lix");
+				setLocalSelection({
+					path: destinationPath,
+					fileId: resolvedFileId ?? null,
+					kind: "file",
+					source: "lix",
+				});
 				if (resolvedFileId) {
 					void context?.openFile?.({
 						panel: "central",
@@ -691,7 +708,13 @@ function FilesViewContent({
 				renamingRef.current = false;
 			}
 		},
-		[context, existingDirectoryPaths, existingFilePaths, lix],
+		[
+			context,
+			existingDirectoryPaths,
+			existingFilePaths,
+			lix,
+			setLocalSelection,
+		],
 	);
 
 	const handleCreateShortcut = useCallback(
@@ -725,15 +748,17 @@ function FilesViewContent({
 
 	const handleOpenFile = useCallback(
 		(fileId: string, path: string) => {
-			setSelectedPath(path);
-			setSelectedFileId(fileId);
-			setSelectedKind("file");
 			const checkpointVisibleFile = context?.checkpointDiff
 				? (
 						context.checkpointDiff.visibleFiles ?? context.checkpointDiff.files
 					).find((file) => file.fileId === fileId)
 				: undefined;
-			setSelectedSource(checkpointVisibleFile ? "checkpoint-diff" : "lix");
+			setLocalSelection({
+				path,
+				fileId,
+				kind: "file",
+				source: checkpointVisibleFile ? "checkpoint-diff" : "lix",
+			});
 			void context?.openFile?.({
 				panel: "central",
 				fileId,
@@ -752,7 +777,7 @@ function FilesViewContent({
 				trackDocumentViewed: checkpointVisibleFile ? false : undefined,
 			});
 		},
-		[context],
+		[context, setLocalSelection],
 	);
 
 	const handleOpenDirectoriesChange = useCallback(
@@ -780,14 +805,14 @@ function FilesViewContent({
 			kind: "file" | "directory",
 			source?: FilesystemTreeSource,
 		) => {
-			setSelectedPath(path);
-			if (kind === "directory") {
-				setSelectedFileId(null);
-			}
-			setSelectedKind(kind);
-			setSelectedSource(source ?? "lix");
+			setLocalSelection({
+				path,
+				fileId: kind === "directory" ? null : selectedFileId,
+				kind,
+				source: source ?? "lix",
+			});
 		},
-		[],
+		[selectedFileId, setLocalSelection],
 	);
 
 	const handleDeleteSelection = useCallback(async () => {
@@ -849,10 +874,7 @@ function FilesViewContent({
 		} catch (error) {
 			console.error("Failed to delete entry", error);
 		} finally {
-			setSelectedPath(null);
-			setSelectedFileId(null);
-			setSelectedKind(null);
-			setSelectedSource(null);
+			setLocalSelection(null);
 		}
 	}, [
 		context,
@@ -861,6 +883,7 @@ function FilesViewContent({
 		selectedKind,
 		selectedPath,
 		selectedSource,
+		setLocalSelection,
 	]);
 
 	useEffect(() => {

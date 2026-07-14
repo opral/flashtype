@@ -3,8 +3,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-	acquireWorkspaceFsBackendOptions: vi.fn(),
-	backendOptions: [],
+	acquireWorkspaceLocalFilesystemOptions: vi.fn(),
+	storageOptions: [],
 	getWorkspace: vi.fn(),
 	nativeLixHandles: [],
 	openLix: vi.fn(),
@@ -15,9 +15,9 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@lix-js/sdk", () => ({
-	FsBackend: class FakeFsBackend {
+	LocalFilesystem: class FakeLocalFilesystem {
 		constructor(options) {
-			mocks.backendOptions.push(options);
+			mocks.storageOptions.push(options);
 		}
 
 		async importPaths() {}
@@ -28,7 +28,8 @@ vi.mock("@lix-js/sdk", () => ({
 }));
 
 vi.mock("./workspace.mjs", () => ({
-	acquireWorkspaceFsBackendOptions: mocks.acquireWorkspaceFsBackendOptions,
+	acquireWorkspaceLocalFilesystemOptions:
+		mocks.acquireWorkspaceLocalFilesystemOptions,
 	getWorkspace: mocks.getWorkspace,
 	getWorkspaceLixDatabasePath: () => "/workspace/.lix/.internal/db.sqlite",
 }));
@@ -53,8 +54,8 @@ const { closeAllLixSessions, ensureLixOpen, runWithLixClosed } =
 describe("Lix workspace lifecycle", () => {
 	afterEach(async () => {
 		await closeAllLixSessions({ ignoreOpenError: true });
-		mocks.acquireWorkspaceFsBackendOptions.mockReset();
-		mocks.backendOptions.length = 0;
+		mocks.acquireWorkspaceLocalFilesystemOptions.mockReset();
+		mocks.storageOptions.length = 0;
 		mocks.getWorkspace.mockReset();
 		mocks.nativeLixHandles.length = 0;
 		mocks.openLix.mockReset();
@@ -77,10 +78,12 @@ describe("Lix workspace lifecycle", () => {
 			path: "/workspace",
 		};
 		mocks.getWorkspace.mockImplementation(() => currentWorkspace);
-		mocks.acquireWorkspaceFsBackendOptions.mockImplementation(async () => ({
-			options: currentOptions,
-			release: async () => {},
-		}));
+		mocks.acquireWorkspaceLocalFilesystemOptions.mockImplementation(
+			async () => ({
+				options: currentOptions,
+				release: async () => {},
+			}),
+		);
 		mocks.openLix.mockImplementation(async () => {
 			const nativeLix = {
 				close: vi.fn(async () => {}),
@@ -117,7 +120,7 @@ describe("Lix workspace lifecycle", () => {
 		await reopen;
 
 		expect(mocks.openLix).toHaveBeenCalledTimes(2);
-		expect(mocks.backendOptions).toEqual([persistentOptions, ephemeralOptions]);
+		expect(mocks.storageOptions).toEqual([persistentOptions, ephemeralOptions]);
 	});
 });
 

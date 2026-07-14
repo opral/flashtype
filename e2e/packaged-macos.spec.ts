@@ -44,15 +44,7 @@ const nativeModulePaths = [
 		unpackedResourcesPath,
 		"node_modules",
 		"@lix-js",
-		"sdk",
-		"lix_js_sdk.node",
-	),
-	path.join(
-		unpackedResourcesPath,
-		"submodule",
-		"lix",
-		"packages",
-		"js-sdk",
+		"sdk-darwin-arm64",
 		"lix_js_sdk.node",
 	),
 	path.join(

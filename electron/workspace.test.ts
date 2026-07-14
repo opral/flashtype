@@ -11,13 +11,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
-	acquireWorkspaceFsBackendOptions,
+	acquireWorkspaceLocalFilesystemOptions,
 	profileWorkspaceFilesystem,
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
 	getMostRecentMarkdownFile,
 	getWorkspace,
-	getWorkspaceFsBackendOptions,
+	getWorkspaceLocalFilesystemOptions,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
 	resolveWorkspaceTargets,
@@ -803,7 +803,7 @@ describe("workspace resolution", () => {
 		});
 	});
 
-	test("opens transient FsBackend with an empty dynamic filter", async () => {
+	test("opens transient local filesystem storage with an empty dynamic filter", async () => {
 		const directory = path.join(
 			tmpdir(),
 			"flashtype-workspace-test",
@@ -818,7 +818,7 @@ describe("workspace resolution", () => {
 		try {
 			await setWorkspaceFromPath(filePath, window);
 
-			const options = await getWorkspaceFsBackendOptions(window);
+			const options = await getWorkspaceLocalFilesystemOptions(window);
 
 			expect(options).toMatchObject({
 				path: directory,
@@ -830,7 +830,7 @@ describe("workspace resolution", () => {
 		}
 	});
 
-	test("keeps leased transient Lix storage until the backend releases it", async () => {
+	test("keeps leased transient Lix storage until the filesystem storage releases it", async () => {
 		const directory = path.join(
 			tmpdir(),
 			"flashtype-workspace-test",
@@ -841,7 +841,7 @@ describe("workspace resolution", () => {
 		const window = createTestWindow();
 		await setWorkspaceFromPath(directory, window);
 
-		const acquired = await acquireWorkspaceFsBackendOptions(window);
+		const acquired = await acquireWorkspaceLocalFilesystemOptions(window);
 		const parent = path.dirname(acquired.options.lixDir);
 		await disposeWorkspaceWindowState(window);
 		await expect(stat(parent)).resolves.toBeDefined();

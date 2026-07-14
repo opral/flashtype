@@ -1002,22 +1002,23 @@ describe("FilesView", () => {
 				},
 			])
 			.execute();
+		const renderFilesView = (activeFileId: string, activeFilePath: string) => (
+			<LixProvider lix={lix}>
+				<Suspense fallback={null}>
+					<FilesView
+						context={createViewContext(lix, {
+							activeFileId,
+							activeFilePath,
+							openFile,
+						})}
+					/>
+				</Suspense>
+			</LixProvider>
+		);
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
-			utils = render(
-				<LixProvider lix={lix}>
-					<Suspense fallback={null}>
-						<FilesView
-							context={createViewContext(lix, {
-								activeFileId: "file_active",
-								activeFilePath: "/active.md",
-								openFile,
-							})}
-						/>
-					</Suspense>
-				</LixProvider>,
-			);
+			utils = render(renderFilesView("file_active", "/active.md"));
 		});
 		await waitForFilesViewReady(utils!);
 
@@ -1039,6 +1040,106 @@ describe("FilesView", () => {
 			"data-item-selected",
 			"true",
 		);
+
+		utils!.unmount();
+		await lix.close();
+	});
+
+	test("keeps a clicked file selected while the active-file projection is stale", async () => {
+		const lix = await openLix();
+		const openFile = vi.fn();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{
+					id: "file_active",
+					path: "/active.md",
+					data: new Uint8Array(),
+				},
+				{
+					id: "file_clicked",
+					path: "/clicked.md",
+					data: new Uint8Array(),
+				},
+			])
+			.execute();
+		const renderFilesView = (activeFileId: string, activeFilePath: string) => (
+			<LixProvider lix={lix}>
+				<Suspense fallback={null}>
+					<FilesView
+						context={createViewContext(lix, {
+							activeFileId,
+							activeFilePath,
+							openFile,
+						})}
+					/>
+				</Suspense>
+			</LixProvider>
+		);
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(renderFilesView("file_active", "/active.md"));
+		});
+		await waitFor(() => {
+			expect(queryTreeItemByLabel(utils!, "active.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+		});
+
+		await act(async () => {
+			fireEvent.click(await findTreeItemByLabel(utils!, "clicked.md"));
+		});
+		expect(queryTreeItemByLabel(utils!, "clicked.md")).toHaveAttribute(
+			"data-item-selected",
+			"true",
+		);
+
+		// A filesystem refresh can arrive before Atelier publishes the new active
+		// file id. The stale projection must not overwrite the user's click.
+		await act(async () => {
+			await qb(lix)
+				.insertInto("lix_file")
+				.values({
+					id: "file_refresh",
+					path: "/refresh.md",
+					data: new Uint8Array(),
+				})
+				.execute();
+		});
+		await findTreeItemByLabel(utils!, "refresh.md");
+		expect(queryTreeItemByLabel(utils!, "clicked.md")).toHaveAttribute(
+			"data-item-selected",
+			"true",
+		);
+		expect(queryTreeItemByLabel(utils!, "active.md")).not.toHaveAttribute(
+			"data-item-selected",
+			"true",
+		);
+
+		await act(async () => {
+			utils!.rerender(renderFilesView("file_clicked", "/clicked.md"));
+		});
+		await waitFor(() => {
+			expect(queryTreeItemByLabel(utils!, "clicked.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+		});
+		await act(async () => {
+			utils!.rerender(renderFilesView("file_active", "/active.md"));
+		});
+		await waitFor(() => {
+			expect(queryTreeItemByLabel(utils!, "active.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+			expect(queryTreeItemByLabel(utils!, "clicked.md")).not.toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+		});
 
 		utils!.unmount();
 		await lix.close();
