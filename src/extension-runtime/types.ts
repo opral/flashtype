@@ -24,11 +24,13 @@ export type WorkspaceContext =
 			readonly ephemeral: false;
 			readonly path: string;
 			readonly name: string;
+			readonly initialPanelMode?: "document";
 	  }
 	| {
 			readonly ephemeral: true;
 			readonly path: string;
 			readonly name: string;
+			readonly initialPanelMode?: "document";
 			readonly openFilePaths: readonly string[];
 	  };
 

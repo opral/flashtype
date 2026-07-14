@@ -268,6 +268,7 @@ describe("workspace resolution", () => {
 
 		await expect(resolveWorkspace(filePath)).resolves.toEqual({
 			ephemeral: false,
+			initialPanelMode: "document",
 			path: directory,
 			name: "workspace",
 		});
@@ -289,6 +290,7 @@ describe("workspace resolution", () => {
 		await expect(resolveWorkspaceTarget(filePath)).resolves.toEqual({
 			workspace: {
 				ephemeral: false,
+				initialPanelMode: "document",
 				path: directory,
 				name: "workspace",
 			},
@@ -312,6 +314,7 @@ describe("workspace resolution", () => {
 		await expect(resolveWorkspaceTarget(filePath)).resolves.toEqual({
 			workspace: {
 				ephemeral: false,
+				initialPanelMode: "document",
 				path: directory,
 				name: "workspace",
 			},
@@ -333,6 +336,7 @@ describe("workspace resolution", () => {
 
 		await expect(resolveWorkspace(filePath)).resolves.toEqual({
 			ephemeral: false,
+			initialPanelMode: "document",
 			path: directory,
 			name: "workspace",
 		});
@@ -354,6 +358,7 @@ describe("workspace resolution", () => {
 		await expect(resolveWorkspaceTarget(filePath)).resolves.toEqual({
 			workspace: {
 				ephemeral: false,
+				initialPanelMode: "document",
 				path: directory,
 				name: "workspace",
 			},
@@ -377,6 +382,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: false,
+					initialPanelMode: "document",
 					path: directory,
 					name: "workspace",
 				},
@@ -401,6 +407,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: false,
+					initialPanelMode: "document",
 					path: directory,
 					name: "workspace",
 				},
@@ -447,6 +454,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: false,
+					initialPanelMode: "document",
 					path: firstDirectory,
 					name: "first",
 				},
@@ -455,6 +463,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: false,
+					initialPanelMode: "document",
 					path: secondDirectory,
 					name: "second",
 				},
@@ -477,6 +486,7 @@ describe("workspace resolution", () => {
 		await expect(resolveWorkspaceTarget(filePath)).resolves.toEqual({
 			workspace: {
 				ephemeral: true,
+				initialPanelMode: "document",
 				path: directory,
 				openFilePaths: ["readme.md"],
 				name: "workspace",
@@ -504,6 +514,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: true,
+					initialPanelMode: "document",
 					path: directory,
 					openFilePaths: ["alpha.md", "nested/beta.markdown"],
 					name: "workspace",
@@ -551,6 +562,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: false,
+					initialPanelMode: "document",
 					path: firstDirectory,
 					name: "first",
 				},
@@ -559,6 +571,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: false,
+					initialPanelMode: "document",
 					path: secondDirectory,
 					name: "second",
 				},
@@ -586,6 +599,7 @@ describe("workspace resolution", () => {
 			{
 				workspace: {
 					ephemeral: true,
+					initialPanelMode: "document",
 					path: directory,
 					openFilePaths: ["alpha.txt", "beta.csv"],
 					name: "workspace",

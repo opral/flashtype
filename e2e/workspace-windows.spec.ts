@@ -505,6 +505,14 @@ test("macOS open-file events create workspace windows for folders and files", as
 				.locator('[data-view-key="atelier_file"][data-active="true"]')
 				.first(),
 		).toBeVisible();
+		await expect(filePage.getByLabel("Toggle left panel")).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
+		await expect(filePage.getByLabel("Toggle right panel")).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
 		await expect(filePage.getByTestId("central-panel-empty-state")).toHaveCount(
 			0,
 		);
@@ -542,6 +550,15 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 				.first(),
 		).toBeVisible();
 		await expect(filePage.getByRole("heading", { name: "Solo" })).toBeVisible();
+		await expect(filePage.getByLabel("Toggle left panel")).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
+		await expect(filePage.getByLabel("Toggle right panel")).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
+		await filePage.getByLabel("Toggle left panel").click();
 		await expect(fileTreeFile(filePage, "/sibling.md")).toBeVisible();
 		await expectPathMissing(path.join(directory, ".lix"));
 		await expectPathMissing(path.join(directory, ".lix_system"));
@@ -616,6 +633,12 @@ test("launching with multiple standalone markdown files creates one grouped tran
 		await expect(
 			groupedPage.getByRole("heading", { name: "Alpha" }),
 		).toBeVisible();
+		await expect(groupedPage.getByLabel("Toggle left panel")).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
+		await groupedPage.getByLabel("Toggle left panel").click();
+		await fileTreeDirectory(groupedPage, "/standalone-markdown-alpha/").click();
 		await expect(
 			fileTreeFile(groupedPage, "/standalone-markdown-alpha/alpha.md"),
 		).toBeVisible();
@@ -723,6 +746,10 @@ test("mixed folder and standalone markdown args create folder and grouped file w
 		await expect(
 			groupedFilePage.getByRole("heading", { name: "One" }),
 		).toBeVisible();
+		await expect(
+			groupedFilePage.getByLabel("Toggle left panel"),
+		).toHaveAttribute("aria-pressed", "false");
+		await groupedFilePage.getByLabel("Toggle left panel").click();
 		await expect(
 			fileTreeFile(groupedFilePage, "/folder-marker.md"),
 		).toHaveCount(0);

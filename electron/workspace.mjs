@@ -63,7 +63,7 @@ export async function resolveWorkspaceTarget(requestedPath) {
 			};
 		}
 		return {
-			workspace: createPersistentWorkspace(workspaceDir),
+			workspace: createPersistentWorkspace(workspaceDir, "document"),
 			pendingOpenFilePaths: [
 				workspaceRelativeFilePath(workspaceDir, resolved),
 			].filter(Boolean),
@@ -1074,22 +1074,28 @@ async function resolveStandaloneFile(resolvedPath) {
 	return workspaceDir ? null : resolvedPath;
 }
 
-function createPersistentWorkspace(workspacePath) {
+function createPersistentWorkspace(workspacePath, initialPanelMode) {
 	const resolvedPath = path.resolve(workspacePath);
 	return {
 		ephemeral: false,
 		path: resolvedPath,
 		name: path.basename(resolvedPath) || resolvedPath,
+		...(initialPanelMode ? { initialPanelMode } : {}),
 	};
 }
 
-function createEphemeralWorkspace(workspacePath, openFilePaths = []) {
+function createEphemeralWorkspace(
+	workspacePath,
+	openFilePaths = [],
+	initialPanelMode,
+) {
 	const resolvedPath = path.resolve(workspacePath);
 	return {
 		ephemeral: true,
 		path: resolvedPath,
 		openFilePaths: uniqueWorkspaceRelativeFilePaths(openFilePaths),
 		name: path.basename(resolvedPath) || resolvedPath,
+		...(initialPanelMode ? { initialPanelMode } : {}),
 	};
 }
 
@@ -1220,6 +1226,7 @@ function createTransientDirectoryWorkspace(filePaths) {
 		normalizedFilePaths
 			.map((filePath) => workspaceRelativeFilePath(workspacePath, filePath))
 			.filter(Boolean),
+		"document",
 	);
 }
 

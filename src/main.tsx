@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import {
 	Atelier,
 	createAtelier,
+	createMemorySessionStateStore,
 	type AtelierInstance,
 	type AtelierExtensionRegistration,
 } from "@opral/atelier";
@@ -44,7 +45,8 @@ type WorkspaceRecovery = Awaited<
 	>
 >;
 
-const DEFAULT_OPEN_ATELIER_PANELS = ["right"] as const;
+const DEFAULT_OPEN_ATELIER_PANELS = ["left", "right"] as const;
+const DOCUMENT_OPEN_ATELIER_PANELS = [] as const;
 
 /**
  * The workspace gates the app: without a folder, only the first-run screen
@@ -76,6 +78,15 @@ export const AppRoot = () => {
 		() => (lix ? createAtelierTelemetryHandler(lix) : undefined),
 		[lix],
 	);
+	const defaultOpenAtelierPanels =
+		workspace?.initialPanelMode === "document"
+			? DOCUMENT_OPEN_ATELIER_PANELS
+			: DEFAULT_OPEN_ATELIER_PANELS;
+	const atelierSession = useMemo(
+		() => ({ lix, store: createMemorySessionStateStore() }),
+		[lix],
+	);
+	const atelierSessionStateStore = atelierSession.store;
 	const atelier = useMemo(
 		() =>
 			lix
@@ -85,11 +96,18 @@ export const AppRoot = () => {
 						lix: lix as unknown as AtelierInstance["lix"],
 						extensions: atelierExtensions,
 						filesViewMode: "sidebar",
-						defaultOpenPanels: DEFAULT_OPEN_ATELIER_PANELS,
+						defaultOpenPanels: defaultOpenAtelierPanels,
+						sessionStateStore: atelierSessionStateStore,
 						onEvent: handleAtelierEvent,
 					})
 				: null,
-		[lix, atelierExtensions, handleAtelierEvent],
+		[
+			lix,
+			atelierExtensions,
+			defaultOpenAtelierPanels,
+			atelierSessionStateStore,
+			handleAtelierEvent,
+		],
 	);
 
 	useEffect(() => {
@@ -257,6 +275,7 @@ export const AppRoot = () => {
 		const connection = connectAtelierWorkspace({
 			documents: atelier.documents,
 			lix,
+			sessionStateStore: atelierSessionStateStore,
 			workspace: desktopWorkspace,
 			onError: setError,
 		});
@@ -267,7 +286,7 @@ export const AppRoot = () => {
 			cancelled = true;
 			connection.dispose();
 		};
-	}, [atelier, lix]);
+	}, [atelier, atelierSessionStateStore, lix]);
 
 	useEffect(() => {
 		if (!lix || !atelier) return;

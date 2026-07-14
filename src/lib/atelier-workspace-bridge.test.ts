@@ -126,6 +126,44 @@ describe("connectAtelierWorkspace", () => {
 		connection.dispose();
 	});
 
+	test("persists host session-store document changes", async () => {
+		const harness = createHarness({ activeDocumentPath: "/first.md" });
+		let snapshot = sessionUiState("active-file", "/first.md");
+		const listeners = new Set<() => void>();
+		const unsubscribe = vi.fn();
+		const connection = connectAtelierWorkspace({
+			...harness.options,
+			sessionStateStore: {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+						unsubscribe();
+					};
+				},
+			},
+		});
+		await connection.ready;
+		await waitFor(() =>
+			expect(harness.workspace.setSessionOpenFilePaths).toHaveBeenCalledWith({
+				filePaths: ["first.md"],
+			}),
+		);
+
+		harness.setActiveDocument("/second.md");
+		snapshot = sessionUiState("active-file", "/second.md");
+		for (const listener of listeners) listener();
+
+		await waitFor(() =>
+			expect(
+				harness.workspace.setSessionOpenFilePaths,
+			).toHaveBeenLastCalledWith({ filePaths: ["second.md"] }),
+		);
+		connection.dispose();
+		expect(unsubscribe).toHaveBeenCalledOnce();
+	});
+
 	test("persists external active-file renames and deletions", async () => {
 		const harness = createHarness({ activeDocumentPath: "/first.md" });
 		const connection = connectAtelierWorkspace(harness.options);
@@ -269,6 +307,7 @@ function createHarness(
 		open: vi.fn(async () => {}),
 		startNew: vi.fn(async () => {}),
 		closeActive: vi.fn(async () => {}),
+		closeAll: vi.fn(async () => {}),
 	};
 	let newFileListener: (() => void) | undefined;
 	let closeFileListener: (() => void) | undefined;
@@ -337,6 +376,17 @@ function uiState(fileId: string, filePath: string) {
 					},
 				],
 			},
+		},
+	};
+}
+
+function sessionUiState(fileId: string, filePath: string) {
+	return {
+		focusedPanel: "central" as const,
+		panels: {
+			left: { views: [], activeInstance: null },
+			central: uiState(fileId, filePath).panels.central,
+			right: { views: [], activeInstance: null },
 		},
 	};
 }

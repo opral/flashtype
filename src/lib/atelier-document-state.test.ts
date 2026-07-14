@@ -51,6 +51,33 @@ describe("readCurrentAtelierDocumentPath", () => {
 		});
 	});
 
+	test("reads host session state without consulting the legacy Lix key", async () => {
+		const lix = createTestLix({
+			state: null,
+			files: { file_one: "/current.md" },
+		});
+
+		await expect(
+			readAtelierDocumentSessionState(
+				lix,
+				uiState(
+					[documentView("file_one", "/original.md")],
+					"atelier_file:file_one",
+				),
+			),
+		).resolves.toEqual({
+			activePath: "/current.md",
+			openPaths: ["/current.md"],
+		});
+		expect(
+			vi
+				.mocked(lix.execute)
+				.mock.calls.some(([sql]) =>
+					String(sql).includes("lix_key_value_by_branch"),
+				),
+		).toBe(false);
+	});
+
 	test("returns null for the Files landing view", async () => {
 		const lix = createTestLix({
 			state: uiState(
