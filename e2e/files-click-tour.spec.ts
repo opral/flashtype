@@ -41,12 +41,7 @@ test("left files panel survives a seeded random file click tour", async ({
 		const csvFile = fileTreeFile(page, "/metrics.csv");
 		await csvFile.click();
 		await expect(csvFile).toHaveAttribute("data-item-selected", "true");
-		await expect(
-			page.locator('[data-active="true"][data-view-key="atelier_csv"]'),
-		).toBeVisible();
-		await expect(
-			page.getByRole("banner").getByText("metrics.csv", { exact: true }),
-		).toBeVisible();
+		await expectActiveFileView(page, "metrics.csv");
 		await expectCsvGridCanvasToRender(page);
 
 		for (let index = 0; index < clickCount; index += 1) {
@@ -68,13 +63,7 @@ test("left files panel survives a seeded random file click tour", async ({
 			await test.step(`click ${index + 1}/${clickCount}: file index ${fileIndex}, delay ${delayMs}ms`, async () => {
 				await file.click();
 				await expect(file).toHaveAttribute("data-item-selected", "true");
-				await expect(
-					page
-						.locator(
-							'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]:visible, [data-panel-side="central"][data-active="true"][data-view-key="atelier_csv"]:visible',
-						)
-						.first(),
-				).toBeVisible();
+				await expectActiveFileView(page, treePath);
 				if (treePath === "metrics.csv") {
 					await expectCsvGridCanvasToRender(page);
 				}
@@ -85,6 +74,25 @@ test("left files panel survives a seeded random file click tour", async ({
 		await closeElectronApp(electronApp);
 	}
 });
+
+async function expectActiveFileView(
+	page: Page,
+	treePath: string,
+): Promise<void> {
+	const fileName = treePath.split("/").at(-1);
+	if (!fileName) {
+		throw new Error(`File path '${treePath}' did not include a file name`);
+	}
+	const viewKey = treePath.endsWith(".csv") ? "atelier_csv" : "atelier_file";
+	await expect(
+		page.locator(
+			`[data-panel-side="central"][data-active="true"][data-view-key="${viewKey}"]`,
+		),
+	).toBeVisible();
+	await expect(
+		page.getByRole("banner").getByText(fileName, { exact: true }),
+	).toBeVisible();
+}
 
 async function expectCsvGridCanvasToRender(page: Page): Promise<void> {
 	const canvas = page

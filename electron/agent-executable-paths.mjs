@@ -5,6 +5,7 @@ import pty from "node-pty";
 const AGENT_EXECUTABLE_NAMES = ["claude", "codex"];
 const AGENT_PATH_RESOLUTION_TIMEOUT_MS = 8_000;
 const MAX_PROBE_OUTPUT_LENGTH = 16 * 1024;
+const PROBE_EXIT_DRAIN_GRACE_MS = 50;
 
 let cachedAgentExecutablePaths = emptyAgentExecutablePaths();
 
@@ -39,6 +40,7 @@ export function runAgentExecutablePathProbe(args) {
 				env: {
 					...args.env,
 					FLASHTYPE_AGENT_PATH_RESOLVE_END: markers.end,
+					FLASHTYPE_AGENT_PATH_RESOLVE_SCRIPT: buildProbeScript(),
 					FLASHTYPE_AGENT_PATH_RESOLVE_START: markers.start,
 				},
 			});
@@ -49,12 +51,24 @@ export function runAgentExecutablePathProbe(args) {
 
 		let output = "";
 		let settled = false;
+		let exitDrainTimeout;
+		let exitResult;
+		const armExitDrain = () => {
+			if (settled || !exitResult) {
+				return;
+			}
+			clearTimeout(exitDrainTimeout);
+			exitDrainTimeout = setTimeout(() => {
+				finish({ ...exitResult, timedOut: false });
+			}, PROBE_EXIT_DRAIN_GRACE_MS);
+		};
 		const finish = (result) => {
 			if (settled) {
 				return;
 			}
 			settled = true;
 			clearTimeout(timeout);
+			clearTimeout(exitDrainTimeout);
 			const extracted = extractProbeResult(output, markers);
 			resolve({
 				...result,
@@ -74,18 +88,26 @@ export function runAgentExecutablePathProbe(args) {
 
 		terminal.onData((data) => {
 			output = appendBoundedOutput(output, data);
-		});
-		terminal.onExit(({ exitCode, signal }) => {
-			setTimeout(() => {
+			if (output.includes(markers.end)) {
 				finish({
-					exitCode: exitCode ?? null,
-					signal: signal ?? null,
+					...(exitResult ?? { exitCode: null, signal: null }),
 					timedOut: false,
 				});
-			}, 0);
+				return;
+			}
+			armExitDrain();
 		});
-		terminal.write(`${buildProbeCommandLine()}\r`);
-		terminal.write("exit\r");
+		terminal.onExit(({ exitCode, signal }) => {
+			if (settled) {
+				return;
+			}
+			exitResult = {
+				exitCode: exitCode ?? null,
+				signal: signal ?? null,
+			};
+			armExitDrain();
+		});
+		terminal.write('/bin/sh -c "$FLASHTYPE_AGENT_PATH_RESOLVE_SCRIPT"; exit\r');
 	});
 }
 
@@ -97,8 +119,8 @@ function createProbeMarkers() {
 	};
 }
 
-function buildProbeCommandLine() {
-	const script = [
+function buildProbeScript() {
+	return [
 		'printf "%s\\n" "$FLASHTYPE_AGENT_PATH_RESOLVE_START"',
 		"__flashtype_resolve_agent_path() {",
 		'  __flashtype_agent_name="$1"',
@@ -125,7 +147,6 @@ function buildProbeCommandLine() {
 		'printf "%s\\n" "$FLASHTYPE_AGENT_PATH_RESOLVE_END"',
 		"exit 0",
 	].join("\n");
-	return `/bin/sh -c ${shellQuote(script)}`;
 }
 
 function extractProbeResult(output, markers) {
@@ -202,10 +223,6 @@ function appendBoundedOutput(current, next) {
 		return output;
 	}
 	return output.slice(output.length - MAX_PROBE_OUTPUT_LENGTH);
-}
-
-function shellQuote(value) {
-	return `'${String(value).replace(/'/gu, `'\\''`)}'`;
 }
 
 function escapeRegExp(value) {
