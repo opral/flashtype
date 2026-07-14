@@ -1,5 +1,4 @@
 import type {
-	ExecuteOptions,
 	ExecuteResult,
 	Lix as SdkLix,
 	LixTransaction as SdkLixTransaction,
@@ -7,7 +6,8 @@ import type {
 } from "@lix-js/sdk";
 
 export type { ExecuteResult as LixRuntimeQueryResult } from "@lix-js/sdk";
-export type { ExecuteOptions as LixExecuteOptions } from "@lix-js/sdk";
+export type ExecuteOptions = { originKey?: string };
+export type LixExecuteOptions = ExecuteOptions;
 
 export type LixRow = ExecuteResult["rows"][number];
 

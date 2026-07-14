@@ -1,0 +1,7 @@
+{
+	"apiVersion": 1,
+	"id": "flashtype_claude",
+	"name": "Claude Code",
+	"description": "Run Claude Code in this workspace.",
+	"multiInstance": true
+}

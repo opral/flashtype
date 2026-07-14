@@ -6,6 +6,45 @@
 
 /* App-specific globals can go here later. */
 
+/* Atelier owns the workspace navbar; FlashType supplies Electron window chrome. */
+.atelier-root header {
+	-webkit-app-region: drag;
+}
+
+.atelier-root header button,
+.atelier-root header a,
+.atelier-root header [role="button"] {
+	-webkit-app-region: no-drag;
+}
+
+.flashtype-update-button {
+	-webkit-app-region: no-drag;
+	border: 0;
+	font: inherit;
+	cursor: pointer;
+}
+
+.flashtype-traffic-light-spacer {
+	display: block;
+	width: 72px;
+	height: 1px;
+	flex: none;
+}
+
+.flashtype-update-button {
+	height: 24px;
+	padding: 0 10px;
+	border-radius: 6px;
+	background: var(--color-bg-action-primary);
+	color: var(--color-text-on-action-primary);
+	font-size: 11.5px;
+	font-weight: 700;
+}
+
+.flashtype-update-button:hover {
+	background: var(--color-bg-action-primary-hover);
+}
+
 @keyframes flashtype-zap-wipe-top {
 	0% {
 		transform: scaleY(0);

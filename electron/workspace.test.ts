@@ -11,18 +11,19 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
+	acquireWorkspaceLocalFilesystemOptions,
 	profileWorkspaceFilesystem,
 	disableWorkspaceTrackChanges,
 	disposeWorkspaceWindowState,
 	getMostRecentMarkdownFile,
 	getWorkspace,
-	getWorkspaceFsBackendOptions,
+	getWorkspaceLocalFilesystemOptions,
 	resolveWorkspace,
 	resolveWorkspaceTarget,
 	resolveWorkspaceTargets,
 	setEphemeralWatchedDirectories,
-	setWorkspaceOpenFilePaths,
 	setWorkspaceFromPath,
+	setWorkspaceSessionOpenFilePaths,
 } from "./workspace.mjs";
 
 vi.mock("electron", () => ({
@@ -602,14 +603,16 @@ describe("workspace resolution", () => {
 			"workspace",
 		);
 		const childDirectory = path.join(directory, "docs");
+		const grandchildDirectory = path.join(childDirectory, "guides");
 		const targetPath = path.join(directory, "notes.txt");
 		const symlinkPath = path.join(directory, "linked.md");
-		await mkdir(childDirectory, { recursive: true });
+		await mkdir(grandchildDirectory, { recursive: true });
 		await mkdir(path.join(directory, ".lix"), { recursive: true });
 		await writeFile(path.join(directory, "alpha.md"), "# Alpha\n");
 		await writeFile(path.join(directory, "data.csv"), "name,value\nA,1\n");
 		await writeFile(targetPath, "Notes\n");
 		await writeFile(path.join(childDirectory, "nested.txt"), "Nested\n");
+		await writeFile(path.join(grandchildDirectory, "deep.md"), "# Deep\n");
 		await writeFile(path.join(directory, ".hidden.md"), "# Hidden\n");
 		await writeFile(path.join(directory, ".lix", "ignored.md"), "# Ignored\n");
 		await symlink(targetPath, symlinkPath);
@@ -636,9 +639,18 @@ describe("workspace resolution", () => {
 				"/alpha.md",
 				"/data.csv",
 				"/docs/",
+				"/docs/guides/",
 				"/docs/nested.txt",
 				"/notes.txt",
 			]);
+
+			const deepEntries = await setEphemeralWatchedDirectories(window, {
+				ownerId: "files",
+				paths: ["/", "/docs/", "/docs/guides/"],
+			});
+			expect(deepEntries.map((entry) => entry.path).sort()).toContain(
+				"/docs/guides/deep.md",
+			);
 		} finally {
 			await disposeWorkspaceWindowState(window);
 		}
@@ -791,7 +803,7 @@ describe("workspace resolution", () => {
 		});
 	});
 
-	test("opens transient FsBackend with an empty dynamic filter", async () => {
+	test("opens transient local filesystem storage with an empty dynamic filter", async () => {
 		const directory = path.join(
 			tmpdir(),
 			"flashtype-workspace-test",
@@ -806,7 +818,7 @@ describe("workspace resolution", () => {
 		try {
 			await setWorkspaceFromPath(filePath, window);
 
-			const options = await getWorkspaceFsBackendOptions(window);
+			const options = await getWorkspaceLocalFilesystemOptions(window);
 
 			expect(options).toMatchObject({
 				path: directory,
@@ -818,29 +830,48 @@ describe("workspace resolution", () => {
 		}
 	});
 
-	test("tracks transient open file paths on the workspace state", async () => {
+	test("keeps leased transient Lix storage until the filesystem storage releases it", async () => {
 		const directory = path.join(
 			tmpdir(),
 			"flashtype-workspace-test",
 			randomUUID(),
 			"workspace",
 		);
-		await mkdir(path.join(directory, "docs"), { recursive: true });
+		await mkdir(directory, { recursive: true });
+		const window = createTestWindow();
+		await setWorkspaceFromPath(directory, window);
 
+		const acquired = await acquireWorkspaceLocalFilesystemOptions(window);
+		const parent = path.dirname(acquired.options.lixDir);
+		await disposeWorkspaceWindowState(window);
+		await expect(stat(parent)).resolves.toBeDefined();
+
+		await acquired.release();
+		await expect(stat(parent)).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	test("projects current central documents into transient session state", async () => {
+		const directory = path.join(
+			tmpdir(),
+			"flashtype-workspace-test",
+			randomUUID(),
+			"workspace",
+		);
+		await mkdir(path.join(directory, "notes"), { recursive: true });
 		const window = createTestWindow();
 		try {
 			await setWorkspaceFromPath(directory, window);
 
 			expect(
-				setWorkspaceOpenFilePaths(window, [
-					"docs/readme.md",
+				setWorkspaceSessionOpenFilePaths(window, [
+					"notes/current.md",
+					"notes/current.md",
 					"../outside.md",
-					"docs/readme.md",
 				]),
-			).toEqual(["docs/readme.md"]);
+			).toEqual(["notes/current.md"]);
 			expect(getWorkspace(window)).toMatchObject({
 				ephemeral: true,
-				openFilePaths: ["docs/readme.md"],
+				openFilePaths: ["notes/current.md"],
 			});
 		} finally {
 			await disposeWorkspaceWindowState(window);

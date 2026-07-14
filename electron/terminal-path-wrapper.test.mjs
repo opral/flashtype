@@ -83,11 +83,50 @@ describe("terminal PATH wrappers", () => {
 			"#!/bin/zsh\ncodex --dangerously-bypass-hook-trust -c 'hooks.Stop=[]'\n",
 		);
 	});
+
+	test("preserves the host PATH ahead of login-shell changes", () => {
+		expect(
+			terminalPathWrapperScriptSource({
+				shell: "/bin/sh",
+				command: "codex --version",
+				pathPrefix: "/tmp/fake bin:/usr/bin",
+			}),
+		).toContain(`PATH='/tmp/fake bin:/usr/bin':"$PATH"`);
+	});
+
+	test("runs the wrapped agent from the requested workspace", async () => {
+		const rootDir = await mkdtemp(
+			path.join(tmpdir(), "flashtype-terminal-wrapper-test-"),
+		);
+		const workspaceDir = await mkdtemp(
+			path.join(tmpdir(), "flashtype-agent-workspace-test-"),
+		);
+		try {
+			const wrapper = await createTerminalPathWrapper(
+				{
+					executableName: "codex-flashtype",
+					command: "pwd",
+				},
+				{ cwd: workspaceDir, shell: "/bin/sh", tmpdir: rootDir },
+			);
+			const result = await runCommand(wrapper.executablePath, {
+				cwd: rootDir,
+			});
+
+			expect(result.stdout.trim()).toBe(workspaceDir);
+			expect(result.stderr).toBe("");
+			expect(result.exitCode).toBe(0);
+		} finally {
+			await rm(rootDir, { recursive: true, force: true });
+			await rm(workspaceDir, { recursive: true, force: true });
+		}
+	});
 });
 
 function runCommand(command, options = {}) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, [], {
+			cwd: options.cwd,
 			env: options.env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});

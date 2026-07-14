@@ -13,17 +13,13 @@ files:
   - "!dist/**/*.map"
   - electron/**/*
   - node_modules/**/*
-  - "!node_modules/@lix-js/sdk-darwin-arm64/**/*"
   - "!node_modules/node-pty/prebuilds/darwin-x64/**/*"
   - "!node_modules/node-pty/prebuilds/win32-arm64/**/*"
   - "!node_modules/node-pty/prebuilds/win32-x64/**/*"
-  - submodule/lix/packages/js-sdk/dist/**/*
-  - submodule/lix/packages/js-sdk/lix_js_sdk.node
 asar: true
 asarUnpack:
   - "**/*.node"
   - "node_modules/node-pty/**/*"
-  - "submodule/lix/packages/js-sdk/lix_js_sdk.node"
 npmRebuild: false
 publish:
   provider: github

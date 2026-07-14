@@ -67,12 +67,13 @@ export async function filterExistingRecentWorkspaceEntries(workspaceEntries) {
 
 export async function getMacDockRecentWorkspacePaths(workspaceEntries) {
 	const dockWorkspacePaths = [];
-	for (const workspaceEntry of normalizeRecentWorkspaceEntries(workspaceEntries, {
-		limit: Number.POSITIVE_INFINITY,
-	})) {
-		if (
-			dockWorkspacePaths.length >= MACOS_DOCK_RECENT_WORKSPACES_LIMIT
-		) {
+	for (const workspaceEntry of normalizeRecentWorkspaceEntries(
+		workspaceEntries,
+		{
+			limit: Number.POSITIVE_INFINITY,
+		},
+	)) {
+		if (dockWorkspacePaths.length >= MACOS_DOCK_RECENT_WORKSPACES_LIMIT) {
 			break;
 		}
 		try {
@@ -153,21 +154,6 @@ export function recentWorkspaceLabel(workspaceEntry) {
 		return "Unknown Workspace";
 	}
 	return normalizedWorkspaceEntry.name;
-}
-
-export function activeFileDockLabel(workspace, activeFilePath) {
-	if (
-		!workspace ||
-		typeof activeFilePath !== "string" ||
-		activeFilePath === ""
-	) {
-		return null;
-	}
-	const workspaceName =
-		typeof workspace.name === "string" && workspace.name.length > 0
-			? workspace.name
-			: path.basename(workspace.path);
-	return `${path.basename(activeFilePath)} – ${workspaceName}`;
 }
 
 export function getRecentWorkspacesPath(userDataPath) {

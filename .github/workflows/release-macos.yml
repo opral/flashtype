@@ -78,49 +78,9 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Configure native Lix build dependencies
+      - name: Install icon build tools
         run: |
-          brew list llvm >/dev/null 2>&1 || brew install llvm
-          LLVM_PREFIX="$(brew --prefix llvm)"
-          {
-            echo "LIBCLANG_PATH=$LLVM_PREFIX/lib"
-            echo "LLVM_CONFIG_PATH=$LLVM_PREFIX/bin/llvm-config"
-            echo "DYLD_LIBRARY_PATH=$LLVM_PREFIX/lib:${DYLD_LIBRARY_PATH:-}"
-            echo "DYLD_FALLBACK_LIBRARY_PATH=$LLVM_PREFIX/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
-          } >> "$GITHUB_ENV"
-
-      - name: Install Rust wasm target
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-            export PATH="$HOME/.cargo/bin:$PATH"
-          fi
-          rustup target add wasm32-unknown-unknown
-
-      - name: Restore Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ github.job }}
-          workspaces: |
-            submodule/lix -> ../../target
-          cache-on-failure: true
-
-      - name: Resolve Lix SDK cache key
-        id: lix-sdk-cache-key
-        run: echo "sha=$(git -C submodule/lix rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Lix SDK build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            submodule/lix/packages/js-sdk/dist
-            submodule/lix/packages/js-sdk/lix_js_sdk.node
-          key: lix-js-sdk-${{ runner.os }}-${{ runner.arch }}-node-22-${{ steps.lix-sdk-cache-key.outputs.sha }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Rust wasm tools
-        run: |
-          cargo install wasm-bindgen-cli@0.2.108 cargo-bash resvg@0.47.0 --locked
+          cargo install cargo-bash resvg@0.47.0 --locked
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

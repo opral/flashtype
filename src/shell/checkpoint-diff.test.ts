@@ -1,9 +1,48 @@
 import { describe, expect, test } from "vitest";
 import { qb } from "@/lib/lix-kysely";
 import { openLix } from "@/test-utils/node-lix-sdk";
-import { resolveCheckpointDiff } from "./checkpoint-diff";
+import {
+	resolveCheckpointDiff,
+	resolveCheckpointDiffForBranch,
+} from "./checkpoint-diff";
 
 describe("resolveCheckpointDiff", () => {
+	test("ignores hidden branches when choosing the previous checkpoint", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "file_doc", "/doc.md", "# Before\n");
+			const before = await lix.createBranch({ name: "a-before" });
+			await qb(lix)
+				.deleteFrom("lix_file")
+				.where("id", "=", "file_doc")
+				.execute();
+			const hidden = await lix.createBranch({ name: "a-hidden" });
+			await qb(lix)
+				.updateTable("lix_branch")
+				.set({ hidden: true })
+				.where("id", "=", hidden.id)
+				.execute();
+			await writeFile(lix, "file_doc", "/doc.md", "# After\n");
+			const after = await lix.createBranch({ name: "b-after" });
+
+			const diff = await resolveCheckpointDiffForBranch({
+				lix,
+				branchId: after.id,
+			});
+
+			expect(diff?.beforeCommitId).toBe(before.commitId);
+			expect(diff?.afterCommitId).toBe(after.commitId);
+			expect(diff?.files).toHaveLength(1);
+			expect(diff?.files[0]).toMatchObject({
+				fileId: "file_doc",
+				path: "/doc.md",
+				status: "modified",
+			});
+		} finally {
+			await lix.close();
+		}
+	});
+
 	test("diffs a modified file against the previous visible checkpoint row", async () => {
 		const lix = await openLix();
 		try {

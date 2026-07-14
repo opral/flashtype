@@ -58,14 +58,6 @@ function queryFilesTreeHost(
 	return host instanceof HTMLElement ? host : null;
 }
 
-function getFilesTreeHost(utils: ReturnType<typeof render>): HTMLElement {
-	const host = queryFilesTreeHost(utils);
-	if (!host) {
-		throw new Error("file tree host not found");
-	}
-	return host;
-}
-
 function queryFilesTreeRoot(
 	utils: ReturnType<typeof render>,
 ): ShadowRoot | null {
@@ -377,6 +369,46 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
+	test("derives the active file highlight from Atelier's Lix state", async () => {
+		const lix = await openLix();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values({
+				id: "file_lix_active",
+				path: "/active.md",
+				data: new Uint8Array(),
+			})
+			.execute();
+		await qb(lix)
+			.insertInto("lix_key_value")
+			.values({
+				key: "atelier_active_file_id",
+				value: "file_lix_active",
+			})
+			.execute();
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(
+				<LixProvider lix={lix}>
+					<Suspense fallback={null}>
+						<FilesView context={createViewContext(lix)} />
+					</Suspense>
+				</LixProvider>,
+			);
+		});
+
+		await waitFor(() => {
+			expect(queryTreeItemByPath(utils!, "active.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+		});
+
+		utils!.unmount();
+		await lix.close();
+	});
+
 	test("opens parent directories for the active file highlight", async () => {
 		const lix = await openLix();
 		await qb(lix)
@@ -414,16 +446,15 @@ describe("FilesView", () => {
 		await lix.close();
 	});
 
-	test("focuses the inline draft without forcing the left panel", async () => {
+	test("focuses the inline draft", async () => {
 		const lix = await openLix();
-		const focusPanel = vi.fn();
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { focusPanel })} />
+						<FilesView context={createViewContext(lix)} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -439,7 +470,6 @@ describe("FilesView", () => {
 			expect(getFilesTreeRoot(utils!).activeElement).toBe(input);
 		});
 		expect(input.value).toBe("new-file");
-		expect(focusPanel).not.toHaveBeenCalled();
 
 		utils!.unmount();
 		await lix.close();
@@ -948,6 +978,167 @@ describe("FilesView", () => {
 			fileId: "file_csv",
 			filePath: "/data.csv",
 			focus: false,
+		});
+
+		utils!.unmount();
+		await lix.close();
+	});
+
+	test("forwards clicks even when the active-file projection still matches", async () => {
+		const lix = await openLix();
+		const openFile = vi.fn();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{
+					id: "file_active",
+					path: "/active.md",
+					data: new Uint8Array(),
+				},
+				{
+					id: "file_other",
+					path: "/other.md",
+					data: new Uint8Array(),
+				},
+			])
+			.execute();
+		const renderFilesView = (activeFileId: string, activeFilePath: string) => (
+			<LixProvider lix={lix}>
+				<Suspense fallback={null}>
+					<FilesView
+						context={createViewContext(lix, {
+							activeFileId,
+							activeFilePath,
+							openFile,
+						})}
+					/>
+				</Suspense>
+			</LixProvider>
+		);
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(renderFilesView("file_active", "/active.md"));
+		});
+		await waitForFilesViewReady(utils!);
+
+		await act(async () => {
+			fireEvent.click(await findTreeItemByLabel(utils!, "other.md"));
+		});
+		openFile.mockClear();
+		await act(async () => {
+			fireEvent.click(await findTreeItemByLabel(utils!, "active.md"));
+		});
+
+		expect(openFile).toHaveBeenCalledWith({
+			panel: "central",
+			fileId: "file_active",
+			filePath: "/active.md",
+			focus: false,
+		});
+		expect(queryTreeItemByLabel(utils!, "active.md")).toHaveAttribute(
+			"data-item-selected",
+			"true",
+		);
+
+		utils!.unmount();
+		await lix.close();
+	});
+
+	test("keeps a clicked file selected while the active-file projection is stale", async () => {
+		const lix = await openLix();
+		const openFile = vi.fn();
+		await qb(lix)
+			.insertInto("lix_file")
+			.values([
+				{
+					id: "file_active",
+					path: "/active.md",
+					data: new Uint8Array(),
+				},
+				{
+					id: "file_clicked",
+					path: "/clicked.md",
+					data: new Uint8Array(),
+				},
+			])
+			.execute();
+		const renderFilesView = (activeFileId: string, activeFilePath: string) => (
+			<LixProvider lix={lix}>
+				<Suspense fallback={null}>
+					<FilesView
+						context={createViewContext(lix, {
+							activeFileId,
+							activeFilePath,
+							openFile,
+						})}
+					/>
+				</Suspense>
+			</LixProvider>
+		);
+
+		let utils: ReturnType<typeof render>;
+		await act(async () => {
+			utils = render(renderFilesView("file_active", "/active.md"));
+		});
+		await waitFor(() => {
+			expect(queryTreeItemByLabel(utils!, "active.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+		});
+
+		await act(async () => {
+			fireEvent.click(await findTreeItemByLabel(utils!, "clicked.md"));
+		});
+		expect(queryTreeItemByLabel(utils!, "clicked.md")).toHaveAttribute(
+			"data-item-selected",
+			"true",
+		);
+
+		// A filesystem refresh can arrive before Atelier publishes the new active
+		// file id. The stale projection must not overwrite the user's click.
+		await act(async () => {
+			await qb(lix)
+				.insertInto("lix_file")
+				.values({
+					id: "file_refresh",
+					path: "/refresh.md",
+					data: new Uint8Array(),
+				})
+				.execute();
+		});
+		await findTreeItemByLabel(utils!, "refresh.md");
+		expect(queryTreeItemByLabel(utils!, "clicked.md")).toHaveAttribute(
+			"data-item-selected",
+			"true",
+		);
+		expect(queryTreeItemByLabel(utils!, "active.md")).not.toHaveAttribute(
+			"data-item-selected",
+			"true",
+		);
+
+		await act(async () => {
+			utils!.rerender(renderFilesView("file_clicked", "/clicked.md"));
+		});
+		await waitFor(() => {
+			expect(queryTreeItemByLabel(utils!, "clicked.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+		});
+		await act(async () => {
+			utils!.rerender(renderFilesView("file_active", "/active.md"));
+		});
+		await waitFor(() => {
+			expect(queryTreeItemByLabel(utils!, "active.md")).toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
+			expect(queryTreeItemByLabel(utils!, "clicked.md")).not.toHaveAttribute(
+				"data-item-selected",
+				"true",
+			);
 		});
 
 		utils!.unmount();
@@ -1540,6 +1731,91 @@ describe("FilesView", () => {
 		}
 	});
 
+	test("Cmd+Backspace resolves a watched file to its canonical Lix id", async () => {
+		const lix = await openLix();
+		const originalDesktop = window.flashtypeDesktop;
+		const closeFileViews = vi.fn();
+		const importFilesystemPaths = vi
+			.spyOn(lix, "importFilesystemPaths")
+			.mockImplementation(async ([path]) => {
+				if (!path) return;
+				await qb(lix)
+					.insertInto("lix_file")
+					.values({
+						id: "imported_loose",
+						path: `/${path.replace(/^\/+/, "")}`,
+						data: new TextEncoder().encode("from disk"),
+					})
+					.execute();
+			});
+		const rootEntries = [
+			{
+				id: "watched:/loose.txt",
+				parent_id: null,
+				path: "/loose.txt",
+				display_name: "loose.txt",
+				kind: "file" as const,
+				source: "watched" as const,
+			},
+		];
+		window.flashtypeDesktop = {
+			workspace: {
+				setEphemeralWatchedDirectories: vi.fn(async () => rootEntries),
+				onEphemeralWatchedFileTreeChanged: vi.fn(() => () => {}),
+			},
+		} as unknown as Window["flashtypeDesktop"];
+
+		let utils: ReturnType<typeof render> | undefined;
+		try {
+			await act(async () => {
+				utils = render(
+					<LixProvider lix={lix}>
+						<Suspense fallback={null}>
+							<FilesView
+								context={createViewContext(lix, {
+									closeFileViews,
+									viewInstance: "files-delete-watched",
+									workspace: {
+										ephemeral: true,
+										path: "/tmp/workspace",
+										name: "workspace",
+										openFilePaths: [],
+									},
+								})}
+							/>
+						</Suspense>
+					</LixProvider>,
+				);
+			});
+
+			await waitForFilesViewReady(utils!);
+			await act(async () => {
+				fireEvent.click(await findTreeItemByLabel(utils!, "loose.txt"));
+			});
+			await act(async () => {
+				fireEvent.keyDown(document, { key: "Backspace", metaKey: true });
+			});
+
+			await waitFor(async () => {
+				expect(importFilesystemPaths).toHaveBeenCalledWith(["loose.txt"]);
+				const file = await qb(lix)
+					.selectFrom("lix_file")
+					.select("id")
+					.where("path", "=", "/loose.txt")
+					.executeTakeFirst();
+				expect(file).toBeUndefined();
+				expect(queryTreeItemByLabel(utils!, "loose.txt")).toBeNull();
+			});
+			expect(closeFileViews).toHaveBeenCalledWith({
+				fileId: "imported_loose",
+			});
+		} finally {
+			utils?.unmount();
+			window.flashtypeDesktop = originalDesktop;
+			await lix.close();
+		}
+	});
+
 	test("renames watched-only files by importing them into Lix", async () => {
 		const lix = await openLix();
 		const originalDesktop = window.flashtypeDesktop;
@@ -1678,14 +1954,13 @@ describe("FilesView", () => {
 
 	test("replaces whitespace with dashes when creating files", async () => {
 		const lix = await openLix();
-		const openExtension = vi.fn();
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { openExtension })} />
+						<FilesView context={createViewContext(lix)} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -1725,14 +2000,13 @@ describe("FilesView", () => {
 
 	test("creates an inline directory draft when Shift+Cmd+. is pressed", async () => {
 		const lix = await openLix();
-		const openExtension = vi.fn();
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { openExtension })} />
+						<FilesView context={createViewContext(lix)} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -1769,22 +2043,19 @@ describe("FilesView", () => {
 			expect(rows.some((row) => row.path === "/docs/")).toBe(true);
 		});
 
-		expect(openExtension).not.toHaveBeenCalled();
-
 		utils!.unmount();
 		await lix.close();
 	});
 
 	test("ignores Ctrl+. on macOS", async () => {
 		const lix = await openLix();
-		const openExtension = vi.fn();
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { openExtension })} />
+						<FilesView context={createViewContext(lix)} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -1804,7 +2075,6 @@ describe("FilesView", () => {
 			.select(["path"])
 			.execute();
 		expect(rows.filter((row) => isUserPath(row.path))).toHaveLength(0);
-		expect(openExtension).not.toHaveBeenCalled();
 
 		utils!.unmount();
 		await lix.close();
@@ -1812,14 +2082,13 @@ describe("FilesView", () => {
 
 	test("ignores Ctrl+Shift+. on macOS", async () => {
 		const lix = await openLix();
-		const openExtension = vi.fn();
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { openExtension })} />
+						<FilesView context={createViewContext(lix)} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -1844,7 +2113,6 @@ describe("FilesView", () => {
 			.select(["path"])
 			.execute();
 		expect(rows.filter((row) => isUserPath(row.path))).toHaveLength(0);
-		expect(openExtension).not.toHaveBeenCalled();
 
 		utils!.unmount();
 		await lix.close();
@@ -1852,14 +2120,13 @@ describe("FilesView", () => {
 
 	test("cancels the draft when Escape is pressed", async () => {
 		const lix = await openLix();
-		const openExtension = vi.fn();
 
 		let utils: ReturnType<typeof render>;
 		await act(async () => {
 			utils = render(
 				<LixProvider lix={lix}>
 					<Suspense fallback={null}>
-						<FilesView context={createViewContext(lix, { openExtension })} />
+						<FilesView context={createViewContext(lix)} />
 					</Suspense>
 				</LixProvider>,
 			);
@@ -1887,7 +2154,6 @@ describe("FilesView", () => {
 			.select(["path"])
 			.execute();
 		expect(rows.filter((row) => isUserPath(row.path))).toHaveLength(0);
-		expect(openExtension).not.toHaveBeenCalled();
 
 		utils!.unmount();
 		await lix.close();
@@ -1932,7 +2198,7 @@ function agentRange(
 	>,
 ): AgentTurnCommitRange {
 	return {
-		agent: "codex",
+		sourceId: "codex",
 		sessionId: "session-1",
 		turnId: "turn-1",
 		startedAt: 1,

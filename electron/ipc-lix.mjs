@@ -2,10 +2,10 @@ import { ipcMain } from "electron";
 import { Value } from "@lix-js/sdk";
 import {
 	closeAllLixSessions,
-	closeLix,
 	ensureLixOpen,
 	exportCurrentLixImage,
 	resetLixRepository,
+	runWithLixClosed,
 } from "./lix.mjs";
 import { createOwnedHandleStore } from "./ipc-owned-handles.mjs";
 
@@ -31,7 +31,8 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 	registerOptions = options;
 
 	ipcMain.handle("lix:open", async (event) => {
-		await ensureLixOpenForEvent(event);
+		const lix = await ensureLixOpenForEvent(event);
+		return { sessionId: lix.sessionId() };
 	});
 
 	ipcMain.handle("lix:workspaceDir", async (event) => {
@@ -290,8 +291,11 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		await lix.syncDiskToLix();
 	});
 
-	ipcMain.handle("lix:close", async (event) => {
-		await closeLixSession(getWindowForIpcEvent(event));
+	ipcMain.handle("lix:close", async (event, payload) => {
+		await closeLixSession(getWindowForIpcEvent(event), {
+			expectedSessionId:
+				typeof payload?.sessionId === "string" ? payload.sessionId : undefined,
+		});
 	});
 
 	ipcMain.handle("workspace:resetLixRepository", async (event) => {
@@ -305,8 +309,11 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 			throw new Error("workspace.disableTrackChanges is not available");
 		}
 		const window = getWindowForIpcEvent(event);
-		await closeLixSession(window, { ignoreOpenError: true });
-		return await registerOptions.disableTrackChanges(window);
+		return await runWithLixSessionClosed(
+			window,
+			() => registerOptions.disableTrackChanges(window),
+			{ ignoreOpenError: true },
+		);
 	});
 
 	ipcMain.handle("workspace:exportLixFile", async (event) => {
@@ -330,8 +337,17 @@ export async function closeLixSession(window, options = {}) {
 	if (!window) {
 		return;
 	}
-	await closeAllHandles(window.id);
-	await closeLix(window, options);
+	await runWithLixSessionClosed(window, async () => {}, options);
+}
+
+export async function runWithLixSessionClosed(window, operation, options = {}) {
+	if (!window) {
+		return;
+	}
+	return await runWithLixClosed(window, operation, {
+		...options,
+		beforeClose: () => closeAllHandles(window.id),
+	});
 }
 
 async function closeAllHandles(ownerId) {

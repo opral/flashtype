@@ -1,4 +1,4 @@
-[submodule "lix"]
-	path = submodule/lix
-	url = https://github.com/opral/lix.git
+[submodule "submodule/atelier"]
+	path = submodule/atelier
+	url = https://github.com/opral/atelier.git
 	branch = main

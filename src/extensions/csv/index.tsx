@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Table2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import {
 	DataEditor,
 	GridCellKind,
@@ -8,7 +8,7 @@ import {
 	type Item,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
-import { LixProvider, useLix, useQueryTakeFirst } from "@/lib/lix-react";
+import { useLix, useQueryTakeFirst } from "@/lib/lix-react";
 import { qb } from "@/lib/lix-kysely";
 import {
 	decodeFileDataToBytes,
@@ -33,8 +33,6 @@ import {
 	useExternalWriteReview,
 	useExternalWriteReviewData,
 } from "@/shell/external-write-review-history";
-import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
-import { CSV_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
 import { parseCsv, type CsvParseResult, type CsvRow } from "./csv-data";
 import { renderCsvReviewDiffHtml } from "./render-review-diff-html";
 import "./style.css";
@@ -779,35 +777,3 @@ function assertFileId(fileId: unknown): asserts fileId is string {
 		throw new Error("CsvView requires a non-empty fileId.");
 	}
 }
-
-export const extension = createReactExtensionDefinition({
-	kind: CSV_EXTENSION_KIND,
-	label: "CSV",
-	description: "Display CSV files as a table.",
-	icon: Table2,
-	fileExtensions: ["csv"],
-	component: ({ context, instance }) => (
-		<LixProvider lix={context.lix}>
-			<CsvView
-				fileId={instance.state?.fileId as string}
-				filePath={instance.state?.filePath as string | undefined}
-				checkpointDiff={context.checkpointDiff}
-				beforeCommitId={
-					typeof instance.state?.beforeCommitId === "string"
-						? instance.state.beforeCommitId
-						: null
-				}
-				afterCommitId={
-					typeof instance.state?.afterCommitId === "string"
-						? instance.state.afterCommitId
-						: null
-				}
-				onAcceptReview={context.acceptExternalWriteReview}
-				onRejectReview={context.rejectExternalWriteReview}
-				registerExternalWriteReview={context.registerExternalWriteReview}
-				isActiveView={context.isActiveView ?? false}
-				isPanelFocused={context.isPanelFocused ?? false}
-			/>
-		</LixProvider>
-	),
-});

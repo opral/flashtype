@@ -30,7 +30,7 @@ import {
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
 
-const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4173";
+const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4174";
 const rendererUrl = `http://127.0.0.1:${rendererPort}`;
 const uiFuzzFilePath = "/fuzz.md";
 
@@ -113,7 +113,6 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
 		const file = fileTreeFile(page, uiFuzzFilePath);
 		await expect(file).toBeVisible();
@@ -362,15 +361,6 @@ async function readPersistedMarkdown(
 		if (typeof value === "string") return value;
 		return null;
 	}, filePath);
-}
-
-function markdownUiFuzzOperationCount(): number {
-	const raw = process.env.FLASHTYPE_MARKDOWN_UI_FUZZ_OPERATION_COUNT;
-	if (!raw) return MARKDOWN_EDITOR_FUZZ_OPERATION_COUNT;
-	const parsed = Number.parseInt(raw, 10);
-	return Number.isFinite(parsed) && parsed > 0
-		? parsed
-		: MARKDOWN_EDITOR_FUZZ_OPERATION_COUNT;
 }
 
 function buildUiOperationFailureMessage(args: {

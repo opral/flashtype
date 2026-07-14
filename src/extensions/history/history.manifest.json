@@ -1,0 +1,6 @@
+{
+	"apiVersion": 1,
+	"id": "atelier_history",
+	"name": "History",
+	"description": "Create, name, review, and restore local checkpoints."
+}

@@ -36,7 +36,6 @@
 	"rust-analyzer.cargo.extraArgs": [],
 	"rust-analyzer.showUnlinkedFileNotification": false,
 	"rust-analyzer.files.watcher": "server",
-	"rust-analyzer.linkedProjects": ["submodule/lix/Cargo.toml"],
 	"rust-analyzer.runnables.extraEnv": {},
 	"rust-analyzer.files.exclude": [".git", "target", "node_modules"],
 	"rust-analyzer.check.workspace": false,

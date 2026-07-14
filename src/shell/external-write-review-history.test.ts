@@ -8,11 +8,14 @@ import type { ExternalWriteReview } from "@/extension-runtime/external-write-rev
 import {
 	getExternalWriteReview,
 	getExternalWriteReviewData,
+	getPendingExternalWriteReviewPaths,
 	useExternalWriteReview,
 } from "./external-write-review-history";
 import {
+	AGENT_TURN_COMMIT_RANGE_KEY,
 	appendAgentTurnCommitRange,
 	clearAgentTurnCommitRangeFile,
+	isAgentTurnCommitRangeStore,
 	readAgentTurnCommitRanges,
 	type AgentTurnCommitRange,
 } from "./agent-turn-review-range";
@@ -144,7 +147,7 @@ describe("getExternalWriteReview", () => {
 		try {
 			await appendAgentTurnCommitRange(lix, {
 				id: "range-without-optional-ids",
-				agent: "codex",
+				sourceId: "codex",
 				beforeCommitId: "commit-before",
 				afterCommitId: "commit-after",
 				sessionId: undefined,
@@ -158,6 +161,62 @@ describe("getExternalWriteReview", () => {
 			expect(range?.id).toBe("range-without-optional-ids");
 			expect(Object.hasOwn(range ?? {}, "sessionId")).toBe(false);
 			expect(Object.hasOwn(range ?? {}, "turnId")).toBe(false);
+		} finally {
+			await lix.close();
+		}
+	});
+
+	test("accepts Atelier-shaped source metadata without an agent field", () => {
+		expect(
+			isAgentTurnCommitRangeStore({
+				ranges: [
+					{
+						id: "atelier-range",
+						sourceId: "custom-agent-host",
+						beforeCommitId: "commit-before",
+						afterCommitId: "commit-after",
+						startedAt: 1,
+						completedAt: 2,
+					},
+				],
+			}),
+		).toBe(true);
+		expect(
+			isAgentTurnCommitRangeStore({
+				ranges: [
+					{
+						id: "legacy-range",
+						agent: "codex",
+						beforeCommitId: "commit-before",
+						afterCommitId: "commit-after",
+						startedAt: 1,
+						completedAt: 2,
+					},
+				],
+			}),
+		).toBe(false);
+	});
+
+	test("marks a file added during an agent turn as pending", async () => {
+		const lix = await openLix();
+		try {
+			await writeFile(lix, "existing-file", "/docs/existing.md", "before");
+			const beforeCommitId = await activeCommitId(lix);
+			await writeFile(lix, "added-file", "/docs/added.md", "created");
+			const afterCommitId = await activeCommitId(lix);
+			const range = agentRange({
+				id: "range-added-file",
+				beforeCommitId,
+				afterCommitId,
+			});
+
+			await expect(
+				getPendingExternalWriteReviewPaths(
+					lix,
+					[{ fileId: "added-file", path: "/docs/added.md" }],
+					[range],
+				),
+			).resolves.toEqual(new Set(["/docs/added.md"]));
 		} finally {
 			await lix.close();
 		}
@@ -380,8 +439,9 @@ describe("getExternalWriteReview", () => {
 		}
 	});
 
-	test("updates an already mounted review hook when the persisted range appears", async () => {
+	test("does not miss a range persisted before the first observer snapshot", async () => {
 		const lix = await openLix();
+		const observerGate = gateInitialReviewRangeSnapshot(lix);
 		let utils: ReturnType<typeof render> | undefined;
 		try {
 			await writeFile(lix, "live-file", "/docs/live.md", "live before");
@@ -394,7 +454,7 @@ describe("getExternalWriteReview", () => {
 				utils = render(
 					createElement(
 						LixProvider as ComponentType<{ lix: Lix }>,
-						{ lix },
+						{ lix: observerGate.lix },
 						createElement(
 							Suspense,
 							{ fallback: null },
@@ -412,6 +472,7 @@ describe("getExternalWriteReview", () => {
 				expect(reviews.length).toBeGreaterThan(0);
 				expect(reviews.at(-1)).toBeNull();
 			});
+			await observerGate.started;
 
 			await act(async () => {
 				await appendAgentTurnCommitRange(
@@ -422,6 +483,7 @@ describe("getExternalWriteReview", () => {
 						afterCommitId,
 					}),
 				);
+				observerGate.release();
 			});
 
 			await waitFor(() => {
@@ -431,6 +493,7 @@ describe("getExternalWriteReview", () => {
 				expect(review?.afterCommitId).toBe(afterCommitId);
 			});
 		} finally {
+			observerGate.release();
 			await act(async () => {
 				utils?.unmount();
 			});
@@ -526,6 +589,46 @@ function ExternalWriteReviewProbe({
 	return null;
 }
 
+function gateInitialReviewRangeSnapshot(lix: Lix): {
+	readonly lix: Lix;
+	readonly started: Promise<void>;
+	readonly release: () => void;
+} {
+	const originalObserve = lix.observe.bind(lix);
+	let markStarted: (() => void) | undefined;
+	let releaseSnapshot: (() => void) | undefined;
+	const started = new Promise<void>((resolve) => {
+		markStarted = resolve;
+	});
+	const snapshotGate = new Promise<void>((resolve) => {
+		releaseSnapshot = resolve;
+	});
+
+	return {
+		lix: {
+			...lix,
+			observe(sql, params = []) {
+				const events = originalObserve(sql, params);
+				if (!params.includes(AGENT_TURN_COMMIT_RANGE_KEY)) return events;
+				let isFirstSnapshot = true;
+				return {
+					async next() {
+						if (isFirstSnapshot) {
+							isFirstSnapshot = false;
+							markStarted?.();
+							await snapshotGate;
+						}
+						return await events.next();
+					},
+					close: () => events.close(),
+				};
+			},
+		},
+		started,
+		release: () => releaseSnapshot?.(),
+	};
+}
+
 async function writeFile(
 	lix: Lix,
 	id: string,
@@ -559,7 +662,7 @@ function agentRange(
 	>,
 ): AgentTurnCommitRange {
 	return {
-		agent: "codex",
+		sourceId: "codex",
 		sessionId: "session-1",
 		turnId: "turn-1",
 		startedAt: 1,

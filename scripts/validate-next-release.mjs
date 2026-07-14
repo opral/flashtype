@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { loadNextRelease, NEXT_RELEASE_PATH } from "./release.mjs";
+import {
+	currentVersion,
+	loadNextRelease,
+	NEXT_RELEASE_PATH,
+	releaseVersion,
+} from "./release.mjs";
 
 try {
 	const root = process.cwd();
@@ -12,7 +17,8 @@ try {
 		console.log(`${NEXT_RELEASE_PATH} has no release notes.`);
 		process.exit(0);
 	}
-	console.log(`Validated ${NEXT_RELEASE_PATH} (${release.type}).`);
+	const version = releaseVersion(currentVersion(root), release);
+	console.log(`Validated ${NEXT_RELEASE_PATH} (${release.type}, v${version}).`);
 } catch (error) {
 	console.error(error.message);
 	process.exit(1);

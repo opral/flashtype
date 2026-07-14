@@ -1,16 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, RotateCcw, TerminalSquare } from "lucide-react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import { captureTelemetry, captureTelemetryException } from "@/lib/telemetry";
-import { createReactExtensionDefinition } from "../../extension-runtime/react-extension";
-import { TERMINAL_EXTENSION_KIND } from "../../extension-runtime/extension-instance-helpers";
-import {
-	type TerminalLaunchConfig,
-	buildTerminalLaunchConfig,
-} from "../../extension-runtime/agent-terminal-command";
+import type { TerminalLaunchConfig } from "../../extension-runtime/agent-terminal-command";
 import { createTerminalOutputNormalizer } from "./ansi-style-normalizer";
 
 function cssColor(name: string, fallback: string): string {
@@ -189,7 +184,9 @@ export function TerminalView({
 				}
 				terminalId = created.id;
 				handleResize();
-				const command = attemptLaunchConfig.initialCommand;
+				const command = created.pathWrapperExecutablePath
+					? shellQuote(created.pathWrapperExecutablePath)
+					: attemptLaunchConfig.initialCommand;
 				if (command) {
 					await terminalApi.write({ id: created.id, data: `${command}\r` });
 				}
@@ -232,6 +229,10 @@ export function TerminalView({
 			<div ref={containerRef} className="h-full w-full p-2" />
 		</div>
 	);
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function captureAgentStartFailure(
@@ -367,19 +368,3 @@ function formatTerminalStartupError(error: TerminalStartupError): {
 			};
 	}
 }
-
-export const extension = createReactExtensionDefinition({
-	kind: TERMINAL_EXTENSION_KIND,
-	label: "Terminal",
-	description: "Run shell commands in a native terminal session.",
-	icon: TerminalSquare,
-	multiInstance: true,
-	component: ({ instance }) => (
-		<TerminalView
-			launchConfig={buildTerminalLaunchConfig({
-				state: instance.state,
-				launchArgs: instance.launchArgs,
-			})}
-		/>
-	),
-});

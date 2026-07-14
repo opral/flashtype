@@ -7,7 +7,7 @@ import type {
 } from "@/extension-runtime/checkpoint-diff";
 import { decodeFileDataToBytes } from "@/lib/decode-file-data";
 import type { Lix } from "@/lib/lix-types";
-import { qb } from "@/lib/lix-kysely";
+import { qb, sql } from "@/lib/lix-kysely";
 
 type FileHistorySnapshot = {
 	readonly id: string;
@@ -23,6 +23,33 @@ type VisibleFileSnapshot = {
 };
 
 const EMPTY_DATA = new Uint8Array();
+
+/** Resolves a checkpoint using the same visible-branch ordering as History. */
+export async function resolveCheckpointDiffForBranch(args: {
+	readonly lix: Lix;
+	readonly branchId: string;
+}): Promise<CheckpointDiff | null> {
+	const [branches, activeBranchId] = await Promise.all([
+		qb(args.lix)
+			.selectFrom("lix_branch")
+			.select(["id", "name", "commit_id"])
+			.where(
+				() =>
+					sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
+			)
+			.orderBy("name", "asc")
+			.execute() as Promise<CheckpointDiffBranchRow[]>,
+		args.lix.activeBranchId().catch(() => null),
+	]);
+	const diff = await resolveCheckpointDiff({
+		lix: args.lix,
+		branches,
+		branchId: args.branchId,
+	});
+	return diff && activeBranchId === args.branchId
+		? { ...diff, afterIsActiveHead: true }
+		: diff;
+}
 
 export async function resolveCheckpointDiff(args: {
 	readonly lix: Lix;

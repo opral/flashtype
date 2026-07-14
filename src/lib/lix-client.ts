@@ -20,7 +20,7 @@ let desktopOperationQueue: Promise<void> = Promise.resolve();
 
 export async function openDesktopLix(): Promise<Lix> {
 	const desktop = getDesktopApi();
-	await desktop.lix.open();
+	const { sessionId } = await desktop.lix.open();
 
 	let closed = false;
 	const openSqlTransactions = new Set<{
@@ -249,7 +249,10 @@ export async function openDesktopLix(): Promise<Lix> {
 
 	const syncDiskToLix = async (): Promise<void> => {
 		ensureOpen("syncDiskToLix");
-		await runQueued(() => desktop.lix.syncDiskToLix());
+		await runQueued(async () => {
+			await restoreEphemeralFilesystemPaths(desktop);
+			await desktop.lix.syncDiskToLix();
+		});
 	};
 
 	const close = async (): Promise<void> => {
@@ -265,7 +268,7 @@ export async function openDesktopLix(): Promise<Lix> {
 			}
 		}
 		openSqlTransactions.clear();
-		await desktop.lix.close();
+		await desktop.lix.close({ sessionId });
 	};
 
 	const lix = {
@@ -282,6 +285,37 @@ export async function openDesktopLix(): Promise<Lix> {
 		close,
 	};
 	return lix satisfies Lix;
+}
+
+/**
+ * Filtered local filesystem storage keeps its selected paths in memory. Reopening the
+ * native Lix preserves the tracked files in lix_file but loses that selection,
+ * so a plain sync would ignore later disk edits. Restore only the paths the
+ * workspace already tracks; this keeps transient workspaces lazy while making
+ * external writes observable again.
+ */
+async function restoreEphemeralFilesystemPaths(
+	desktop: DesktopApi,
+): Promise<void> {
+	const workspace = await desktop.workspace.get();
+	if (workspace?.ephemeral !== true) return;
+
+	const result = await desktop.lix.execute({
+		sql: `SELECT path
+			FROM lix_file
+			WHERE path NOT LIKE '/.lix/%'
+			ORDER BY path`,
+		params: [],
+	});
+	const paths = result.rows
+		.map((row) => row[0])
+		.filter((path): path is string => typeof path === "string")
+		.filter((path) => !path.startsWith("/.lix/"))
+		.map((path) => path.replace(/^\/+/, ""))
+		.filter((path) => path.length > 0 && !path.endsWith("/"));
+	if (paths.length === 0) return;
+
+	await desktop.lix.importFilesystemPaths({ paths });
 }
 
 function getDesktopApi(): DesktopApi {

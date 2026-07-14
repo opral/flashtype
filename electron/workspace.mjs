@@ -16,6 +16,7 @@ import {
 	uniqueWorkspaceRelativeFilePaths,
 	workspaceRelativeFilePath,
 } from "./workspace-paths.mjs";
+import { createAgentTurnFileCapture } from "./agent-turn-file-capture.mjs";
 
 const LIX_DIRECTORY_NAME = ".lix";
 const LIX_DATABASE_FILE = path.join(".lix", ".internal", "db.sqlite");
@@ -49,8 +50,8 @@ export async function resolveWorkspaceTarget(requestedPath) {
 	try {
 		stats = await stat(resolved);
 	} catch {
-		// Keep the resolved path for directories and unreadable paths; the lix
-		// backend reports unreadable workspace folders.
+		// Keep the resolved path for directories and unreadable paths; Lix local
+		// filesystem storage reports unreadable workspace folders.
 	}
 	if (stats?.isFile()) {
 		const workspaceDir = await findLixWorkspaceRoot(path.dirname(resolved));
@@ -151,6 +152,7 @@ export async function setWorkspaceFromTarget(target, window, options = {}) {
 			return state.workspace;
 		}
 		await options.beforeChange?.(nextWorkspace, window);
+		disposeAgentTurnFileCaptures(state);
 		disposeEphemeralFileTreeState(state);
 		await disposeExternalLixState(state);
 		state.workspace = nextWorkspace;
@@ -201,19 +203,38 @@ export function consumePendingOpenFiles(window) {
 	return pendingOpenFilePaths ?? [];
 }
 
-export function setWorkspaceOpenFilePaths(window, filePaths) {
+/** Updates only the relaunch projection for a transient workspace. */
+export function setWorkspaceSessionOpenFilePaths(window, filePaths) {
 	const state = getWindowState(window);
-	if (!state?.workspace) {
+	if (state?.workspace?.ephemeral !== true) {
 		return [];
 	}
 	const openFilePaths = uniqueWorkspaceRelativeFilePaths(filePaths);
-	if (state.workspace.ephemeral === true) {
-		state.workspace = {
-			...state.workspace,
-			openFilePaths,
-		};
-	}
+	state.workspace = {
+		...state.workspace,
+		openFilePaths,
+	};
 	return openFilePaths;
+}
+
+export async function beginAgentTurnFileCapture(window, payload) {
+	const state = getOrCreateWindowState(window);
+	const captureId = normalizeAgentTurnFileCaptureId(payload?.captureId);
+	state.agentTurnFileCaptures.get(captureId)?.dispose();
+	state.agentTurnFileCaptures.delete(captureId);
+	if (state.workspace?.ephemeral !== true) return { baselinePaths: [] };
+	const capture = await createAgentTurnFileCapture(state.workspace.path);
+	state.agentTurnFileCaptures.set(captureId, capture);
+	return { baselinePaths: capture.baselinePaths };
+}
+
+export async function finishAgentTurnFileCapture(window, payload) {
+	const state = getOrCreateWindowState(window);
+	const captureId = normalizeAgentTurnFileCaptureId(payload?.captureId);
+	const capture = state.agentTurnFileCaptures.get(captureId);
+	if (!capture) return [];
+	state.agentTurnFileCaptures.delete(captureId);
+	return await capture.finish();
 }
 
 export async function setEphemeralWatchedDirectories(window, payload) {
@@ -377,7 +398,7 @@ async function profileTransientWorkspaceSourceFiles(profile, workspace) {
 	profile.directory_count = directories.size;
 }
 
-export async function getWorkspaceFsBackendOptions(window) {
+export async function getWorkspaceLocalFilesystemOptions(window) {
 	const workspace = getWorkspace(window);
 	if (!workspace) {
 		throw new Error("No workspace is open. Open a folder before using lix.");
@@ -391,6 +412,48 @@ export async function getWorkspaceFsBackendOptions(window) {
 		};
 	}
 	return { path: workspace.path, syncAllFiles: true };
+}
+
+export async function acquireWorkspaceLocalFilesystemOptions(window) {
+	const workspace = getWorkspace(window);
+	if (!workspace) {
+		throw new Error("No workspace is open. Open a folder before using lix.");
+	}
+	if (workspace.ephemeral !== true) {
+		return {
+			options: { path: workspace.path, syncAllFiles: true },
+			release: async () => {},
+		};
+	}
+	const state = getOrCreateWindowState(window);
+	if (!state.externalLixDir) {
+		await createExternalLixSlot(state);
+	}
+	const lixDir = state.externalLixDir;
+	const parent = state.externalLixParent;
+	if (!lixDir || !parent) {
+		throw new Error("Failed to allocate temporary Lix storage.");
+	}
+	const lease = state.externalLixLeases.get(parent) ?? {
+		count: 0,
+		retired: false,
+	};
+	lease.count += 1;
+	state.externalLixLeases.set(parent, lease);
+	let released = false;
+	return {
+		options: {
+			path: workspace.path,
+			lixDir,
+			syncAllFiles: false,
+		},
+		release: async () => {
+			if (released) return;
+			released = true;
+			lease.count -= 1;
+			await cleanupExternalLixLease(state, parent, lease);
+		},
+	};
 }
 
 export async function setWorkspaceTrackChanges(window, trackChanges) {
@@ -407,6 +470,7 @@ export async function setWorkspaceTrackChanges(window, trackChanges) {
 			return workspace;
 		}
 		if (trackChanges) {
+			disposeAgentTurnFileCaptures(state);
 			disposeEphemeralFileTreeState(state);
 			await moveExternalLixBackIntoWorkspace(state);
 			state.workspace = createPersistentWorkspace(workspace.path);
@@ -428,6 +492,7 @@ export async function disableWorkspaceTrackChanges(window) {
 		if (!workspace) {
 			throw new Error("No workspace is open.");
 		}
+		disposeAgentTurnFileCaptures(state);
 		disposeEphemeralFileTreeState(state);
 		await disposeExternalLixState(state);
 		await removeWorkspaceLixDirectory(workspace.path);
@@ -445,6 +510,7 @@ export async function disposeWorkspaceWindowState(windowOrId) {
 	}
 	const state = windowStates.get(windowId);
 	windowStates.delete(windowId);
+	disposeAgentTurnFileCaptures(state);
 	disposeEphemeralFileTreeState(state);
 	await disposeExternalLixState(state);
 }
@@ -592,12 +658,14 @@ function normalizeWorkspaceDirectoryPaths(paths, state) {
 	if (!Array.isArray(paths)) {
 		throw new Error("workspace watched directory paths must be an array.");
 	}
+	const requestedPaths = new Set(paths);
 	const seen = new Set();
 	const normalizedPaths = [];
 	for (const directoryPath of paths) {
 		const normalizedPath = normalizeWorkspaceDirectoryPath(
 			directoryPath,
 			state,
+			requestedPaths,
 		);
 		if (seen.has(normalizedPath)) {
 			continue;
@@ -609,7 +677,7 @@ function normalizeWorkspaceDirectoryPaths(paths, state) {
 	return normalizedPaths;
 }
 
-function normalizeWorkspaceDirectoryPath(directoryPath, state) {
+function normalizeWorkspaceDirectoryPath(directoryPath, state, requestedPaths) {
 	if (directoryPath === "/") {
 		return "/";
 	}
@@ -620,12 +688,35 @@ function normalizeWorkspaceDirectoryPath(directoryPath, state) {
 	) {
 		throw new Error(`Invalid workspace directory path: ${directoryPath}`);
 	}
-	if (!isEphemeralWatchedDirectoryEntry(state, directoryPath)) {
+	if (
+		!isEphemeralWatchedDirectoryEntry(state, directoryPath) &&
+		!hasRequestedDirectoryAncestorChain(directoryPath, requestedPaths, state)
+	) {
 		throw new Error(
 			`Directory is not in the opened Files view: ${directoryPath}`,
 		);
 	}
 	return directoryPath;
+}
+
+function hasRequestedDirectoryAncestorChain(
+	directoryPath,
+	requestedPaths,
+	state,
+) {
+	let currentPath = directoryPath;
+	while (currentPath !== "/") {
+		const parentPath = parentDirectoryPathForDirectoryPath(currentPath);
+		if (!parentPath) return false;
+		if (
+			!requestedPaths.has(parentPath) &&
+			!isEphemeralWatchedDirectoryEntry(state, parentPath)
+		) {
+			return false;
+		}
+		currentPath = parentPath;
+	}
+	return true;
 }
 
 function parentDirectoryPathForDirectoryPath(directoryPath) {
@@ -936,6 +1027,21 @@ function disposeEphemeralFileTreeState(state) {
 	state.ephemeralWatchedEntries = [];
 }
 
+function normalizeAgentTurnFileCaptureId(captureId) {
+	if (typeof captureId !== "string" || captureId.length === 0) {
+		throw new Error("workspace agent turn file captureId is required.");
+	}
+	return captureId;
+}
+
+function disposeAgentTurnFileCaptures(state) {
+	if (!state) return;
+	for (const capture of state.agentTurnFileCaptures.values()) {
+		capture.dispose();
+	}
+	state.agentTurnFileCaptures.clear();
+}
+
 function median(values) {
 	if (values.length === 0) {
 		return 0;
@@ -1014,6 +1120,10 @@ async function createExternalLixSlot(state) {
 	);
 	state.externalLixParent = externalLixParent;
 	state.externalLixDir = path.join(externalLixParent, LIX_DIRECTORY_NAME);
+	state.externalLixLeases.set(externalLixParent, {
+		count: 0,
+		retired: false,
+	});
 }
 
 async function moveWorkspaceLixToExternalStorage(state) {
@@ -1053,7 +1163,19 @@ async function disposeExternalLixState(state) {
 	const externalLixParent = state.externalLixParent;
 	state.externalLixParent = null;
 	state.externalLixDir = null;
-	await rm(externalLixParent, { force: true, recursive: true }).catch(() => {});
+	const lease = state.externalLixLeases.get(externalLixParent) ?? {
+		count: 0,
+		retired: false,
+	};
+	lease.retired = true;
+	state.externalLixLeases.set(externalLixParent, lease);
+	await cleanupExternalLixLease(state, externalLixParent, lease);
+}
+
+async function cleanupExternalLixLease(state, parent, lease) {
+	if (!lease.retired || lease.count > 0) return;
+	state.externalLixLeases.delete(parent);
+	await rm(parent, { force: true, recursive: true }).catch(() => {});
 }
 
 async function movePath(source, target) {
@@ -1254,6 +1376,23 @@ export function registerWorkspaceIpc(getWindowForEvent, options = {}) {
 	});
 
 	ipcMain.handle(
+		"workspace:beginAgentTurnFileCapture",
+		async (event, payload) => {
+			return await beginAgentTurnFileCapture(getWindowForEvent(event), payload);
+		},
+	);
+
+	ipcMain.handle(
+		"workspace:finishAgentTurnFileCapture",
+		async (event, payload) => {
+			return await finishAgentTurnFileCapture(
+				getWindowForEvent(event),
+				payload,
+			);
+		},
+	);
+
+	ipcMain.handle(
 		"workspace:setEphemeralWatchedDirectories",
 		async (event, payload) => {
 			return await setEphemeralWatchedDirectories(
@@ -1321,8 +1460,10 @@ function getOrCreateWindowState(window) {
 	const state = {
 		workspace: null,
 		pendingOpenFilePaths: [],
+		agentTurnFileCaptures: new Map(),
 		externalLixParent: null,
 		externalLixDir: null,
+		externalLixLeases: new Map(),
 		ephemeralFileTreeOwners: new Map(),
 		ephemeralDirectoryWatchers: new Map(),
 		ephemeralWatchedEntries: [],

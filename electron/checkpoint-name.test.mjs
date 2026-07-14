@@ -171,7 +171,10 @@ function generatorArgs(options = {}) {
 		},
 		shell: "/bin/sh",
 		shellArgs: [],
-		timeoutMs: 1_000,
+		// Shell startup can exceed one second when the full Vitest suite is
+		// saturating the host. Keep this well below the production timeout while
+		// avoiding a machine-speed-dependent timestamp fallback.
+		timeoutMs: 5_000,
 	};
 }
 

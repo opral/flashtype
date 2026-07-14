@@ -1,9 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { releaseTagForHead } from "./release.mjs";
+import {
+	DEFAULT_NEXT_RELEASE_TEXT,
+	prepareRelease,
+	releaseTagForHead,
+	releaseVersion,
+} from "./release.mjs";
 
 const repos = [];
 
@@ -60,6 +65,34 @@ describe("releaseTagForHead", () => {
 	});
 });
 
+describe("explicit release versions", () => {
+	test("prepares the requested later minor version", () => {
+		const repo = createRepo();
+		writePackageJson(repo, "0.7.3");
+		writeFileSync(
+			join(repo, "NEXT_RELEASE.md"),
+			"---\ntype: minor\nversion: 0.9.0\n---\n\n- Upgrade Atelier and Lix.\n",
+		);
+
+		const result = prepareRelease(repo, { date: "2026-07-14" });
+
+		expect(result?.version).toBe("0.9.0");
+		expect(readPackageVersion(repo)).toBe("0.9.0");
+		expect(readFileSync(join(repo, "CHANGELOG.md"), "utf8")).toContain(
+			"## 0.9.0 - 2026-07-14\n\n- Upgrade Atelier and Lix.",
+		);
+		expect(readFileSync(join(repo, "NEXT_RELEASE.md"), "utf8")).toBe(
+			DEFAULT_NEXT_RELEASE_TEXT,
+		);
+	});
+
+	test("rejects a target that does not match the release type", () => {
+		expect(() =>
+			releaseVersion("0.7.3", { type: "minor", version: "1.0.0" }),
+		).toThrow("is not a later minor release from 0.7.3");
+	});
+});
+
 function createRepo() {
 	const repo = mkdtempSync(join(tmpdir(), "flashtype-release-test-"));
 	repos.push(repo);
@@ -74,6 +107,10 @@ function writePackageJson(repo, version) {
 		join(repo, "package.json"),
 		`${JSON.stringify({ name: "test", version }, null, "\t")}\n`,
 	);
+}
+
+function readPackageVersion(repo) {
+	return JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).version;
 }
 
 function commit(repo, message) {

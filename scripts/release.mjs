@@ -34,17 +34,39 @@ export function currentVersion(root) {
 }
 
 export function bumpVersion(version, type) {
-	const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-.+)?$/);
-	if (!match) {
-		throw new Error(`Unsupported version format: ${version}`);
-	}
-	const major = Number(match[1]);
-	const minor = Number(match[2]);
-	const patch = Number(match[3]);
+	const { major, minor, patch } = parseVersion(version);
 	if (type === "major") return `${major + 1}.0.0`;
 	if (type === "minor") return `${major}.${minor + 1}.0`;
 	if (type === "patch") return `${major}.${minor}.${patch + 1}`;
 	throw new Error(`Unsupported change type: ${type}`);
+}
+
+export function releaseVersion(current, release) {
+	if (!release.version) {
+		return bumpVersion(current, release.type);
+	}
+
+	const from = parseVersion(current);
+	const to = parseVersion(release.version);
+	const validTarget =
+		(release.type === "major" &&
+			to.major > from.major &&
+			to.minor === 0 &&
+			to.patch === 0) ||
+		(release.type === "minor" &&
+			to.major === from.major &&
+			to.minor > from.minor &&
+			to.patch === 0) ||
+		(release.type === "patch" &&
+			to.major === from.major &&
+			to.minor === from.minor &&
+			to.patch > from.patch);
+	if (!validTarget) {
+		throw new Error(
+			`${NEXT_RELEASE_PATH}: version ${release.version} is not a later ${release.type} release from ${current}`,
+		);
+	}
+	return release.version;
 }
 
 export function loadNextRelease(root) {
@@ -73,13 +95,18 @@ export function loadNextRelease(root) {
 			}),
 	);
 	const type = metadata.type;
+	const version = metadata.version || undefined;
 	const body = normalizeReleaseBody(match[2]);
 	if (!CHANGE_TYPES.includes(type)) {
 		throw new Error(`${path}: type must be one of ${CHANGE_TYPES.join(", ")}`);
 	}
+	if (version) {
+		parseVersion(version);
+	}
 	return {
 		path,
 		type,
+		version,
 		body,
 	};
 }
@@ -120,11 +147,23 @@ export function prepareRelease(
 		return null;
 	}
 	const type = release.type;
-	const version = bumpVersion(currentVersion(root), type);
+	const version = releaseVersion(currentVersion(root), release);
 	updatePackageVersion(root, version);
 	updateChangelog(root, version, date, release);
 	writeText(root, NEXT_RELEASE_PATH, DEFAULT_NEXT_RELEASE_TEXT);
 	return { version, type, release };
+}
+
+function parseVersion(version) {
+	const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-.+)?$/);
+	if (!match) {
+		throw new Error(`Unsupported version format: ${version}`);
+	}
+	return {
+		major: Number(match[1]),
+		minor: Number(match[2]),
+		patch: Number(match[3]),
+	};
 }
 
 export function releaseTagForHead(root) {

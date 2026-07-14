@@ -74,7 +74,11 @@ describe("TerminalView", () => {
 				detectedVersion: "2.1.77",
 				reason: "unsupported",
 			})
-			.mockResolvedValueOnce({ status: "created", id: "terminal:1" });
+			.mockResolvedValueOnce({
+				status: "created",
+				id: "terminal:1",
+				pathWrapperExecutablePath: "/tmp/agent wrappers/claude-flashtype",
+			});
 		window.flashtypeDesktop = {
 			lix: {
 				workspaceDir: vi.fn().mockResolvedValue("/workspace"),
@@ -120,7 +124,7 @@ describe("TerminalView", () => {
 		await waitFor(() =>
 			expect(terminalApi.write).toHaveBeenCalledWith({
 				id: "terminal:1",
-				data: "claude-flashtype\r",
+				data: "'/tmp/agent wrappers/claude-flashtype'\r",
 			}),
 		);
 	});

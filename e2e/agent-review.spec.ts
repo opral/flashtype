@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
@@ -13,18 +13,26 @@ import {
 
 test.skip(process.platform === "win32", "fake codex helper is POSIX-only");
 
-test.skip("restored markdown file shows a review after Codex edits it", async ({
+test("Atelier reveals a review after Codex edits restored markdown", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const userDataDir = testInfo.outputPath("user-data");
 	const workspaceDir = testInfo.outputPath("workspace");
+	const welcomeFilePath = path.join(workspaceDir, "welcome.md");
+	const changelogFilePath = path.join(workspaceDir, "changelog.md");
+	const createdFilePath = path.join(workspaceDir, "codex-created.md");
 	const fakeBinDir = testInfo.outputPath("fake-bin");
+	const fakeCodexCompletionPath = testInfo.outputPath("fake-codex-complete");
 	const originalPath = process.env.PATH;
 	const originalShell = process.env.SHELL;
+	const originalCompletionPath =
+		process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH;
 
 	let electronApp: ElectronApplication | undefined;
 	try {
 		await writeStarterFiles(workspaceDir);
+		const newestMarkdownTime = new Date(Date.now() + 1_000);
+		await utimes(welcomeFilePath, newestMarkdownTime, newestMarkdownTime);
 		await writeFile(
 			path.join(workspaceDir, "binary.bin"),
 			new Uint8Array([0x80, 0xff, 0x00]),
@@ -32,6 +40,7 @@ test.skip("restored markdown file shows a review after Codex edits it", async ({
 		await writeFakeCodex(fakeBinDir);
 		process.env.PATH = `${fakeBinDir}:${originalPath ?? ""}`;
 		process.env.SHELL = "/bin/sh";
+		process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH = fakeCodexCompletionPath;
 
 		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
 			userDataDir,
@@ -52,25 +61,57 @@ test.skip("restored markdown file shows a review after Codex edits it", async ({
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
 		await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 
-		await page.getByRole("button", { name: "Use Codex instead" }).click();
+		await page.locator('[data-attr="agent-start-codex"]').click();
+		await expect(
+			page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
+		).toBeVisible();
 		await expect
-			.poll(
-				async () =>
-					await readFile(path.join(workspaceDir, "welcome.md"), "utf8"),
-			)
+			.poll(() => readCompletionMarker(fakeCodexCompletionPath), {
+				message: "the fake Codex command did not complete",
+				timeout: 30_000,
+			})
+			.toBe(workspaceDir);
+		await expect
+			.poll(async () => await readFile(welcomeFilePath, "utf8"), {
+				timeout: 30_000,
+			})
 			.toContain("Codex e2e edit");
+		await expect
+			.poll(async () => await readFile(changelogFilePath, "utf8"))
+			.toContain("Codex unopened edit");
+		await expect
+			.poll(async () => await readFile(createdFilePath, "utf8"))
+			.toContain("Codex created file");
 
 		await expect(
-			page.getByRole("group", { name: "External write review actions" }),
+			page.getByRole("group", { name: /^Review change 1 of \d+$/ }),
 		).toBeVisible();
-		await expect(page.getByRole("button", { name: "Keep" })).toBeVisible();
-		await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Keep change" }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Undo change" }),
+		).toBeVisible();
+		await ensureFilesViewOpenInLeftPanel(page);
+		await expect(fileTreeFile(page, "/changelog.md")).toHaveAttribute(
+			"data-item-git-status",
+			"modified",
+		);
+		await expect(fileTreeFile(page, "/codex-created.md")).toHaveAttribute(
+			"data-item-git-status",
+			"modified",
+		);
 	} finally {
 		process.env.PATH = originalPath;
 		if (originalShell === undefined) {
 			delete process.env.SHELL;
 		} else {
 			process.env.SHELL = originalShell;
+		}
+		if (originalCompletionPath === undefined) {
+			delete process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH;
+		} else {
+			process.env.FLASHTYPE_E2E_CODEX_COMPLETION_PATH = originalCompletionPath;
 		}
 		await closeElectronApp(electronApp);
 	}
@@ -84,7 +125,7 @@ async function openWelcomeMarkdown(page: Page): Promise<void> {
 	await expect(file).toHaveAttribute("data-item-selected", "true");
 	await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 	await expect(
-		page.locator('[data-active="true"][data-view-key="flashtype_file"]'),
+		page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 	).toBeVisible();
 }
 
@@ -100,7 +141,7 @@ async function expectOpenFilePersisted(
 					params: [key],
 				});
 				return JSON.stringify(result?.rows?.[0]?.[0] ?? null);
-			}, "flashtype_ui_state");
+			}, "atelier_ui_state");
 		})
 		.toContain(filePath);
 }
@@ -110,86 +151,41 @@ async function writeFakeCodex(binDir: string): Promise<void> {
 	const scriptPath = path.join(binDir, "codex");
 	await writeFile(
 		scriptPath,
-		`#!/usr/bin/env node
-import { appendFile } from "node:fs/promises";
-import { join } from "node:path";
-import { spawn } from "node:child_process";
+		`#!/bin/sh
+set -eu
 
-const args = process.argv.slice(2);
-const configs = [];
-for (let index = 0; index < args.length; index += 1) {
-	if (args[index] === "-c") {
-		configs.push(args[index + 1] ?? "");
-		index += 1;
-	}
+case " $* " in
+	*" --version "*)
+		printf '%s\\n' 'codex-cli 0.134.0'
+		exit 0
+		;;
+esac
+
+run_hook() {
+	event_name="$1"
+	phase="$2"
+	printf '{"hook_event_name":"%s","session_id":"e2e-codex-session","turn_id":"e2e-codex-turn","cwd":"%s"}' "$event_name" "$PWD" |
+		ELECTRON_RUN_AS_NODE=1 "$FLASHTYPE_AGENT_HOOK_NODE" "$FLASHTYPE_AGENT_HOOK_SCRIPT" codex "$phase"
 }
 
-await runHook("UserPromptSubmit", "turn-start");
-await appendFile(join(process.cwd(), "welcome.md"), "\\nCodex e2e edit.\\n");
-await runHook("Stop", "turn-stop");
-console.log("fake codex complete");
-
-async function runHook(eventName, phase) {
-	const command = hookCommand(eventName);
-	if (!command) {
-		throw new Error(\`Missing \${eventName} hook command\`);
-	}
-	await new Promise((resolve, reject) => {
-		const child = spawn(command, {
-			cwd: process.cwd(),
-			env: process.env,
-			shell: true,
-			stdio: ["pipe", "ignore", "inherit"],
-		});
-		child.stdin.end(
-			JSON.stringify({
-				hook_event_name: eventName,
-				session_id: "e2e-codex-session",
-				turn_id: "e2e-codex-turn",
-				cwd: process.cwd(),
-			}),
-		);
-		child.on("error", reject);
-		child.on("exit", (code) => {
-			if (code === 0) {
-				resolve();
-			} else {
-				reject(new Error(\`\${phase} hook exited with code \${code}\`));
-			}
-		});
-	});
-}
-
-function hookCommand(eventName) {
-	const config = configs.find((candidate) =>
-		candidate.includes(\`hooks.\${eventName}=\`),
-	);
-	if (!config) return null;
-	const prefix = 'command="';
-	const start = config.indexOf(prefix);
-	if (start === -1) return null;
-	let raw = "";
-	let escaped = false;
-	for (let index = start + prefix.length; index < config.length; index += 1) {
-		const char = config[index];
-		if (escaped) {
-			raw += \`\\\\\${char}\`;
-			escaped = false;
-			continue;
-		}
-		if (char === "\\\\") {
-			escaped = true;
-			continue;
-		}
-		if (char === '"') {
-			break;
-		}
-		raw += char;
-	}
-	return JSON.parse(\`"\${raw}"\`);
-}
+run_hook UserPromptSubmit turn-start
+printf '\\nCodex e2e edit.\\n' >> welcome.md
+printf '\\nCodex unopened edit.\\n' >> changelog.md
+printf '# Codex created file\\n' > codex-created.md
+run_hook Stop turn-stop
+printf '%s\\n' "$PWD" > "$FLASHTYPE_E2E_CODEX_COMPLETION_PATH"
+printf '%s\\n' 'fake codex complete'
 `,
 		"utf8",
 	);
 	await chmod(scriptPath, 0o755);
+}
+
+async function readCompletionMarker(filePath: string): Promise<string> {
+	try {
+		return (await readFile(filePath, "utf8")).trim();
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return "pending";
+		throw error;
+	}
 }

@@ -572,7 +572,7 @@ describe("MarkdownView", () => {
 		await act(async () => {
 			await appendAgentTurnCommitRange(lix, {
 				id: "range-review-startup",
-				agent: "codex",
+				sourceId: "codex",
 				beforeCommitId,
 				afterCommitId,
 				startedAt: 1,

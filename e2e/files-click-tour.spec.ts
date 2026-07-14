@@ -29,8 +29,12 @@ test("left files panel survives a seeded random file click tour", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
+		await expect(
+			page.locator(
+				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]',
+			),
+		).toBeVisible();
 
 		const fileItems = fileTreeFiles(page);
 		await expect(fileItems.first()).toBeVisible();
@@ -38,9 +42,11 @@ test("left files panel survives a seeded random file click tour", async ({
 		await csvFile.click();
 		await expect(csvFile).toHaveAttribute("data-item-selected", "true");
 		await expect(
-			page.locator('[data-active="true"][data-view-key="flashtype_csv"]'),
+			page.locator('[data-active="true"][data-view-key="atelier_csv"]'),
 		).toBeVisible();
-		await expect(page.getByText("/metrics.csv")).toBeVisible();
+		await expect(
+			page.getByRole("banner").getByText("metrics.csv", { exact: true }),
+		).toBeVisible();
 		await expectCsvGridCanvasToRender(page);
 
 		for (let index = 0; index < clickCount; index += 1) {
@@ -65,7 +71,7 @@ test("left files panel survives a seeded random file click tour", async ({
 				await expect(
 					page
 						.locator(
-							'[data-panel-side="central"][data-active="true"][data-view-key="flashtype_file"]:visible, [data-panel-side="central"][data-active="true"][data-view-key="flashtype_csv"]:visible',
+							'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]:visible, [data-panel-side="central"][data-active="true"][data-view-key="atelier_csv"]:visible',
 						)
 						.first(),
 				).toBeVisible();
@@ -82,7 +88,7 @@ test("left files panel survives a seeded random file click tour", async ({
 
 async function expectCsvGridCanvasToRender(page: Page): Promise<void> {
 	const canvas = page
-		.locator('[data-active="true"][data-view-key="flashtype_csv"] canvas')
+		.locator('[data-active="true"][data-view-key="atelier_csv"] canvas')
 		.first();
 	await expect(canvas).toBeVisible();
 	await expect
@@ -129,16 +135,18 @@ test("deleting the active file closes the central file view", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
 
 		const file = fileTreeFile(page, "/welcome.md");
 		await expect(file).toBeVisible();
 		await file.click();
-		await expect(file).toHaveAttribute("data-item-selected", "true");
 		await expect(
-			page.locator('[data-active="true"][data-view-key="flashtype_file"]'),
+			page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 		).toBeVisible();
+		await expect(
+			page.getByRole("banner").getByText("welcome.md", { exact: true }),
+		).toBeVisible();
+		await expect(file).toHaveAttribute("data-item-selected", "true");
 
 		await file.click();
 		await file.focus();
@@ -146,7 +154,7 @@ test("deleting the active file closes the central file view", async ({
 
 		await expect(file).toHaveCount(0);
 		await expect(
-			page.locator('[data-active="true"][data-view-key="flashtype_file"]'),
+			page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 		).toHaveCount(0);
 		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 	} finally {

@@ -46,7 +46,7 @@ export type DesktopObserveEvent = {
 };
 
 export type DesktopLixApi = {
-	open(): Promise<void>;
+	open(): Promise<{ sessionId: string }>;
 	workspaceDir(): Promise<string>;
 	storageDir(): Promise<string>;
 	execute(payload: {
@@ -86,7 +86,7 @@ export type DesktopLixApi = {
 	}): Promise<DesktopSwitchBranchResult>;
 	importFilesystemPaths(payload: { paths: readonly string[] }): Promise<void>;
 	syncDiskToLix(): Promise<void>;
-	close(): Promise<void>;
+	close(payload?: { sessionId?: string }): Promise<void>;
 };
 
 export type DesktopTerminalCreatePayload = {
@@ -163,6 +163,7 @@ export type DesktopTerminalCreateResult =
 	| {
 			status: "created";
 			id: string;
+			pathWrapperExecutablePath?: string;
 	  }
 	| {
 			status: "agentVersionError";
@@ -214,6 +215,10 @@ export type DesktopAgentTurnEvent = {
 	turnId?: string;
 	cwd?: string;
 	createdAt: number;
+};
+
+export type DesktopAgentTurnFileCapturePayload = {
+	captureId: string;
 };
 
 export type DesktopAgentTurnEventResult =
@@ -290,6 +295,14 @@ export type DesktopWorkspaceApi = {
 	clearRecovery(): Promise<void>;
 	/** Returns workspace-relative file paths queued for editor opening. */
 	consumePendingOpenFiles(): Promise<string[]>;
+	/** Persists the central documents that should reopen with this window. */
+	setSessionOpenFilePaths(payload: { filePaths: string[] }): Promise<void>;
+	beginAgentTurnFileCapture(
+		payload: DesktopAgentTurnFileCapturePayload,
+	): Promise<{ baselinePaths: string[] }>;
+	finishAgentTurnFileCapture(
+		payload: DesktopAgentTurnFileCapturePayload,
+	): Promise<string[]>;
 	setEphemeralWatchedDirectories(payload: {
 		ownerId: string;
 		paths: string[];
@@ -314,8 +327,6 @@ export type DesktopWorkspaceApi = {
 	 * directory picker. Resolves to null when the picker is canceled.
 	 */
 	openInNewWindow(payload?: { path: string }): Promise<DesktopWorkspace | null>;
-	setActiveFilePath(payload: { filePath: string | null }): Promise<void>;
-	setOpenFilePaths(payload: { filePaths: string[] }): Promise<void>;
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	disableTrackChanges(): Promise<DesktopWorkspace>;

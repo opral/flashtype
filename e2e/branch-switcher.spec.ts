@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
-import { FsBackend, openLix } from "@lix-js/sdk";
+import { LocalFilesystem, openLix } from "@lix-js/sdk";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -12,9 +12,6 @@ import {
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
-
-const deleteShortcut =
-	process.platform === "darwin" ? "Meta+Backspace" : "Control+Backspace";
 
 test("persistent workspace branch switching keeps sidebar and disk on the active branch", async ({
 	browserName: _browserName,
@@ -153,12 +150,12 @@ test("checkpoint row click marks files without auto-opening a diff", async ({
 		await expectMarkdownDiff(page);
 		await expect(
 			page
-				.locator(".markdown-review-overlay [data-diff-status='removed']")
+				.locator(".markdown-review-overlay [data-review-status='removed']")
 				.filter({ hasText: "Previous" }),
 		).toBeVisible();
 		await expect(
 			page
-				.locator(".markdown-review-overlay [data-diff-status='added']")
+				.locator(".markdown-review-overlay [data-review-status='added']")
 				.filter({ hasText: "Target" }),
 		).toBeVisible();
 		await expect(
@@ -450,25 +447,9 @@ test("checkpoint diff selection keeps the active editor and toggles revision sta
 
 async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
 	const lix = await openLix({
-		backend: new FsBackend({ path: workspaceDir, syncAllFiles: true }),
+		storage: new LocalFilesystem({ path: workspaceDir, syncAllFiles: true }),
 	});
 	await lix.close();
-}
-
-async function createMarkdownFileFromUi(
-	page: Page,
-	stem: string,
-): Promise<void> {
-	const appPath = `/${stem}.md`;
-	await ensureFilesViewOpenInLeftPanel(page);
-	await page.getByRole("button", { name: "New file", exact: true }).click();
-	const renameInput = page.locator("[data-item-rename-input]").first();
-	await expect(renameInput).toBeVisible();
-	await renameInput.fill(stem);
-	await renameInput.press("Enter");
-	await expect(fileTreeFile(page, appPath)).toBeVisible();
-	await expectActiveCentralFile(page, appPath);
-	await expectEditableMarkdown(page);
 }
 
 async function openMarkdownFileFromTree(
@@ -480,59 +461,6 @@ async function openMarkdownFileFromTree(
 	await expect(file).toBeVisible();
 	await file.click();
 	await expectActiveCentralFile(page, appPath);
-}
-
-async function deleteMarkdownFileFromUi(
-	page: Page,
-	appPath: string,
-): Promise<void> {
-	await ensureFilesViewOpenInLeftPanel(page);
-	const file = fileTreeFile(page, appPath);
-	await expect(file).toBeVisible();
-	await file.click();
-	await expect(file).toHaveAttribute("data-item-selected", "true");
-	await page.keyboard.press(deleteShortcut);
-	await expect(file).toHaveCount(0);
-	await expect
-		.poll(async () => await lixFileExistsByPath(page, appPath))
-		.toBe(false);
-}
-
-async function typeLineInActiveMarkdown(
-	page: Page,
-	appPath: string,
-	line: string,
-): Promise<void> {
-	await expectActiveCentralFile(page, appPath);
-	const editor = page.locator('[data-testid="tiptap-editor"] .ProseMirror');
-	await expect(editor).toBeVisible();
-	await focusEditableMarkdownEnd(page, editor);
-	const existingText = (await editor.innerText()).trim();
-	if (existingText.length > 0) {
-		await page.keyboard.press("Enter");
-	}
-	await page.keyboard.type(line);
-	await expect(editor).toContainText(line);
-	await expectLixFileToContain(page, appPath, line);
-}
-
-async function focusEditableMarkdownEnd(
-	page: Page,
-	editor: ReturnType<Page["locator"]>,
-): Promise<void> {
-	await editor.click();
-	await page.keyboard.press(
-		process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End",
-	);
-}
-
-async function waitForNextRendererTimestampSecond(page: Page): Promise<void> {
-	const startedAtSecond = await page.evaluate(() =>
-		Math.floor(Date.now() / 1000),
-	);
-	await expect
-		.poll(async () => await page.evaluate(() => Math.floor(Date.now() / 1000)))
-		.not.toBe(startedAtSecond);
 }
 
 async function createCheckpointFromUi(page: Page): Promise<string> {
@@ -877,36 +805,6 @@ async function newBranchIdFromUi(
 	}, beforeIds);
 }
 
-async function branchCommitIdFromUi(
-	page: Page,
-	branchId: string,
-): Promise<string> {
-	await expect
-		.poll(async () => {
-			return await page.evaluate(async (id) => {
-				const result = await window.flashtypeDesktop?.lix.execute({
-					sql: "SELECT commit_id FROM lix_branch WHERE id = $1",
-					params: [id],
-				});
-				const value = result?.rows?.[0]?.[0];
-				return typeof value === "string" && value.length > 0 ? value : null;
-			}, branchId);
-		})
-		.not.toBeNull();
-	const commitId = await page.evaluate(async (id) => {
-		const result = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT commit_id FROM lix_branch WHERE id = $1",
-			params: [id],
-		});
-		const value = result?.rows?.[0]?.[0];
-		return typeof value === "string" && value.length > 0 ? value : null;
-	}, branchId);
-	if (!commitId) {
-		throw new Error(`Commit id for branch ${branchId} was not found.`);
-	}
-	return commitId;
-}
-
 async function initialCommitIdForCommitFromUi(
 	page: Page,
 	commitId: string,
@@ -1009,7 +907,7 @@ async function activeCentralDocumentIdentityFromUi(
 	return await page.evaluate(async () => {
 		const result = await window.flashtypeDesktop?.lix.execute({
 			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["flashtype_ui_state", "global"],
+			params: ["atelier_ui_state", "global"],
 		});
 		const state = result?.rows?.[0]?.[0] as
 			| {
@@ -1046,17 +944,11 @@ async function activeCentralDocumentIdentityFromUi(
 	});
 }
 
-async function expectNoActiveCentralFile(page: Page): Promise<void> {
-	await expect
-		.poll(async () => await activeCentralFilePathFromUi(page))
-		.toBeNull();
-}
-
 async function activeCentralFilePathFromUi(page: Page): Promise<string | null> {
 	return await page.evaluate(async () => {
 		const result = await window.flashtypeDesktop?.lix.execute({
 			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["flashtype_ui_state", "global"],
+			params: ["atelier_ui_state", "global"],
 		});
 		const state = result?.rows?.[0]?.[0] as
 			| {
@@ -1107,7 +999,7 @@ async function documentSlotViolationsFromUi(page: Page): Promise<string[]> {
 	return await page.evaluate(async () => {
 		const result = await window.flashtypeDesktop?.lix.execute({
 			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["flashtype_ui_state", "global"],
+			params: ["atelier_ui_state", "global"],
 		});
 		type ViewState = {
 			readonly fileId?: unknown;
@@ -1174,7 +1066,7 @@ async function activeEditorRevisionStateFromUi(page: Page): Promise<{
 	return await page.evaluate(async () => {
 		const result = await window.flashtypeDesktop?.lix.execute({
 			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["flashtype_ui_state", "global"],
+			params: ["atelier_ui_state", "global"],
 		});
 		const state = result?.rows?.[0]?.[0] as
 			| {
@@ -1271,19 +1163,21 @@ async function expectMarkdownDiff(
 ): Promise<void> {
 	const overlay = page
 		.locator(".markdown-review-overlay")
-		.filter({ has: page.locator("[data-diff-status]") })
+		.filter({ has: page.locator("[data-review-status]") })
 		.first();
 	await expect(overlay).toBeVisible();
 	await expectReadonlyMarkdown(page);
-	await expect(overlay.locator("[data-diff-status]").first()).toBeVisible();
+	await expect(overlay.locator("[data-review-status]").first()).toBeVisible();
 	for (const text of expected.added ?? []) {
 		await expect(
-			overlay.locator("[data-diff-status='added']").filter({ hasText: text }),
+			overlay.locator("[data-review-status='added']").filter({ hasText: text }),
 		).toBeVisible();
 	}
 	for (const text of expected.removed ?? []) {
 		await expect(
-			overlay.locator("[data-diff-status='removed']").filter({ hasText: text }),
+			overlay
+				.locator("[data-review-status='removed']")
+				.filter({ hasText: text }),
 		).toBeVisible();
 	}
 	await expect(
@@ -1292,62 +1186,6 @@ async function expectMarkdownDiff(
 	await expect(
 		page.getByRole("button", { name: "Undo", exact: true }),
 	).toHaveCount(0);
-}
-
-async function expectLixFileToContain(
-	page: Page,
-	appPath: string,
-	text: string,
-): Promise<void> {
-	await expect
-		.poll(async () => await lixFileTextByPath(page, appPath))
-		.toContain(text);
-}
-
-async function lixFileExistsByPath(
-	page: Page,
-	appPath: string,
-): Promise<boolean> {
-	return await page.evaluate(async (path) => {
-		const result = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT 1 FROM lix_file WHERE path = $1 LIMIT 1",
-			params: [path],
-		});
-		return (result?.rows?.length ?? 0) > 0;
-	}, appPath);
-}
-
-async function lixFileTextByPath(page: Page, appPath: string): Promise<string> {
-	return (
-		(await page.evaluate(async (path) => {
-			const result = await window.flashtypeDesktop?.lix.execute({
-				sql: "SELECT data FROM lix_file WHERE path = $1",
-				params: [path],
-			});
-			const value = result?.rows?.[0]?.[0];
-			return decodeSqlText(value);
-
-			function decodeSqlText(value: unknown): string {
-				if (value instanceof Uint8Array) return new TextDecoder().decode(value);
-				if (value instanceof ArrayBuffer) {
-					return new TextDecoder().decode(new Uint8Array(value));
-				}
-				if (ArrayBuffer.isView(value)) {
-					const view = value as Uint8Array;
-					return new TextDecoder().decode(
-						new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
-					);
-				}
-				if (Array.isArray(value)) {
-					return new TextDecoder().decode(new Uint8Array(value as number[]));
-				}
-				if (value && typeof value === "object" && "value" in value) {
-					return decodeSqlText((value as { value: unknown }).value);
-				}
-				return typeof value === "string" ? value : "";
-			}
-		}, appPath)) ?? ""
-	);
 }
 
 async function checkpointRowLabels(page: Page): Promise<string[]> {

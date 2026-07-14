@@ -1,10 +1,10 @@
 import { app } from "electron";
-import { FsBackend, bundledPluginArchives, openLix } from "@lix-js/sdk";
+import { LocalFilesystem, bundledPluginArchives, openLix } from "@lix-js/sdk";
 import path from "node:path";
 import { readFile, rm } from "node:fs/promises";
 import {
+	acquireWorkspaceLocalFilesystemOptions,
 	getWorkspace,
-	getWorkspaceFsBackendOptions,
 	getWorkspaceLixDatabasePath,
 } from "./workspace.mjs";
 import {
@@ -31,6 +31,7 @@ export async function ensureLixOpen(window) {
 					);
 				}
 				let nativeLix;
+				let releaseStorageOptions = async () => {};
 				const tracksPersistentWorkspace = workspace.ephemeral !== true;
 				const userDataPath = app.getPath("userData");
 				try {
@@ -42,9 +43,13 @@ export async function ensureLixOpen(window) {
 							}),
 						);
 					}
-					const backendOptions = await getWorkspaceFsBackendOptions(window);
+					const acquiredStorage =
+						await acquireWorkspaceLocalFilesystemOptions(window);
+					const storageOptions = acquiredStorage.options;
+					releaseStorageOptions = acquiredStorage.release;
+					const storage = new LocalFilesystem(storageOptions);
 					nativeLix = await openLix({
-						backend: new FsBackend(backendOptions),
+						storage,
 					});
 					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
 					if (tracksPersistentWorkspace) {
@@ -52,12 +57,16 @@ export async function ensureLixOpen(window) {
 					}
 					return createDesktopLixHandle(
 						nativeLix,
+						storage,
 						workspace.path,
-						backendOptions.lixDir ??
+						storageOptions.lixDir ??
 							path.join(workspace.path, LIX_DATABASE_DIR),
+						crypto.randomUUID(),
+						releaseStorageOptions,
 					);
 				} catch (error) {
 					await nativeLix?.close().catch(() => {});
+					await releaseStorageOptions();
 					let recovery;
 					if (tracksPersistentWorkspace) {
 						clearWorkspaceLixOpenPendingSync(userDataPath, workspace.path);
@@ -158,6 +167,18 @@ export async function closeLix(window, options = {}) {
 	});
 }
 
+export async function runWithLixClosed(window, operation, options = {}) {
+	if (typeof operation !== "function") {
+		throw new TypeError("runWithLixClosed requires an operation");
+	}
+	const session = getOrCreateSession(window);
+	return await enqueue(session, async () => {
+		await options.beforeClose?.();
+		await closeCurrentLix(session, options);
+		return await operation();
+	});
+}
+
 export async function resetLixRepository(window) {
 	const session = getOrCreateSession(window);
 	await enqueue(session, async () => {
@@ -209,15 +230,23 @@ async function closeCurrentLix(session, options = {}) {
 		return;
 	}
 	const currentPromise = session.lixPromise;
+	let preserveCurrentSession = false;
 	try {
 		const lix = await currentPromise;
+		if (
+			options.expectedSessionId &&
+			lix.sessionId() !== options.expectedSessionId
+		) {
+			preserveCurrentSession = true;
+			return;
+		}
 		await lix.close();
 	} catch (error) {
 		if (!options.ignoreOpenError) {
 			throw error;
 		}
 	} finally {
-		if (session.lixPromise === currentPromise) {
+		if (!preserveCurrentSession && session.lixPromise === currentPromise) {
 			session.lixPromise = null;
 		}
 	}
@@ -275,7 +304,14 @@ function getOrCreateSession(window) {
 	return session;
 }
 
-function createDesktopLixHandle(nativeLix, workspaceDir, storageDir) {
+function createDesktopLixHandle(
+	nativeLix,
+	storage,
+	workspaceDir,
+	storageDir,
+	sessionId,
+	releaseStorageOptions,
+) {
 	let operationQueue = Promise.resolve();
 
 	async function acquireOperationSlot() {
@@ -309,6 +345,9 @@ function createDesktopLixHandle(nativeLix, workspaceDir, storageDir) {
 	}
 
 	return {
+		sessionId() {
+			return sessionId;
+		},
 		workspaceDir() {
 			return workspaceDir;
 		},
@@ -410,15 +449,17 @@ function createDesktopLixHandle(nativeLix, workspaceDir, storageDir) {
 			});
 		},
 		async importFilesystemPaths(paths = []) {
-			return await runQueued(() =>
-				nativeLix.importFilesystemPaths([...(paths ?? [])]),
-			);
+			return await runQueued(() => storage.importPaths([...(paths ?? [])]));
 		},
 		async syncDiskToLix() {
-			return await runQueued(() => nativeLix.syncDiskToLix());
+			return await runQueued(() => storage.syncDiskToLix());
 		},
 		async close() {
-			await runQueued(() => nativeLix.close());
+			try {
+				await runQueued(() => nativeLix.close());
+			} finally {
+				await releaseStorageOptions();
+			}
 		},
 	};
 }

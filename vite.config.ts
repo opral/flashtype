@@ -11,6 +11,8 @@ export default defineConfig({
 	},
 	plugins: [
 		react({
+			include: [/\/src\/.*\.[jt]sx?$/],
+			exclude: [/submodule\/atelier\/dist\//],
 			babel: {
 				plugins: ["babel-plugin-react-compiler"],
 			},
@@ -18,8 +20,11 @@ export default defineConfig({
 		tailwindcss(),
 	],
 	resolve: {
+		dedupe: ["react", "react-dom"],
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			react: path.resolve(__dirname, "node_modules/react"),
+			"react-dom": path.resolve(__dirname, "node_modules/react-dom"),
 		},
 	},
 	optimizeDeps: {

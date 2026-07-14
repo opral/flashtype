@@ -30,6 +30,12 @@ const workspace = {
 	clearRecovery: () => ipcRenderer.invoke("workspace:clearRecovery"),
 	consumePendingOpenFiles: () =>
 		ipcRenderer.invoke("workspace:consumePendingOpenFiles"),
+	setSessionOpenFilePaths: (payload) =>
+		ipcRenderer.invoke("workspace:setSessionOpenFilePaths", payload),
+	beginAgentTurnFileCapture: (payload) =>
+		ipcRenderer.invoke("workspace:beginAgentTurnFileCapture", payload),
+	finishAgentTurnFileCapture: (payload) =>
+		ipcRenderer.invoke("workspace:finishAgentTurnFileCapture", payload),
 	setEphemeralWatchedDirectories: (payload) =>
 		ipcRenderer.invoke("workspace:setEphemeralWatchedDirectories", payload),
 	onEphemeralWatchedFileTreeChanged: (listener) => {
@@ -59,10 +65,6 @@ const workspace = {
 	open: (payload) => ipcRenderer.invoke("workspace:open", payload),
 	openInNewWindow: (payload) =>
 		ipcRenderer.invoke("workspace:openInNewWindow", payload),
-	setActiveFilePath: (payload) =>
-		ipcRenderer.invoke("workspace:setActiveFilePath", payload),
-	setOpenFilePaths: (payload) =>
-		ipcRenderer.invoke("workspace:setOpenFilePaths", payload),
 	exportLixFile: () => ipcRenderer.invoke("workspace:exportLixFile"),
 	resetLixRepository: () => ipcRenderer.invoke("workspace:resetLixRepository"),
 	disableTrackChanges: () =>
@@ -96,7 +98,7 @@ const lix = {
 	importFilesystemPaths: (payload) =>
 		ipcRenderer.invoke("lix:importFilesystemPaths", payload),
 	syncDiskToLix: () => ipcRenderer.invoke("lix:syncDiskToLix"),
-	close: () => ipcRenderer.invoke("lix:close"),
+	close: (payload) => ipcRenderer.invoke("lix:close", payload),
 };
 
 const terminal = {

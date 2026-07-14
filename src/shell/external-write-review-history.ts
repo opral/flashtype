@@ -45,18 +45,37 @@ export async function getPendingExternalWriteReviewPaths(
 	}
 	await Promise.all(
 		files.map(async (file) => {
-			const review = await getAgentTurnExternalWriteReview(
+			const hasPendingReview = await hasPendingAgentTurnReview(
 				lix,
 				file.fileId,
-				file.path,
 				resolvedRanges,
 			);
-			if (review) {
+			if (hasPendingReview) {
 				pendingPaths.add(file.path);
 			}
 		}),
 	);
 	return pendingPaths;
+}
+
+async function hasPendingAgentTurnReview(
+	lix: Lix,
+	fileId: string,
+	ranges: readonly AgentTurnCommitRange[],
+): Promise<boolean> {
+	for (const range of ranges) {
+		if (range.beforeCommitId === range.afterCommitId) continue;
+		if (range.clearedFileIds?.includes(fileId)) continue;
+		const [beforeData, afterData] = await Promise.all([
+			getFileDataAtCommit(lix, fileId, range.beforeCommitId),
+			getFileDataAtCommit(lix, fileId, range.afterCommitId),
+		]);
+		if (!beforeData && !afterData) continue;
+		if (!beforeData || !afterData || !fileBytesEqual(beforeData, afterData)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 export function useExternalWriteReview(args: {
@@ -84,14 +103,12 @@ export function useExternalWriteReview(args: {
 		const watchEvents = async (
 			events: ReturnType<Lix["observe"]>,
 		): Promise<void> => {
-			let receivedInitialSnapshot = false;
 			while (!cancelled) {
 				const event = await events.next();
 				if (!event || cancelled) break;
-				if (!receivedInitialSnapshot) {
-					receivedInitialSnapshot = true;
-					continue;
-				}
+				// The first snapshot may already contain a mutation that landed after
+				// the initial review read but before the observer started. Treat every
+				// snapshot as an invalidation so that ordering cannot lose a review.
 				setReviewRevision((current) => current + 1);
 			}
 		};

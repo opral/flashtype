@@ -15,6 +15,10 @@ export default defineConfig({
 		setupFiles: ["setup-tests.ts"],
 		testTimeout: 60_000,
 		hookTimeout: 60_000,
+		// Each worker loads the native Lix/DataFusion/RocksDB addon. Running several
+		// copies in parallel can exhaust the Linux CI runner while the Files suite
+		// repeatedly opens real Lix instances.
+		maxWorkers: process.env.CI ? 1 : undefined,
 		exclude: [
 			...configDefaults.exclude,
 			"e2e/**",

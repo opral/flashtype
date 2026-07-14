@@ -1,20 +1,21 @@
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
 import type {
 	BundledPluginArchive,
-	ExecuteOptions,
 	ExecuteResult,
 	Lix as SdkLix,
 	OpenLixOptions as SdkOpenLixOptions,
 	SqlParam,
-} from "../../submodule/lix/packages/js-sdk/dist/index.js";
+} from "@lix-js/sdk";
 import type {
 	Lix,
+	LixExecuteOptions,
 	ObserveEvents,
 	OpenLixKeyValueEntry,
 	SqlTransaction,
 	TransactionStatement,
 } from "@/lib/lix-types";
+
+type ExecuteOptions = LixExecuteOptions;
 
 export type { Lix, SqlTransaction } from "@/lib/lix-types";
 export type { BundledPluginArchive };
@@ -23,8 +24,7 @@ type OpenTestLixOptions = SdkOpenLixOptions & {
 	keyValues?: ReadonlyArray<OpenLixKeyValueEntry>;
 };
 
-type SdkModule =
-	typeof import("../../submodule/lix/packages/js-sdk/dist/index.js");
+type SdkModule = typeof import("@lix-js/sdk");
 
 let sdkModulePromise: Promise<SdkModule> | undefined;
 const require = createRequire(import.meta.url);
@@ -33,7 +33,11 @@ export async function openLix(options: OpenTestLixOptions = {}): Promise<Lix> {
 	const { keyValues, ...sdkOptions } = options;
 	const sdk = await loadSdk();
 	const sdkLix = await sdk.openLix(sdkOptions);
-	const lix = createTestLixAdapter(sdkLix);
+	const localFilesystem =
+		sdkOptions.storage instanceof sdk.LocalFilesystem
+			? sdkOptions.storage
+			: undefined;
+	const lix = createTestLixAdapter(sdkLix, localFilesystem);
 	if (Array.isArray(keyValues)) {
 		await seedKeyValues(lix, keyValues);
 	}
@@ -47,10 +51,7 @@ export async function bundledPluginArchives(): Promise<BundledPluginArchive[]> {
 
 async function loadSdk(): Promise<SdkModule> {
 	if (!sdkModulePromise) {
-		const sdkPath = resolve(
-			process.cwd(),
-			"submodule/lix/packages/js-sdk/dist/index.js",
-		);
+		const sdkPath = require.resolve("@lix-js/sdk");
 		// Vitest aliases @lix-js/sdk to this helper; require the built SDK entry
 		// so Node, not Vite, owns the native addon's import.meta.url handling.
 		sdkModulePromise = Promise.resolve(require(sdkPath) as SdkModule);
@@ -91,14 +92,20 @@ async function seedKeyValues(
 	}
 }
 
-function createTestLixAdapter(sdkLix: SdkLix): Lix {
+function createTestLixAdapter(
+	sdkLix: SdkLix,
+	localFilesystem?: InstanceType<SdkModule["LocalFilesystem"]>,
+): Lix {
+	const observations = new Set<ObserveEvents>();
+	let closing = false;
+
 	return {
 		async execute(
 			sql: string,
 			params: ReadonlyArray<unknown> = [],
 			options?: ExecuteOptions,
 		) {
-			return await sdkLix.execute(sql, toSqlParams(params), options);
+			return await executeWithOptions(sdkLix, sql, params, options);
 		},
 		async beginTransaction() {
 			const transaction = await sdkLix.beginTransaction();
@@ -108,7 +115,7 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 					params: ReadonlyArray<unknown> = [],
 					options?: ExecuteOptions,
 				) {
-					return await transaction.execute(sql, toSqlParams(params), options);
+					return await executeWithOptions(transaction, sql, params, options);
 				},
 				async commit() {
 					await transaction.commit();
@@ -151,7 +158,27 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			}
 		},
 		observe(sql: string, params: ReadonlyArray<unknown> = []): ObserveEvents {
-			return sdkLix.observe(sql, toSqlParams(params));
+			const sdkEvents = sdkLix.observe(sql, toSqlParams(params));
+			let closed = false;
+			const events: ObserveEvents = {
+				async next() {
+					if (closed || closing) return undefined;
+					try {
+						return await sdkEvents.next();
+					} catch (error) {
+						if (closed || closing) return undefined;
+						throw error;
+					}
+				},
+				close() {
+					if (closed) return;
+					closed = true;
+					observations.delete(events);
+					sdkEvents.close();
+				},
+			};
+			observations.add(events);
+			return events;
 		},
 		async activeBranchId() {
 			return await sdkLix.activeBranchId();
@@ -163,10 +190,18 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			return await sdkLix.switchBranch(options);
 		},
 		async importFilesystemPaths(paths) {
-			await sdkLix.importFilesystemPaths(paths);
+			if (!localFilesystem) {
+				throw new Error(
+					"importFilesystemPaths requires local filesystem storage",
+				);
+			}
+			await localFilesystem.importPaths(paths);
 		},
 		async syncDiskToLix() {
-			await sdkLix.syncDiskToLix();
+			if (!localFilesystem) {
+				throw new Error("syncDiskToLix requires local filesystem storage");
+			}
+			await localFilesystem.syncDiskToLix();
 		},
 		async mergeBranchPreview(options) {
 			return await sdkLix.mergeBranchPreview(options);
@@ -175,9 +210,27 @@ function createTestLixAdapter(sdkLix: SdkLix): Lix {
 			return await sdkLix.mergeBranch(options);
 		},
 		async close() {
+			closing = true;
+			for (const observation of [...observations]) {
+				observation.close();
+			}
 			await sdkLix.close();
 		},
 	};
+}
+
+async function executeWithOptions(
+	target: { execute(sql: string, params?: SqlParam[]): Promise<ExecuteResult> },
+	sql: string,
+	params: ReadonlyArray<unknown>,
+	options?: ExecuteOptions,
+): Promise<ExecuteResult> {
+	const execute = target.execute as (
+		sql: string,
+		params?: SqlParam[],
+		options?: ExecuteOptions,
+	) => Promise<ExecuteResult>;
+	return await execute.call(target, sql, toSqlParams(params), options);
 }
 
 function emptyExecuteResult(): ExecuteResult {

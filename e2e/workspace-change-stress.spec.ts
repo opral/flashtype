@@ -142,7 +142,9 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 				}
 				await timeProfile(profile, "agent:click-review", index, async () => {
 					await page
-						.getByRole("button", { name: keep ? "Keep" : "Undo" })
+						.getByRole("button", {
+							name: keep ? "Keep change" : "Undo change",
+						})
 						.click();
 				});
 				await timeProfile(
@@ -151,9 +153,7 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 					index,
 					async () => {
 						await expect(
-							page.getByRole("group", {
-								name: "External write review actions",
-							}),
+							page.getByRole("button", { name: "Keep change" }),
 						).toBeHidden({ timeout: 30_000 });
 					},
 				);
@@ -463,7 +463,7 @@ async function openStressMarkdown(page: Page): Promise<void> {
 		page.locator('[data-testid="tiptap-editor"] .ProseMirror'),
 	).toBeVisible();
 	await expect(
-		page.locator('[data-active="true"][data-view-key="flashtype_file"]'),
+		page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 	).toBeVisible();
 }
 
@@ -582,11 +582,10 @@ async function runFakeAgentTurn(
 }
 
 async function waitForReviewControls(page: Page): Promise<void> {
-	await expect(
-		page.getByRole("group", { name: "External write review actions" }),
-	).toBeVisible({ timeout: 30_000 });
-	await expect(page.getByRole("button", { name: "Keep" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Keep change" })).toBeVisible({
+		timeout: 30_000,
+	});
+	await expect(page.getByRole("button", { name: "Undo change" })).toBeVisible();
 }
 
 async function buildAgentReviewTimeoutMessage(args: {

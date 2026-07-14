@@ -11,22 +11,26 @@
 ### Development
 
 1. Clone the repository
-2. Initialize the Lix submodule: `git submodule update --init --recursive`
+2. Initialize the Atelier submodule: `git submodule update --init --recursive`
 3. Install dependencies from the repo root: `pnpm install`
-4. Build Lix dependencies (cached via Nx): `pnpm run build:lix`
-5. Start the app: `pnpm run dev`
+4. Build Atelier: `pnpm run build:atelier`
+5. Start the app: `pnpm run dev` (the `predev` hook also builds Atelier and Electron's native dependency)
 
 ### Example
 
 > [!INFO]
-> `pnpm install` runs a postinstall step that installs Lix dependencies, so Nx can cache Lix builds.
+> Atelier is a vendored submodule and pnpm workspace package. Lix is consumed
+> from the published `@lix-js/sdk` package. Atelier builds its package output
+> before FlashType starts or builds.
 
 > [!INFO]
-> `@glideapps/glide-data-grid` is used for the CSV viewer. Its published peer range has not caught up to React 19, so `package.json` intentionally allows the React 19 peer for Glide and lists Glide's peer packages explicitly.
+> `@glideapps/glide-data-grid` is used for the CSV viewer. Its published peer
+> range has not caught up to React 19, so `pnpm-workspace.yaml` intentionally
+> allows the React 19 peer for Glide.
 
 1. `git submodule update --init --recursive`
 2. `pnpm install`
-3. `pnpm run build:lix`
+3. `pnpm run build:atelier`
 4. `pnpm run dev`
 
 ### Opening a PR
@@ -42,11 +46,15 @@ Example:
 ```md
 ---
 type: minor
+version: 0.9.0
 ---
 
 - Warn before opening folders larger than 500 MB.
 - Fix Markdown list editing with Tab, Shift+Tab, Backspace, and nested bullets.
 ```
+
+The optional `version` field targets a specific later version while preserving
+the declared change type. Omit it for the normal one-step semantic version bump.
 
 Do not add `NEXT_RELEASE.md` for repo-only, documentation-only, CI-only, test-only, or chore-only changes.
 
