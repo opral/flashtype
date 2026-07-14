@@ -9,8 +9,8 @@ import type {
 } from "@/extension-runtime/external-write-review";
 import {
 	AGENT_TURN_COMMIT_RANGE_KEY,
+	agentTurnCommitRangesFromValues,
 	agentTurnReviewId,
-	isAgentTurnCommitRangeStore,
 	readAgentTurnCommitRanges,
 	type AgentTurnCommitRange,
 } from "./agent-turn-review-range";
@@ -97,8 +97,8 @@ export function useExternalWriteReview(args: {
 		const reviewRangeEvents = lix.observe(
 			`SELECT value, lixcol_branch_id
 			 FROM lix_key_value_by_branch
-			 WHERE key = ?`,
-			[AGENT_TURN_COMMIT_RANGE_KEY],
+			 WHERE key LIKE ?`,
+			[`${AGENT_TURN_COMMIT_RANGE_KEY}%`],
 		);
 		const watchEvents = async (
 			events: ReturnType<Lix["observe"]>,
@@ -169,16 +169,13 @@ async function readActiveBranchReviewRanges(
 		.executeTakeFirst();
 	const activeBranchId =
 		typeof activeBranch?.value === "string" ? activeBranch.value : "";
-	const rangeRow = await qb(lix)
+	const rangeRows = await qb(lix)
 		.selectFrom("lix_key_value_by_branch")
 		.select("value")
-		.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
+		.where("key", "like", `${AGENT_TURN_COMMIT_RANGE_KEY}%`)
 		.where("lixcol_branch_id", "=", activeBranchId)
-		.limit(1)
-		.executeTakeFirst();
-	return isAgentTurnCommitRangeStore(rangeRow?.value)
-		? rangeRow.value.ranges
-		: [];
+		.execute();
+	return agentTurnCommitRangesFromValues(rangeRows.map((row) => row.value));
 }
 
 export function useExternalWriteReviewData(

@@ -138,23 +138,20 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 							page,
 							proposedMarkdown,
 						}),
+						{ cause: error },
 					);
 				}
 				await timeProfile(profile, "agent:click-review", index, async () => {
-					await page
-						.getByRole("button", {
-							name: keep ? "Keep change" : "Undo change",
-						})
-						.click();
+					await resolveReview(page, keep);
 				});
 				await timeProfile(
 					profile,
 					"agent:wait-review-hidden",
 					index,
 					async () => {
-						await expect(
-							page.getByRole("button", { name: "Keep change" }),
-						).toBeHidden({ timeout: 30_000 });
+						await expect(reviewUndoButton(page)).toBeHidden({
+							timeout: 30_000,
+						});
 					},
 				);
 
@@ -582,10 +579,64 @@ async function runFakeAgentTurn(
 }
 
 async function waitForReviewControls(page: Page): Promise<void> {
-	await expect(page.getByRole("button", { name: "Keep change" })).toBeVisible({
+	await expect(reviewControls(page)).toBeVisible({
 		timeout: 30_000,
 	});
-	await expect(page.getByRole("button", { name: "Undo change" })).toBeVisible();
+	await expect(reviewKeepButton(page)).toBeVisible();
+	await expect(reviewUndoButton(page)).toBeVisible();
+}
+
+async function resolveReview(page: Page, keep: boolean): Promise<void> {
+	const remainingCount = await reviewRemainingCount(page);
+	if (keep) {
+		if (remainingCount > 1) {
+			await expect(reviewKeepAllButton(page)).toBeVisible();
+			await reviewKeepAllButton(page).click();
+			return;
+		}
+		await reviewKeepButton(page).click();
+		return;
+	}
+
+	for (
+		let resolvedCount = 0;
+		resolvedCount < remainingCount;
+		resolvedCount += 1
+	) {
+		await reviewUndoButton(page).click();
+		if (resolvedCount + 1 < remainingCount) {
+			await expect
+				.poll(async () => await reviewRemainingCount(page), {
+					timeout: 30_000,
+				})
+				.toBe(remainingCount - resolvedCount - 1);
+		}
+	}
+}
+
+function reviewControls(page: Page) {
+	return page.locator('[role="group"][aria-label^="Review change "]');
+}
+
+function reviewKeepButton(page: Page) {
+	return page.locator('[data-attr="review-change-keep"]');
+}
+
+function reviewKeepAllButton(page: Page) {
+	return page.locator('[data-attr="review-change-keep-all"]');
+}
+
+function reviewUndoButton(page: Page) {
+	return page.locator('[data-attr="review-change-undo"]');
+}
+
+async function reviewRemainingCount(page: Page): Promise<number> {
+	const label = await reviewControls(page).getAttribute("aria-label");
+	const match = /^Review change \d+ of \d+, (\d+) remaining$/.exec(label ?? "");
+	if (!match) {
+		throw new Error(`Could not read remaining review changes from ${label}.`);
+	}
+	return Number(match[1]);
 }
 
 async function buildAgentReviewTimeoutMessage(args: {

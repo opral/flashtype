@@ -32,12 +32,22 @@ export function createFilesExtensionRegistration(
 			icon: Files,
 			mount: ({ element, atelier, view }) => {
 				const root = createRoot(element);
-				renderFilesView(root, workspace, atelier, view);
+				const openRequest = { current: 0 };
+				renderFilesView(root, workspace, atelier, view, openRequest);
 				return {
 					update: ({ atelier: nextAtelier, view: nextView }) => {
-						renderFilesView(root, workspace, nextAtelier, nextView);
+						renderFilesView(
+							root,
+							workspace,
+							nextAtelier,
+							nextView,
+							openRequest,
+						);
 					},
-					dispose: () => root.unmount(),
+					dispose: () => {
+						openRequest.current += 1;
+						root.unmount();
+					},
 				};
 			},
 		},
@@ -49,20 +59,27 @@ function renderFilesView(
 	workspace: WorkspaceContext,
 	atelier: AtelierExtensionRuntime,
 	view: AtelierExtensionView,
+	openRequest: { current: number },
 ) {
 	const lix = atelier.lix as unknown as Lix;
 	const context: ExtensionContext = {
 		lix,
 		workspace,
-		openFile: ({ fileId, filePath, state, focus, pending, documentOrigin }) =>
-			openWorkspaceFile(atelier, {
-				fileId,
-				filePath,
-				state,
-				focus,
-				pending,
-				documentOrigin,
-			}),
+		openFile: ({ fileId, filePath, state, focus, pending, documentOrigin }) => {
+			const requestId = ++openRequest.current;
+			return openWorkspaceFile(
+				atelier,
+				{
+					fileId,
+					filePath,
+					state,
+					focus,
+					pending,
+					documentOrigin,
+				},
+				() => requestId === openRequest.current,
+			);
+		},
 		closeFileViews: () => {
 			void atelier.documents.closeActive();
 		},
@@ -93,6 +110,7 @@ async function openWorkspaceFile(
 		readonly pending?: boolean;
 		readonly documentOrigin?: "existing" | "new";
 	},
+	isCurrentRequest: () => boolean,
 ): Promise<void> {
 	const lix = atelier.lix as unknown as Lix;
 	if (args.fileId.startsWith("watched:")) {
@@ -101,18 +119,22 @@ async function openWorkspaceFile(
 			.select("id")
 			.where("path", "=", args.filePath)
 			.executeTakeFirst();
+		if (!isCurrentRequest()) return;
 		if (!importedFile?.id) {
 			await lix.importFilesystemPaths([args.filePath.replace(/^\/+/, "")]);
+			if (!isCurrentRequest()) return;
 			importedFile = await qb(lix)
 				.selectFrom("lix_file")
 				.select("id")
 				.where("path", "=", args.filePath)
 				.executeTakeFirst();
+			if (!isCurrentRequest()) return;
 		}
 		if (!importedFile?.id) {
 			throw new Error(`Imported file id not found for '${args.filePath}'.`);
 		}
 	}
+	if (!isCurrentRequest()) return;
 	await atelier.documents.open(args.filePath, {
 		...(args.state ? { state: args.state } : {}),
 		...(args.focus !== undefined ? { focus: args.focus } : {}),

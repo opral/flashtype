@@ -241,12 +241,14 @@ export type DesktopWorkspace =
 			ephemeral: false;
 			path: string;
 			name: string;
+			initialPanelMode?: "document";
 			openFilePaths?: never;
 	  }
 	| {
 			ephemeral: true;
 			path: string;
 			name: string;
+			initialPanelMode?: "document";
 			openFilePaths: string[];
 	  };
 

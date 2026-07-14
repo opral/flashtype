@@ -3,6 +3,8 @@ import { qb } from "@/lib/lix-kysely";
 
 export const AGENT_TURN_COMMIT_RANGE_KEY =
 	"atelier_agent_turn_commit_range" as const;
+export const AGENT_TURN_COMMIT_RANGE_KEY_PREFIX =
+	`${AGENT_TURN_COMMIT_RANGE_KEY}:` as const;
 
 const agentTurnCommitRangeMutationQueues = new WeakMap<Lix, Promise<void>>();
 
@@ -31,16 +33,16 @@ export function agentTurnReviewId(
 
 export async function readAgentTurnCommitRanges(
 	lix: Lix,
+	branchId?: string,
 ): Promise<readonly AgentTurnCommitRange[]> {
-	const branchId = await lix.activeBranchId();
-	const row = await qb(lix)
+	const resolvedBranchId = branchId ?? (await lix.activeBranchId());
+	const rows = await qb(lix)
 		.selectFrom("lix_key_value_by_branch")
 		.select("value")
-		.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
-		.where("lixcol_branch_id", "=", branchId)
-		.limit(1)
-		.executeTakeFirst();
-	return isAgentTurnCommitRangeStore(row?.value) ? row.value.ranges : [];
+		.where("key", "like", `${AGENT_TURN_COMMIT_RANGE_KEY}%`)
+		.where("lixcol_branch_id", "=", resolvedBranchId)
+		.execute();
+	return agentTurnCommitRangesFromValues(rows.map((row) => row.value));
 }
 
 export async function appendAgentTurnCommitRange(
@@ -149,7 +151,43 @@ export function isAgentTurnCommitRangeStore(
 	);
 }
 
-function isAgentTurnCommitRange(value: unknown): value is AgentTurnCommitRange {
+export function agentTurnCommitRangesFromValues(
+	values: readonly unknown[],
+): readonly AgentTurnCommitRange[] {
+	const rangesById = new Map<string, AgentTurnCommitRange>();
+	for (const value of values) {
+		const ranges = isAgentTurnCommitRangeStore(value)
+			? value.ranges
+			: isAgentTurnCommitRange(value)
+				? [value]
+				: [];
+		for (const range of ranges) {
+			const existing = rangesById.get(range.id);
+			if (!existing) {
+				rangesById.set(range.id, serializeAgentTurnCommitRange(range));
+				continue;
+			}
+			const clearedFileIds = [
+				...new Set([
+					...(existing.clearedFileIds ?? []),
+					...(range.clearedFileIds ?? []),
+				]),
+			];
+			rangesById.set(range.id, {
+				...existing,
+				...(clearedFileIds.length > 0 ? { clearedFileIds } : {}),
+			});
+		}
+	}
+	return [...rangesById.values()].sort(
+		(left, right) =>
+			left.completedAt - right.completedAt || left.id.localeCompare(right.id),
+	);
+}
+
+export function isAgentTurnCommitRange(
+	value: unknown,
+): value is AgentTurnCommitRange {
 	if (!value || typeof value !== "object") {
 		return false;
 	}

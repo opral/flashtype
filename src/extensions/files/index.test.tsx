@@ -7,7 +7,7 @@ import { FilesView } from "./index";
 import type { ExtensionContext } from "../../extension-runtime/types";
 import { qb } from "@/lib/lix-kysely";
 import {
-	appendAgentTurnCommitRange,
+	AGENT_TURN_COMMIT_RANGE_KEY_PREFIX,
 	type AgentTurnCommitRange,
 } from "@/shell/agent-turn-review-range";
 import type {
@@ -1198,14 +1198,22 @@ describe("FilesView", () => {
 			await writeReviewFile(lix, "file_review", "/docs/review.md", "after");
 			await writeReviewFile(lix, "file_clean", "/docs/clean.md", "same");
 			const afterCommitId = await activeCommitId(lix);
-			await appendAgentTurnCommitRange(
-				lix,
-				agentRange({
-					id: "range-files-tree-review",
-					beforeCommitId,
-					afterCommitId,
-				}),
-			);
+			const range = agentRange({
+				id: "range-files-tree-review",
+				beforeCommitId,
+				afterCommitId,
+			});
+			const activeBranchId = await lix.activeBranchId();
+			await qb(lix)
+				.insertInto("lix_key_value_by_branch")
+				.values({
+					key: `${AGENT_TURN_COMMIT_RANGE_KEY_PREFIX}${encodeURIComponent(range.id)}`,
+					value: range,
+					lixcol_branch_id: activeBranchId,
+					lixcol_global: activeBranchId === "global",
+					lixcol_untracked: true,
+				})
+				.execute();
 
 			let utils: ReturnType<typeof render>;
 			await act(async () => {

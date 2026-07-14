@@ -171,9 +171,10 @@ function generatorArgs(options = {}) {
 		},
 		shell: "/bin/sh",
 		shellArgs: [],
-		// Shell startup can exceed one second when the full Vitest suite is
-		// saturating the host. Keep this well below the production timeout while
-		// avoiding a machine-speed-dependent timestamp fallback.
+		// The node-pty executable-path probe can be delayed when the full Vitest
+		// suite is saturating the host. Keep the fake agent command short while
+		// giving that independent probe enough headroom to find the test binary.
+		pathResolutionTimeoutMs: 20_000,
 		timeoutMs: 5_000,
 	};
 }

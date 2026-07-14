@@ -20,9 +20,13 @@ export type AtelierDocumentSessionState = {
 /** Reads the central documents Atelier has persisted in Lix. */
 export async function readAtelierDocumentSessionState(
 	lix: Lix,
+	uiState?: unknown,
 ): Promise<AtelierDocumentSessionState> {
-	const stateResult = await readAtelierUiState(lix);
-	const candidates = documentCandidates(readResultValue(stateResult, "value"));
+	const rawState =
+		uiState === undefined
+			? readResultValue(await readAtelierUiState(lix), "value")
+			: uiState;
+	const candidates = documentCandidates(rawState);
 	if (candidates.views.length === 0) {
 		return { activePath: null, openPaths: [] };
 	}
@@ -57,8 +61,9 @@ export async function readAtelierDocumentSessionState(
 /** Reads Atelier's current central document from its persisted Lix UI state. */
 export async function readCurrentAtelierDocumentPath(
 	lix: Lix,
+	uiState?: unknown,
 ): Promise<string | null> {
-	return (await readAtelierDocumentSessionState(lix)).activePath;
+	return (await readAtelierDocumentSessionState(lix, uiState)).activePath;
 }
 
 function readAtelierUiState(lix: Lix): Promise<LixRuntimeQueryResult> {

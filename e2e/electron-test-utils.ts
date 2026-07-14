@@ -233,6 +233,31 @@ export async function expectPathMissing(filePath: string): Promise<void> {
 		.toBe(true);
 }
 
+export async function expectWorkspaceSessionOpenFilePaths(
+	userDataDir: string,
+	workspacePath: string,
+	openFilePaths: string[],
+): Promise<void> {
+	await expect
+		.poll(async () => {
+			try {
+				const store = JSON.parse(
+					await readFile(
+						path.join(userDataDir, "workspace-session.json"),
+						"utf8",
+					),
+				);
+				const workspace = Array.isArray(store.workspaces)
+					? store.workspaces.find((entry: any) => entry.path === workspacePath)
+					: undefined;
+				return workspace?.openFilePaths ?? null;
+			} catch {
+				return null;
+			}
+		})
+		.toEqual(openFilePaths);
+}
+
 export async function closeElectronApp(
 	electronApp: ElectronApplication | undefined,
 ): Promise<void> {

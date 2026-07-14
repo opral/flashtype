@@ -609,7 +609,15 @@ function gateInitialReviewRangeSnapshot(lix: Lix): {
 			...lix,
 			observe(sql, params = []) {
 				const events = originalObserve(sql, params);
-				if (!params.includes(AGENT_TURN_COMMIT_RANGE_KEY)) return events;
+				if (
+					!params.some(
+						(param) =>
+							typeof param === "string" &&
+							param.startsWith(AGENT_TURN_COMMIT_RANGE_KEY),
+					)
+				) {
+					return events;
+				}
 				let isFirstSnapshot = true;
 				return {
 					async next() {

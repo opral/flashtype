@@ -47,6 +47,47 @@ describe("agent executable path resolution", () => {
 		}
 	});
 
+	unixTest(
+		"resolves paths through a shell that rejects long pasted commands",
+		async () => {
+			const rootDir = await mkdtemp(
+				path.join(tmpdir(), "flashtype-agent-path-test-"),
+			);
+			try {
+				resetAgentExecutablePathsForTests();
+				const binDir = path.join(rootDir, "bin");
+				const shellPath = path.join(rootDir, "short-command-shell");
+				await mkdir(binDir);
+				await writeExecutable(path.join(binDir, "claude"), "exit 0");
+				await writeExecutable(path.join(binDir, "codex"), "exit 0");
+				await writeExecutable(
+					shellPath,
+					[
+						"IFS= read -r command || exit 1",
+						'[ "${#command}" -le 80 ] || exit 1',
+						'/bin/sh -c "$command"',
+					].join("\n"),
+				);
+
+				const paths = await refreshAgentExecutablePaths(
+					resolverArgs({
+						cwd: rootDir,
+						PATH: binDir,
+						shell: shellPath,
+					}),
+				);
+
+				expect(paths).toEqual({
+					claude: await realpath(path.join(binDir, "claude")),
+					codex: await realpath(path.join(binDir, "codex")),
+				});
+			} finally {
+				await rm(rootDir, { recursive: true, force: true });
+				resetAgentExecutablePathsForTests();
+			}
+		},
+	);
+
 	unixTest("updates cached paths when agents are missing", async () => {
 		const rootDir = await mkdtemp(
 			path.join(tmpdir(), "flashtype-agent-path-test-"),
@@ -122,7 +163,7 @@ function resolverArgs(options = {}) {
 			PATH: options.PATH ?? process.env.PATH,
 			TERM: "xterm-256color",
 		},
-		shell: "/bin/sh",
+		shell: options.shell ?? "/bin/sh",
 		shellArgs: [],
 		timeoutMs: options.timeoutMs,
 	};

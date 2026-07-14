@@ -1,4 +1,7 @@
-import type { AtelierDocumentsApi } from "@opral/atelier";
+import type {
+	AtelierDocumentsApi,
+	AtelierSessionStateStore,
+} from "@opral/atelier";
 import type { Lix } from "@/lib/lix-types";
 import { qb } from "@/lib/lix-kysely";
 import {
@@ -18,6 +21,10 @@ type DesktopWorkspaceBridge = Pick<
 type ConnectAtelierWorkspaceOptions = {
 	readonly documents: AtelierDocumentsApi;
 	readonly lix: Lix;
+	readonly sessionStateStore?: Pick<
+		AtelierSessionStateStore,
+		"getSnapshot" | "subscribe"
+	>;
 	readonly workspace: DesktopWorkspaceBridge;
 	readonly onError?: (error: unknown) => void;
 	readonly openWorkspacePath?: (path: string) => Promise<void>;
@@ -58,13 +65,15 @@ export function connectAtelierWorkspace(
 	const unsubscribeCloseFile = workspace.onCloseFile(() => {
 		void documents.closeActive().catch(reportError);
 	});
-	const uiStateEvents = options.lix.observe(
-		`SELECT value
-		 FROM lix_key_value_by_branch
-		 WHERE key = $1
-		   AND lixcol_branch_id = $2`,
-		["atelier_ui_state", "global"],
-	);
+	const uiStateEvents = options.sessionStateStore
+		? null
+		: options.lix.observe(
+				`SELECT value
+			 FROM lix_key_value_by_branch
+			 WHERE key = $1
+			   AND lixcol_branch_id = $2`,
+				["atelier_ui_state", "global"],
+			);
 	const filePathEvents = options.lix.observe(
 		`SELECT id, path
 		 FROM lix_file
@@ -79,7 +88,10 @@ export function connectAtelierWorkspace(
 			.catch(() => undefined)
 			.then(async () => {
 				if (abortController.signal.aborted) return;
-				const state = await readAtelierDocumentSessionState(options.lix);
+				const state = await readAtelierDocumentSessionState(
+					options.lix,
+					options.sessionStateStore?.getSnapshot(),
+				);
 				if (abortController.signal.aborted) return;
 				await workspace.setSessionOpenFilePaths({
 					filePaths: state.openPaths.map((path) => path.replace(/^\/+/, "")),
@@ -96,8 +108,11 @@ export function connectAtelierWorkspace(
 			persistSessionDocuments();
 		}
 	};
-	void watchSessionEvents(uiStateEvents).catch(reportError);
+	if (uiStateEvents) void watchSessionEvents(uiStateEvents).catch(reportError);
 	void watchSessionEvents(filePathEvents).catch(reportError);
+	const unsubscribeSessionState = options.sessionStateStore?.subscribe(
+		persistSessionDocuments,
+	);
 
 	const ready = (async () => {
 		const pendingOpenFiles = await workspace.consumePendingOpenFiles();
@@ -114,13 +129,25 @@ export function connectAtelierWorkspace(
 			return;
 		}
 
-		if (await readCurrentAtelierDocumentPath(options.lix)) return;
+		if (
+			await readCurrentAtelierDocumentPath(
+				options.lix,
+				options.sessionStateStore?.getSnapshot(),
+			)
+		)
+			return;
 		const recent = await workspace.getMostRecentMarkdownFile();
 		if (abortController.signal.aborted || !recent?.path) return;
 
 		// The filesystem scan is asynchronous. Re-read the persisted source of
 		// truth so a user open that landed meanwhile wins over the fallback.
-		if (await readCurrentAtelierDocumentPath(options.lix)) return;
+		if (
+			await readCurrentAtelierDocumentPath(
+				options.lix,
+				options.sessionStateStore?.getSnapshot(),
+			)
+		)
+			return;
 		if (!abortController.signal.aborted) {
 			await openWorkspacePath(recent.path);
 		}
@@ -135,8 +162,9 @@ export function connectAtelierWorkspace(
 		dispose: () => {
 			if (abortController.signal.aborted) return;
 			abortController.abort();
-			uiStateEvents.close();
+			uiStateEvents?.close();
 			filePathEvents.close();
+			unsubscribeSessionState?.();
 			unsubscribeNewFile();
 			unsubscribeCloseFile();
 		},
