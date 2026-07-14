@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
+import type { AtelierSessionUiState } from "@opral/atelier";
 import { LocalFilesystem, openLix } from "@lix-js/sdk";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -871,6 +872,21 @@ type ActiveCentralDocumentIdentity = {
 	readonly filePath: string;
 };
 
+async function atelierSessionStateFromUi(
+	page: Page,
+): Promise<AtelierSessionUiState | null> {
+	return await page.evaluate(() => {
+		const e2e = (
+			window as Window & {
+				__flashtypeE2E?: {
+					getAtelierSessionState: () => AtelierSessionUiState | null;
+				};
+			}
+		).__flashtypeE2E;
+		return e2e?.getAtelierSessionState() ?? null;
+	});
+}
+
 async function expectActiveCentralDocumentIdentityForPath(
 	page: Page,
 	appPath: string,
@@ -904,73 +920,34 @@ async function expectActiveCentralDocumentIdentity(
 async function activeCentralDocumentIdentityFromUi(
 	page: Page,
 ): Promise<ActiveCentralDocumentIdentity | null> {
-	return await page.evaluate(async () => {
-		const result = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["atelier_ui_state", "global"],
-		});
-		const state = result?.rows?.[0]?.[0] as
-			| {
-					panels?: {
-						central?: {
-							activeInstance?: string | null;
-							views?: Array<{
-								instance?: unknown;
-								kind?: unknown;
-								state?: { fileId?: unknown; filePath?: unknown };
-							}>;
-						};
-					};
-			  }
-			| undefined;
-		const central = state?.panels?.central;
-		const views = central?.views ?? [];
-		const active =
-			views.find((view) => view.instance === central?.activeInstance) ??
-			views[0];
-		const instance = active?.instance;
-		const kind = active?.kind;
-		const fileId = active?.state?.fileId;
-		const filePath = active?.state?.filePath;
-		if (
-			typeof instance !== "string" ||
-			typeof kind !== "string" ||
-			typeof fileId !== "string" ||
-			typeof filePath !== "string"
-		) {
-			return null;
-		}
-		return { instance, kind, fileId, filePath };
-	});
+	const state = await atelierSessionStateFromUi(page);
+	const central = state?.panels.central;
+	const views = central?.views ?? [];
+	const active =
+		views.find((view) => view.instance === central?.activeInstance) ?? views[0];
+	const instance = active?.instance;
+	const kind = active?.kind;
+	const fileId = active?.state?.fileId;
+	const filePath = active?.state?.filePath;
+	if (
+		typeof instance !== "string" ||
+		typeof kind !== "string" ||
+		typeof fileId !== "string" ||
+		typeof filePath !== "string"
+	) {
+		return null;
+	}
+	return { instance, kind, fileId, filePath };
 }
 
 async function activeCentralFilePathFromUi(page: Page): Promise<string | null> {
-	return await page.evaluate(async () => {
-		const result = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["atelier_ui_state", "global"],
-		});
-		const state = result?.rows?.[0]?.[0] as
-			| {
-					panels?: {
-						central?: {
-							activeInstance?: string | null;
-							views?: Array<{
-								instance?: string;
-								state?: { filePath?: unknown };
-							}>;
-						};
-					};
-			  }
-			| undefined;
-		const central = state?.panels?.central;
-		const views = central?.views ?? [];
-		const active =
-			views.find((view) => view.instance === central?.activeInstance) ??
-			views[0];
-		const filePath = active?.state?.filePath;
-		return typeof filePath === "string" ? filePath : null;
-	});
+	const state = await atelierSessionStateFromUi(page);
+	const central = state?.panels.central;
+	const views = central?.views ?? [];
+	const active =
+		views.find((view) => view.instance === central?.activeInstance) ?? views[0];
+	const filePath = active?.state?.filePath;
+	return typeof filePath === "string" ? filePath : null;
 }
 
 async function expectActiveEditorRevisionState(
@@ -996,113 +973,66 @@ async function expectSingleCentralDocumentSlot(page: Page): Promise<void> {
 }
 
 async function documentSlotViolationsFromUi(page: Page): Promise<string[]> {
-	return await page.evaluate(async () => {
-		const result = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["atelier_ui_state", "global"],
-		});
-		type ViewState = {
-			readonly fileId?: unknown;
-		};
-		type View = {
-			readonly instance?: unknown;
-			readonly kind?: unknown;
-			readonly state?: ViewState;
-		};
-		type Panel = {
-			readonly activeInstance?: unknown;
-			readonly views?: View[];
-		};
-		const state = result?.rows?.[0]?.[0] as
-			| {
-					panels?: {
-						left?: Panel;
-						central?: Panel;
-						right?: Panel;
-					};
-			  }
-			| undefined;
-		const panels = state?.panels ?? {};
-		const violations: string[] = [];
-		const isDocumentView = (view: View): boolean => {
-			const fileId = view.state?.fileId;
-			return (
-				typeof view.kind === "string" &&
-				typeof view.instance === "string" &&
-				typeof fileId === "string" &&
-				view.instance === `${view.kind}:${fileId}`
-			);
-		};
-		for (const side of ["left", "right"] as const) {
-			const documentViews = panels[side]?.views?.filter(isDocumentView) ?? [];
-			if (documentViews.length > 0) {
-				violations.push(`${side} has ${documentViews.length} document view(s)`);
-			}
+	const panels = (await atelierSessionStateFromUi(page))?.panels;
+	const violations: string[] = [];
+	const isDocumentView = (
+		view: AtelierSessionUiState["panels"]["central"]["views"][number],
+	): boolean => {
+		const fileId = view.state?.fileId;
+		return (
+			typeof view.kind === "string" &&
+			typeof view.instance === "string" &&
+			typeof fileId === "string" &&
+			view.instance === `${view.kind}:${fileId}`
+		);
+	};
+	for (const side of ["left", "right"] as const) {
+		const documentViews = panels?.[side].views.filter(isDocumentView) ?? [];
+		if (documentViews.length > 0) {
+			violations.push(`${side} has ${documentViews.length} document view(s)`);
 		}
-		const central = panels.central;
-		const centralViews = central?.views ?? [];
-		if (centralViews.length > 1) {
-			violations.push(`central has ${centralViews.length} views`);
-		}
-		const centralView = centralViews[0];
-		if (centralView && !isDocumentView(centralView)) {
-			violations.push("central view is not a document view");
-		}
-		if (
-			centralView &&
-			typeof centralView.instance === "string" &&
-			central?.activeInstance !== centralView.instance
-		) {
-			violations.push("central document view is not active");
-		}
-		return violations;
-	});
+	}
+	const central = panels?.central;
+	const centralViews = central?.views ?? [];
+	if (centralViews.length > 1) {
+		violations.push(`central has ${centralViews.length} views`);
+	}
+	const centralView = centralViews[0];
+	if (centralView && !isDocumentView(centralView)) {
+		violations.push("central view is not a document view");
+	}
+	if (
+		centralView &&
+		typeof centralView.instance === "string" &&
+		central?.activeInstance !== centralView.instance
+	) {
+		violations.push("central document view is not active");
+	}
+	return violations;
 }
 
 async function activeEditorRevisionStateFromUi(page: Page): Promise<{
 	beforeCommitId: string | null;
 	afterCommitId: string | null;
 } | null> {
-	return await page.evaluate(async () => {
-		const result = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = $2",
-			params: ["atelier_ui_state", "global"],
-		});
-		const state = result?.rows?.[0]?.[0] as
-			| {
-					panels?: {
-						central?: {
-							activeInstance?: string | null;
-							views?: Array<{
-								instance?: string;
-								state?: {
-									beforeCommitId?: unknown;
-									afterCommitId?: unknown;
-								};
-							}>;
-						};
-					};
-			  }
-			| undefined;
-		const central = state?.panels?.central;
-		const views = central?.views ?? [];
-		const active =
-			views.find((view) => view.instance === central?.activeInstance) ??
-			views[0];
-		if (!active) return null;
-		const beforeCommitId = active.state?.beforeCommitId;
-		const afterCommitId = active.state?.afterCommitId;
-		return {
-			beforeCommitId:
-				typeof beforeCommitId === "string" && beforeCommitId.length > 0
-					? beforeCommitId
-					: null,
-			afterCommitId:
-				typeof afterCommitId === "string" && afterCommitId.length > 0
-					? afterCommitId
-					: null,
-		};
-	});
+	const state = await atelierSessionStateFromUi(page);
+	const central = state?.panels.central;
+	const views = central?.views ?? [];
+	const active =
+		views.find((view) => view.instance === central?.activeInstance) ?? views[0];
+	if (!active) return null;
+	const beforeCommitId = active.state?.beforeCommitId;
+	const afterCommitId = active.state?.afterCommitId;
+	return {
+		beforeCommitId:
+			typeof beforeCommitId === "string" && beforeCommitId.length > 0
+				? beforeCommitId
+				: null,
+		afterCommitId:
+			typeof afterCommitId === "string" && afterCommitId.length > 0
+				? afterCommitId
+				: null,
+	};
 }
 
 async function expectFileTreeStatuses(

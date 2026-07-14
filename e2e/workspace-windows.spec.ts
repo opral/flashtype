@@ -10,6 +10,7 @@ import {
 	fileTreeFile,
 	launchDevElectronAppWithArgs,
 	registerRendererConsoleLogging,
+	expectWorkspaceSessionOpenFilePaths,
 } from "./electron-test-utils";
 
 test("launching with multiple workspace args creates independent windows", async ({
@@ -1050,28 +1051,6 @@ async function expectWorkspaceSessionPaths(
 			}
 		})
 		.toEqual(workspacePaths);
-}
-
-async function expectWorkspaceSessionOpenFilePaths(
-	userDataDir: string,
-	workspacePath: string,
-	openFilePaths: string[],
-): Promise<void> {
-	await expect
-		.poll(async () => {
-			try {
-				const store = JSON.parse(
-					await readFile(workspaceSessionPath(userDataDir), "utf8"),
-				);
-				const workspace = Array.isArray(store.workspaces)
-					? store.workspaces.find((entry: any) => entry.path === workspacePath)
-					: undefined;
-				return workspace?.openFilePaths ?? null;
-			} catch {
-				return null;
-			}
-		})
-		.toEqual(openFilePaths);
 }
 
 function workspaceSessionPath(userDataDir: string): string {

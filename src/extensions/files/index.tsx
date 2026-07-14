@@ -25,7 +25,7 @@ import type {
 import type { Lix } from "@/lib/lix-types";
 import {
 	AGENT_TURN_COMMIT_RANGE_KEY,
-	isAgentTurnCommitRangeStore,
+	agentTurnCommitRangesFromValues,
 } from "@/shell/agent-turn-review-range";
 import {
 	getPendingExternalWriteReviewPaths,
@@ -1165,8 +1165,8 @@ function usePendingExternalWriteReviewPaths(
 		const reviewRangeEvents = lix.observe(
 			`SELECT value, lixcol_branch_id
 			 FROM lix_key_value_by_branch
-			 WHERE key = ?`,
-			[AGENT_TURN_COMMIT_RANGE_KEY],
+			 WHERE key LIKE ?`,
+			[`${AGENT_TURN_COMMIT_RANGE_KEY}%`],
 		);
 		const watchEvents = async (
 			events: ReturnType<Lix["observe"]>,
@@ -1202,16 +1202,15 @@ function usePendingExternalWriteReviewPaths(
 				.executeTakeFirst();
 			const activeBranchId =
 				typeof activeBranch?.value === "string" ? activeBranch.value : "";
-			const rangeRow = await qb(lix)
+			const rangeRows = await qb(lix)
 				.selectFrom("lix_key_value_by_branch")
 				.select("value")
-				.where("key", "=", AGENT_TURN_COMMIT_RANGE_KEY)
+				.where("key", "like", `${AGENT_TURN_COMMIT_RANGE_KEY}%`)
 				.where("lixcol_branch_id", "=", activeBranchId)
-				.limit(1)
-				.executeTakeFirst();
-			const ranges = isAgentTurnCommitRangeStore(rangeRow?.value)
-				? rangeRow.value.ranges
-				: [];
+				.execute();
+			const ranges = agentTurnCommitRangesFromValues(
+				rangeRows.map((row) => row.value),
+			);
 			if (ranges.length === 0) {
 				if (!cancelled) {
 					setPendingPaths((prev) => (prev.size === 0 ? prev : new Set()));

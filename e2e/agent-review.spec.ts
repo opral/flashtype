@@ -5,6 +5,7 @@ import path from "node:path";
 import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
+	expectWorkspaceSessionOpenFilePaths,
 	fileTreeFile,
 	launchDevElectronAppWithArgs,
 	registerRendererConsoleLogging,
@@ -20,6 +21,7 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 	const workspaceDir = testInfo.outputPath("workspace");
 	const welcomeFilePath = path.join(workspaceDir, "welcome.md");
 	const changelogFilePath = path.join(workspaceDir, "changelog.md");
+	const fallbackFilePath = path.join(workspaceDir, "fallback.md");
 	const createdFilePath = path.join(workspaceDir, "codex-created.md");
 	const fakeBinDir = testInfo.outputPath("fake-bin");
 	const fakeCodexCompletionPath = testInfo.outputPath("fake-codex-complete");
@@ -49,10 +51,15 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		registerRendererConsoleLogging(page);
 
 		await openWelcomeMarkdown(page);
-		await expectOpenFilePersisted(page, "/welcome.md");
+		await expectWorkspaceSessionOpenFilePaths(userDataDir, workspaceDir, [
+			"welcome.md",
+		]);
 
 		await closeElectronApp(electronApp);
 		electronApp = undefined;
+		const fallbackMarkdownTime = new Date(newestMarkdownTime.getTime() + 1_000);
+		await writeFile(fallbackFilePath, "# Fallback\n", "utf8");
+		await utimes(fallbackFilePath, fallbackMarkdownTime, fallbackMarkdownTime);
 
 		electronApp = await launchDevElectronAppWithArgs([], { userDataDir });
 		page = await electronApp.firstWindow();
@@ -84,7 +91,9 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 			.toContain("Codex created file");
 
 		await expect(
-			page.getByRole("group", { name: /^Review change 1 of \d+$/ }),
+			page.getByRole("group", {
+				name: /^Review change 1 of \d+(?:, \d+ remaining)?$/,
+			}),
 		).toBeVisible();
 		await expect(
 			page.getByRole("button", { name: "Keep change" }),
@@ -127,23 +136,6 @@ async function openWelcomeMarkdown(page: Page): Promise<void> {
 	await expect(
 		page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 	).toBeVisible();
-}
-
-async function expectOpenFilePersisted(
-	page: Page,
-	filePath: string,
-): Promise<void> {
-	await expect
-		.poll(async () => {
-			return await page.evaluate(async (key) => {
-				const result = await window.flashtypeDesktop?.lix.execute({
-					sql: "SELECT value FROM lix_key_value_by_branch WHERE key = $1 AND lixcol_branch_id = 'global'",
-					params: [key],
-				});
-				return JSON.stringify(result?.rows?.[0]?.[0] ?? null);
-			}, "atelier_ui_state");
-		})
-		.toContain(filePath);
 }
 
 async function writeFakeCodex(binDir: string): Promise<void> {

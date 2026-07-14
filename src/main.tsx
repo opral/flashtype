@@ -14,6 +14,7 @@ import {
 	createMemorySessionStateStore,
 	type AtelierInstance,
 	type AtelierExtensionRegistration,
+	type AtelierSessionUiState,
 } from "@opral/atelier";
 import "@opral/atelier/style.css";
 import "./index.css";
@@ -44,6 +45,14 @@ type WorkspaceRecovery = Awaited<
 		NonNullable<Window["flashtypeDesktop"]>["workspace"]["getRecovery"]
 	>
 >;
+
+declare global {
+	interface Window {
+		__flashtypeE2E?: {
+			getAtelierSessionState: () => AtelierSessionUiState | null;
+		};
+	}
+}
 
 const DEFAULT_OPEN_ATELIER_PANELS = ["left", "right"] as const;
 const DOCUMENT_OPEN_ATELIER_PANELS = [] as const;
@@ -87,6 +96,18 @@ export const AppRoot = () => {
 		[lix],
 	);
 	const atelierSessionStateStore = atelierSession.store;
+	useEffect(() => {
+		if (!import.meta.env.DEV) return;
+		const e2e = {
+			getAtelierSessionState: () => atelierSessionStateStore.getSnapshot(),
+		};
+		window.__flashtypeE2E = e2e;
+		return () => {
+			if (window.__flashtypeE2E === e2e) {
+				delete window.__flashtypeE2E;
+			}
+		};
+	}, [atelierSessionStateStore]);
 	const atelier = useMemo(
 		() =>
 			lix
