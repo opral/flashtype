@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1 - 2026-07-15
+
+- Updated the embedded Lix SDK to 0.8.3 for improved reliability and compatibility with the bundled Atelier workspace.
+
 ## 0.9.0 - 2026-07-14
 
 - Added frontmatter support to the Markdown editor, so YAML metadata is preserved and can be edited alongside document content.
