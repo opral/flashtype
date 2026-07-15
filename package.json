@@ -43,7 +43,7 @@
 		"@dnd-kit/utilities": "^3.2.2",
 		"@glideapps/glide-data-grid": "^6.0.3",
 		"@lix-js/html-diff": "^0.1.0",
-		"@lix-js/sdk": "0.8.2",
+		"@lix-js/sdk": "0.8.3",
 		"@pierre/trees": "1.0.0-beta.4",
 		"@radix-ui/react-dropdown-menu": "^2.1.16",
 		"@radix-ui/react-tooltip": "^1.2.8",
