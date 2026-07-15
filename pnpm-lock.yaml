@@ -32,8 +32,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@lix-js/sdk':
-        specifier: 0.8.2
-        version: 0.8.2
+        specifier: 0.8.3
+        version: 0.8.3
       '@opral/atelier':
         specifier: workspace:*
         version: link:submodule/atelier
@@ -1496,8 +1496,18 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
+  '@lix-js/sdk-darwin-arm64@0.8.3':
+    resolution: {integrity: sha512-tht5deqPDvbEgCQxw6/OPWz8Vp7EVYuuqbQESx2EY3qEjuo56dmARy49cpJBwGeXP/npXWWRvjTv7X7XsGGBlA==}
+    cpu: [arm64]
+    os: [darwin]
+
   '@lix-js/sdk-linux-arm64@0.8.2':
     resolution: {integrity: sha512-0atYrjXhgX/Vm8PMaLgmuz/JbBJadqrCL752s8eR0fSLrSLHhNngvG+Hfdxqt4W9yu0y52Oyiwi/PcgFUWzcqQ==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@lix-js/sdk-linux-arm64@0.8.3':
+    resolution: {integrity: sha512-ytVELrB4X3oWP2Cxu0KBrwPnXlSISup7/946eZWEBbOF9N5I8dIEw4aE5+MzBL72Tvrupa7ydZyKdCQuRNzyAA==}
     cpu: [arm64]
     os: [linux]
 
@@ -1506,13 +1516,26 @@ packages:
     cpu: [x64]
     os: [linux]
 
+  '@lix-js/sdk-linux-x64@0.8.3':
+    resolution: {integrity: sha512-K/jM/FG/TwxQftzWtTOKuxRf7N6OOJjINs4HLurxlNfhYWQANF4DClZHBHjriqmZYSlZH+Id4orNHRXlUtQwIA==}
+    cpu: [x64]
+    os: [linux]
+
   '@lix-js/sdk-win32-x64@0.8.2':
     resolution: {integrity: sha512-QHJh6aQE4FqZixzOlLbXSoe8oYOg4sRHJJTrD9gWajWlyZYZE0Bs38b7GS/EwNjhz5OQzQoiHsXp7P6ViRDcMQ==}
     cpu: [x64]
     os: [win32]
 
+  '@lix-js/sdk-win32-x64@0.8.3':
+    resolution: {integrity: sha512-w78WRWZ0JCyO7oIz1qtORnT+er0ySgr9FoF9/RMZE/Hn263HS8DL9tJxU69UDcMg+8qFv3rgOqHxEbfhPRpB9w==}
+    cpu: [x64]
+    os: [win32]
+
   '@lix-js/sdk@0.8.2':
     resolution: {integrity: sha512-R4ESto7SejuNIttxrxuSxSslJkPg8TXHbwZ6FI6z3Y8/gXUOBYdd9QpDDVbw8IifJpXgfZJITUTgwmmrxi5UZg==}
+
+  '@lix-js/sdk@0.8.3':
+    resolution: {integrity: sha512-eocYJKwdsOIYeT8CXDXKjSErIMC0j7IQHtp1p0uzkLzMAFw2pmDhMU9aBrscpcSUzQFWjIG/UnmiQ6wPy1s0zg==}
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -7762,13 +7785,25 @@ snapshots:
   '@lix-js/sdk-darwin-arm64@0.8.2':
     optional: true
 
+  '@lix-js/sdk-darwin-arm64@0.8.3':
+    optional: true
+
   '@lix-js/sdk-linux-arm64@0.8.2':
+    optional: true
+
+  '@lix-js/sdk-linux-arm64@0.8.3':
     optional: true
 
   '@lix-js/sdk-linux-x64@0.8.2':
     optional: true
 
+  '@lix-js/sdk-linux-x64@0.8.3':
+    optional: true
+
   '@lix-js/sdk-win32-x64@0.8.2':
+    optional: true
+
+  '@lix-js/sdk-win32-x64@0.8.3':
     optional: true
 
   '@lix-js/sdk@0.8.2':
@@ -7781,6 +7816,17 @@ snapshots:
       '@lix-js/sdk-linux-arm64': 0.8.2
       '@lix-js/sdk-linux-x64': 0.8.2
       '@lix-js/sdk-win32-x64': 0.8.2
+
+  '@lix-js/sdk@0.8.3':
+    dependencies:
+      '@bytecodealliance/jco-transpile': 0.4.2
+      '@bytecodealliance/preview2-shim': 0.19.0
+      fflate: 0.8.3
+    optionalDependencies:
+      '@lix-js/sdk-darwin-arm64': 0.8.3
+      '@lix-js/sdk-linux-arm64': 0.8.3
+      '@lix-js/sdk-win32-x64': 0.8.3
+      '@lix-js/sdk-linux-x64': 0.8.3
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
