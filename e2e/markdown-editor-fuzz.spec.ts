@@ -24,7 +24,7 @@ import {
 } from "../src/extensions/markdown/editor/markdown-editor-fuzz";
 import {
 	closeElectronApp,
-	ensureFilesHomeTabActive,
+	ensureFilesViewOpenInLeftPanel,
 	fileTreeFile,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
@@ -113,7 +113,7 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await ensureFilesHomeTabActive(page);
+		await ensureFilesViewOpenInLeftPanel(page);
 		const file = fileTreeFile(page, uiFuzzFilePath);
 		await expect(file).toBeVisible();
 		await file.click();

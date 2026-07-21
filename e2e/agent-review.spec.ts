@@ -4,7 +4,7 @@ import { chmod, mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
-	ensureFilesHomeTabActive,
+	ensureFilesViewOpenInLeftPanel,
 	expectWorkspaceSessionOpenFilePaths,
 	fileTreeFile,
 	launchDevElectronAppWithArgs,
@@ -101,7 +101,7 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		await expect(
 			page.getByRole("button", { name: "Undo change" }),
 		).toBeVisible();
-		await ensureFilesHomeTabActive(page);
+		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(fileTreeFile(page, "/changelog.md")).toHaveAttribute(
 			"data-item-git-status",
 			"modified",
@@ -127,7 +127,7 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 });
 
 async function openWelcomeMarkdown(page: Page): Promise<void> {
-	await ensureFilesHomeTabActive(page);
+	await ensureFilesViewOpenInLeftPanel(page);
 	const file = fileTreeFile(page, "/welcome.md");
 	await expect(file).toBeVisible();
 	await file.click();

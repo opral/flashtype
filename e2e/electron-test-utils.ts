@@ -75,20 +75,22 @@ export function registerRendererConsoleLogging(page: Page): void {
 	});
 }
 
-export async function ensureFilesHomeTabActive(page: Page): Promise<void> {
+export async function ensureFilesViewOpenInLeftPanel(
+	page: Page,
+): Promise<void> {
 	await waitForWorkspaceReady(page);
-	// The central panel is always browser-style tabs with the Files view as
-	// the pinned home tab (atelier's single central-tabs primitive); it no
-	// longer lives in the left side panel.
-	const filesTab = page
-		.locator('button[data-view-key="atelier_files"][data-pinned="true"]')
-		.first();
-	await expect(filesTab).toBeVisible();
-	if ((await filesTab.getAttribute("data-focused")) !== "true") {
-		// The pinned tab is excluded from drag-sorting, which marks it
-		// aria-disabled; force past Playwright's actionability check.
-		await filesTab.click({ force: true });
+	const leftPanel = page.locator("aside").first();
+	const filesTab = leftPanel.locator('[data-view-key="atelier_files"]').first();
+	const leftPanelToggle = page.getByLabel("Toggle left panel").first();
+
+	await expect(leftPanelToggle).toBeVisible();
+	if ((await leftPanelToggle.getAttribute("aria-pressed")) !== "true") {
+		await leftPanelToggle.click();
 	}
+
+	await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
+	await expect(filesTab).toBeVisible();
+	await filesTab.click();
 	await expect(filesTab).toHaveAttribute("data-focused", "true");
 }
 

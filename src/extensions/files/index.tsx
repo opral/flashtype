@@ -741,8 +741,7 @@ function FilesViewContent({
 					prev.filter((path) => path !== normalizedPath),
 				);
 				// Close by path so the file's view also closes when it is open in
-				// the background (the file tree lives in the pinned home tab, so
-				// the document view is rarely the active one during deletion).
+				// a background tab, not just when it is the active document.
 				context?.closeFileViews?.({
 					fileId,
 					filePath: normalizeFilePath(normalizedPath),

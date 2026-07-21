@@ -3,7 +3,7 @@ import type { ElectronApplication } from "playwright";
 import seedrandom from "seedrandom";
 import {
 	closeElectronApp,
-	ensureFilesHomeTabActive,
+	ensureFilesViewOpenInLeftPanel,
 	fileTreeFile,
 	fileTreeFiles,
 	launchDevElectronApp,
@@ -29,11 +29,11 @@ test("left files panel survives a seeded random file click tour", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await ensureFilesHomeTabActive(page);
-		// The workspace auto-opens the most recent markdown file; it now lives
-		// in a content tab beside the pinned Files home tab.
+		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(
-			page.locator('button[data-view-key="atelier_file"]').first(),
+			page.locator(
+				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]',
+			),
 		).toBeVisible();
 
 		const fileItems = fileTreeFiles(page);
@@ -61,9 +61,6 @@ test("left files panel survives a seeded random file click tour", async ({
 			const file = fileTreeFile(page, `/${treePath}`);
 
 			await test.step(`click ${index + 1}/${clickCount}: file index ${fileIndex}, delay ${delayMs}ms`, async () => {
-				// Opening a document activates its tab and hides the Files home
-				// tree, so return to the home tab before each tree click.
-				await ensureFilesHomeTabActive(page);
 				await file.click();
 				await expect(file).toHaveAttribute("data-item-selected", "true");
 				await expectActiveFileView(page, treePath);
@@ -146,7 +143,7 @@ test("deleting the active file closes the central file view", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await ensureFilesHomeTabActive(page);
+		await ensureFilesViewOpenInLeftPanel(page);
 
 		const file = fileTreeFile(page, "/welcome.md");
 		await expect(file).toBeVisible();
@@ -159,10 +156,7 @@ test("deleting the active file closes the central file view", async ({
 		).toBeVisible();
 		await expect(file).toHaveAttribute("data-item-selected", "true");
 
-		// Opening the document activated its tab; return to the Files home tab
-		// (the selection persists) to delete the file from the tree.
-		await ensureFilesHomeTabActive(page);
-		await expect(file).toHaveAttribute("data-item-selected", "true");
+		await file.click();
 		await file.focus();
 		await page.keyboard.press(deleteShortcut);
 
@@ -170,12 +164,7 @@ test("deleting the active file closes the central file view", async ({
 		await expect(
 			page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 		).toHaveCount(0);
-		// Closing the last content tab lands on the pinned Files home tab.
-		await expect(
-			page.locator(
-				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_files"]',
-			),
-		).toBeVisible();
+		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}
