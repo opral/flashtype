@@ -639,7 +639,8 @@ test("launching with multiple standalone markdown files creates one grouped tran
 			"false",
 		);
 		await groupedPage.getByLabel("Toggle left panel").click();
-		await fileTreeDirectory(groupedPage, "/standalone-markdown-alpha/").click();
+		// The active document's directory is auto-revealed (expanded), so its
+		// lix-backed and watched children are visible without clicking it.
 		await expect(
 			fileTreeFile(groupedPage, "/standalone-markdown-alpha/alpha.md"),
 		).toBeVisible();

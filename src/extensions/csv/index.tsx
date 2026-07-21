@@ -19,10 +19,6 @@ import type {
 	ExternalWriteReview,
 	ExternalWriteReviewData,
 } from "@/extension-runtime/external-write-review";
-import type {
-	CheckpointDiff,
-	CheckpointDiffFile,
-} from "@/extension-runtime/checkpoint-diff";
 import {
 	editorRevisionMode,
 	editorRevisionReviewId,
@@ -42,7 +38,6 @@ type CsvViewProps = {
 	readonly filePath?: string;
 	readonly isActiveView?: boolean;
 	readonly isPanelFocused?: boolean;
-	readonly checkpointDiff?: CheckpointDiff | null;
 	readonly beforeCommitId?: string | null;
 	readonly afterCommitId?: string | null;
 	readonly registerExternalWriteReview?: (
@@ -118,7 +113,6 @@ export function CsvView({
 	filePath,
 	isActiveView = true,
 	isPanelFocused = true,
-	checkpointDiff,
 	beforeCommitId,
 	afterCommitId,
 	registerExternalWriteReview,
@@ -132,7 +126,6 @@ export function CsvView({
 				filePath={filePath}
 				isActiveView={isActiveView}
 				isPanelFocused={isPanelFocused}
-				checkpointDiff={checkpointDiff}
 				beforeCommitId={beforeCommitId}
 				afterCommitId={afterCommitId}
 				registerExternalWriteReview={registerExternalWriteReview}
@@ -160,7 +153,6 @@ function CsvViewData({
 	fileId,
 	filePath,
 	fileRow,
-	checkpointDiff,
 	beforeCommitId,
 	afterCommitId,
 	registerExternalWriteReview,
@@ -179,7 +171,6 @@ function CsvViewData({
 				fileId={fileId}
 				filePath={filePath}
 				fileRow={fileRow}
-				checkpointDiff={checkpointDiff}
 				editorRevision={editorRevision}
 				{...props}
 			/>
@@ -218,7 +209,6 @@ function CsvHistoricalViewData({
 	fileId,
 	filePath,
 	fileRow,
-	checkpointDiff,
 	editorRevision,
 	...props
 }: Omit<CsvViewProps, "fileId"> & {
@@ -226,22 +216,17 @@ function CsvHistoricalViewData({
 	readonly fileRow?: CsvFileRow | undefined;
 	readonly editorRevision: EditorRevisionState;
 }) {
-	const checkpointDiffFile = useMemo(
-		() => checkpointDiffFileForRevision(checkpointDiff, fileId, editorRevision),
-		[checkpointDiff, editorRevision, fileId],
-	);
 	const beforeSnapshot = useHistoricalFileSnapshot(
 		fileId,
-		checkpointDiffFile ? null : editorRevision.beforeCommitId,
+		editorRevision.beforeCommitId,
 	);
 	const afterSnapshot = useHistoricalFileSnapshot(
 		fileId,
-		checkpointDiffFile ? null : editorRevision.afterCommitId,
+		editorRevision.afterCommitId,
 	);
 	const historicalSnapshotsLoaded =
-		Boolean(checkpointDiffFile) ||
-		((!editorRevision.beforeCommitId || beforeSnapshot.loaded) &&
-			(!editorRevision.afterCommitId || afterSnapshot.loaded));
+		(!editorRevision.beforeCommitId || beforeSnapshot.loaded) &&
+		(!editorRevision.afterCommitId || afterSnapshot.loaded);
 	const historicalFile = useMemo(
 		() =>
 			historicalSnapshotsLoaded
@@ -250,14 +235,12 @@ function CsvHistoricalViewData({
 						filePath,
 						fileRow,
 						revision: editorRevision,
-						checkpointDiffFile,
 						beforeSnapshot: beforeSnapshot.snapshot,
 						afterSnapshot: afterSnapshot.snapshot,
 					})
 				: null,
 		[
 			beforeSnapshot.snapshot,
-			checkpointDiffFile,
 			editorRevision,
 			fileId,
 			filePath,
@@ -670,39 +653,17 @@ function visibleHistoricalSnapshot(
 	};
 }
 
-function checkpointDiffFileForRevision(
-	checkpointDiff: CheckpointDiff | null | undefined,
-	fileId: string,
-	revision: EditorRevisionState,
-): CheckpointDiffFile | null {
-	if (!checkpointDiff) return null;
-	return (
-		checkpointDiff.files.find((file) => {
-			const afterCommitId = checkpointDiff.afterIsActiveHead
-				? null
-				: file.afterCommitId;
-			return (
-				file.fileId === fileId &&
-				file.beforeCommitId === revision.beforeCommitId &&
-				afterCommitId === revision.afterCommitId
-			);
-		}) ?? null
-	);
-}
-
 function buildHistoricalCsvFile(args: {
 	readonly fileId: string;
 	readonly filePath: string | undefined;
 	readonly fileRow: CsvFileRow | undefined;
 	readonly revision: EditorRevisionState;
-	readonly checkpointDiffFile: CheckpointDiffFile | null;
 	readonly beforeSnapshot: HistoricalFileSnapshotRow | undefined;
 	readonly afterSnapshot: HistoricalFileSnapshotRow | undefined;
 }): HistoricalCsvFile | null {
 	const mode = editorRevisionMode(args.revision);
 	if (mode === "editor") return null;
 	const path =
-		args.checkpointDiffFile?.path ??
 		args.afterSnapshot?.path ??
 		args.beforeSnapshot?.path ??
 		args.fileRow?.path ??
@@ -710,11 +671,9 @@ function buildHistoricalCsvFile(args: {
 	if (!path) return null;
 
 	if (mode === "snapshot") {
-		const data = args.checkpointDiffFile
-			? args.checkpointDiffFile.afterData
-			: args.afterSnapshot
-				? decodeFileDataToBytes(args.afterSnapshot.data)
-				: null;
+		const data = args.afterSnapshot
+			? decodeFileDataToBytes(args.afterSnapshot.data)
+			: null;
 		if (!data) return null;
 		return {
 			fileRow: {
@@ -728,20 +687,16 @@ function buildHistoricalCsvFile(args: {
 		};
 	}
 
-	const beforeData =
-		args.checkpointDiffFile?.beforeData ??
-		(args.beforeSnapshot
-			? decodeFileDataToBytes(args.beforeSnapshot.data)
-			: EMPTY_FILE_DATA);
-	const afterData =
-		args.checkpointDiffFile?.afterData ??
-		(args.revision.afterCommitId
-			? args.afterSnapshot
-				? decodeFileDataToBytes(args.afterSnapshot.data)
-				: EMPTY_FILE_DATA
-			: args.fileRow
-				? decodeFileDataToBytes(args.fileRow.data)
-				: EMPTY_FILE_DATA);
+	const beforeData = args.beforeSnapshot
+		? decodeFileDataToBytes(args.beforeSnapshot.data)
+		: EMPTY_FILE_DATA;
+	const afterData = args.revision.afterCommitId
+		? args.afterSnapshot
+			? decodeFileDataToBytes(args.afterSnapshot.data)
+			: EMPTY_FILE_DATA
+		: args.fileRow
+			? decodeFileDataToBytes(args.fileRow.data)
+			: EMPTY_FILE_DATA;
 
 	return {
 		fileRow: {
@@ -752,14 +707,12 @@ function buildHistoricalCsvFile(args: {
 		review: {
 			fileId: args.fileId,
 			path,
-			reviewId:
-				args.checkpointDiffFile?.reviewId ??
-				editorRevisionReviewId({
-					fileId: args.fileId,
-					path,
-					beforeCommitId: args.revision.beforeCommitId,
-					afterCommitId: args.revision.afterCommitId,
-				}),
+			reviewId: editorRevisionReviewId({
+				fileId: args.fileId,
+				path,
+				beforeCommitId: args.revision.beforeCommitId,
+				afterCommitId: args.revision.afterCommitId,
+			}),
 			beforeCommitId: args.revision.beforeCommitId ?? "",
 			afterCommitId: args.revision.afterCommitId ?? "",
 			agentTurnRangeIds: [],

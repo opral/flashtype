@@ -326,10 +326,6 @@ function createDesktop(terminalApi: DesktopTerminalApi) {
 function createTerminalApi(): DesktopTerminalApi {
 	return {
 		create: vi.fn(),
-		generateCheckpointName: vi.fn().mockResolvedValue({
-			name: "Silly Markdown Pancake",
-			source: "codex",
-		}),
 		getPreferredAgent: vi.fn().mockResolvedValue({
 			preferredAgent: "claude",
 			autoLaunchAgent: null,

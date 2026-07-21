@@ -147,18 +147,6 @@ export type DesktopAgentPreferenceResult = {
 	agents: Record<DesktopAgentName, DesktopAgentStatus>;
 };
 
-export type DesktopGenerateCheckpointNamePayload = {
-	cwd?: string;
-	diffContext?: string;
-	shell?: string;
-	env?: Record<string, string>;
-};
-
-export type DesktopGenerateCheckpointNameResult = {
-	name: string;
-	source: "codex" | "claude" | "timestamp";
-};
-
 export type DesktopTerminalCreateResult =
 	| {
 			status: "created";
@@ -189,9 +177,6 @@ export type DesktopTerminalApi = {
 	create(
 		payload: DesktopTerminalCreatePayload,
 	): Promise<DesktopTerminalCreateResult>;
-	generateCheckpointName(
-		payload?: DesktopGenerateCheckpointNamePayload,
-	): Promise<DesktopGenerateCheckpointNameResult>;
 	getPreferredAgent(
 		payload?: DesktopAgentPreferencePayload,
 	): Promise<DesktopAgentPreferenceResult>;

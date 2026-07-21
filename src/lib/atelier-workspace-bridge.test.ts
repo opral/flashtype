@@ -306,6 +306,7 @@ function createHarness(
 	const documents: AtelierDocumentsApi = {
 		open: vi.fn(async () => {}),
 		startNew: vi.fn(async () => {}),
+		close: vi.fn(async () => {}),
 		closeActive: vi.fn(async () => {}),
 		closeAll: vi.fn(async () => {}),
 	};

@@ -30,6 +30,7 @@ import {
 	syncPostHogWorkspaceContext,
 } from "./lib/posthog-client";
 import { createFlashTypeAtelierExtensions } from "./extensions/atelier-host-extensions";
+import { createEphemeralFilesViewOptions } from "./lib/atelier-files-view";
 import {
 	createAgentPromptTelemetryHandler,
 	createAtelierTelemetryHandler,
@@ -79,9 +80,18 @@ export const AppRoot = () => {
 	const atelierExtensions = useMemo(
 		() =>
 			workspace
-				? createFlashTypeAtelierExtensions(workspace)
+				? createFlashTypeAtelierExtensions()
 				: ([] as readonly AtelierExtensionRegistration[]),
 		[workspace],
+	);
+	// Transient workspaces surface un-imported disk files through atelier's
+	// bundled Files view; persistent workspaces import everything up front.
+	const atelierFilesView = useMemo(
+		() =>
+			lix && workspace?.ephemeral === true
+				? createEphemeralFilesViewOptions(lix)
+				: undefined,
+		[lix, workspace?.ephemeral],
 	);
 	const handleAtelierEvent = useMemo(
 		() => (lix ? createAtelierTelemetryHandler(lix) : undefined),
@@ -116,7 +126,7 @@ export const AppRoot = () => {
 						// contract but intentionally hides native SDK internals.
 						lix: lix as unknown as AtelierInstance["lix"],
 						extensions: atelierExtensions,
-						filesViewMode: "sidebar",
+						...(atelierFilesView ? { filesView: atelierFilesView } : {}),
 						defaultOpenPanels: defaultOpenAtelierPanels,
 						sessionStateStore: atelierSessionStateStore,
 						onEvent: handleAtelierEvent,
@@ -125,6 +135,7 @@ export const AppRoot = () => {
 		[
 			lix,
 			atelierExtensions,
+			atelierFilesView,
 			defaultOpenAtelierPanels,
 			atelierSessionStateStore,
 			handleAtelierEvent,

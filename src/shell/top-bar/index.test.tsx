@@ -37,24 +37,9 @@ describe("TopBar", () => {
 		);
 	});
 
-	test("shows reviewing label after the active file name in checkpoint diff mode", () => {
-		render(
-			<TopBar
-				workspaceName="Workspace"
-				activeFileName="note.md"
-				isReviewingCheckpoint={true}
-			/>,
-		);
+	test("shows the active file name after the workspace title", () => {
+		render(<TopBar workspaceName="Workspace" activeFileName="note.md" />);
 
 		expect(screen.getByText("note.md")).toBeVisible();
-		expect(screen.getByText("Reviewing")).toBeVisible();
-	});
-
-	test("does not show reviewing label without an active file", () => {
-		render(
-			<TopBar workspaceName="Workspace" isReviewingCheckpoint={true} />,
-		);
-
-		expect(screen.queryByText("Reviewing")).toBeNull();
 	});
 });
