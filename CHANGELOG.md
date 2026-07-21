@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.0 - 2026-07-21
+
+- support for excalidraw files
+- colorful file tree explorer (upgraded atelier)
+
 ## 0.9.1 - 2026-07-15
 
 - Updated the embedded Lix SDK to 0.8.3 for improved reliability and compatibility with the bundled Atelier workspace.
