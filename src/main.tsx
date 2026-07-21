@@ -116,7 +116,6 @@ export const AppRoot = () => {
 						// contract but intentionally hides native SDK internals.
 						lix: lix as unknown as AtelierInstance["lix"],
 						extensions: atelierExtensions,
-						filesViewMode: "sidebar",
 						defaultOpenPanels: defaultOpenAtelierPanels,
 						sessionStateStore: atelierSessionStateStore,
 						onEvent: handleAtelierEvent,

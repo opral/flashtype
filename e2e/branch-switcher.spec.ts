@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
-	ensureFilesViewOpenInLeftPanel,
+	ensureFilesHomeTabActive,
 	ensureHistoryViewOpenInLeftPanel,
 	expectPathMissing,
 	fileTreeFile,
@@ -36,7 +36,7 @@ test("persistent workspace branch switching keeps sidebar and disk on the active
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await ensureFilesViewOpenInLeftPanel(page);
+		await ensureFilesHomeTabActive(page);
 		await expect(fileTreeFile(page, "/shared.md")).toBeVisible();
 		await expect(fileTreeFile(page, "/main-only.md")).toBeVisible();
 		await ensureHistoryViewOpenInLeftPanel(page);
@@ -48,7 +48,7 @@ test("persistent workspace branch switching keeps sidebar and disk on the active
 		await switchBranchFromUi(page, "Naming checkpoint...");
 		await expectCheckpointActive(page, "Naming checkpoint...");
 
-		await ensureFilesViewOpenInLeftPanel(page);
+		await ensureFilesHomeTabActive(page);
 		await writeDraftBranchState(page);
 		await expect(fileTreeFile(page, "/draft-only.md")).toBeVisible();
 		await expect(fileTreeFile(page, "/shared.md")).toBeVisible();
@@ -57,7 +57,7 @@ test("persistent workspace branch switching keeps sidebar and disk on the active
 
 		await switchBranchFromUi(page, "Current Checkpoint");
 		await expectCurrentCheckpointActive(page);
-		await ensureFilesViewOpenInLeftPanel(page);
+		await ensureFilesHomeTabActive(page);
 		await expect(fileTreeFile(page, "/shared.md")).toBeVisible();
 		await expect(fileTreeFile(page, "/main-only.md")).toBeVisible();
 		await expect(fileTreeFile(page, "/draft-only.md")).toHaveCount(0);
@@ -82,7 +82,7 @@ test("ephemeral workspace shows enabled branch UI", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
-		await ensureFilesViewOpenInLeftPanel(page);
+		await ensureFilesHomeTabActive(page);
 		await expect(fileTreeFile(page, "/note.md")).toBeVisible();
 		await expectPathMissing(path.join(workspaceDir, ".lix"));
 
@@ -96,7 +96,10 @@ test("ephemeral workspace shows enabled branch UI", async ({
 	}
 });
 
-test("checkpoint row click marks files without auto-opening a diff", async ({
+// Skipped: atelier removed its checkpoint/revisions runtime (opral/atelier#59),
+// so selecting a checkpoint row no longer resolves a diff or marks files. If
+// FlashType reimplements checkpoint-diff selection host-side, restore this.
+test.skip("checkpoint row click marks files without auto-opening a diff", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const workspaceDir = testInfo.outputPath("checkpoint-diff-workspace");
@@ -130,7 +133,7 @@ test("checkpoint row click marks files without auto-opening a diff", async ({
 			.toBe(setup.activeBranchId);
 		await expect(page.locator(".markdown-review-overlay")).toHaveCount(0);
 
-		await ensureFilesViewOpenInLeftPanel(page);
+		await ensureFilesHomeTabActive(page);
 		for (const [filePath, status] of [
 			["/added.md", "added"],
 			["/removed.md", "deleted"],
@@ -170,7 +173,10 @@ test("checkpoint row click marks files without auto-opening a diff", async ({
 	}
 });
 
-test("checkpoint diff selection keeps the active editor and toggles revision state", async ({
+// Skipped: atelier removed its checkpoint/revisions runtime (opral/atelier#59),
+// so checkpoint-diff selection and editor revision state are gone. If
+// FlashType reimplements checkpoint-diff selection host-side, restore this.
+test.skip("checkpoint diff selection keeps the active editor and toggles revision state", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const workspaceDir = testInfo.outputPath(
@@ -457,7 +463,7 @@ async function openMarkdownFileFromTree(
 	page: Page,
 	appPath: string,
 ): Promise<void> {
-	await ensureFilesViewOpenInLeftPanel(page);
+	await ensureFilesHomeTabActive(page);
 	const file = fileTreeFile(page, appPath);
 	await expect(file).toBeVisible();
 	await file.click();
@@ -923,8 +929,12 @@ async function activeCentralDocumentIdentityFromUi(
 	const state = await atelierSessionStateFromUi(page);
 	const central = state?.panels.central;
 	const views = central?.views ?? [];
+	// The pinned Files home tab ("central-home") is always the first central
+	// view; document identity lives on the content tabs beside it.
+	const contentViews = views.filter((view) => view.instance !== "central-home");
 	const active =
-		views.find((view) => view.instance === central?.activeInstance) ?? views[0];
+		views.find((view) => view.instance === central?.activeInstance) ??
+		contentViews[0];
 	const instance = active?.instance;
 	const kind = active?.kind;
 	const fileId = active?.state?.fileId;
@@ -944,8 +954,12 @@ async function activeCentralFilePathFromUi(page: Page): Promise<string | null> {
 	const state = await atelierSessionStateFromUi(page);
 	const central = state?.panels.central;
 	const views = central?.views ?? [];
+	// The pinned Files home tab ("central-home") is always the first central
+	// view; document identity lives on the content tabs beside it.
+	const contentViews = views.filter((view) => view.instance !== "central-home");
 	const active =
-		views.find((view) => view.instance === central?.activeInstance) ?? views[0];
+		views.find((view) => view.instance === central?.activeInstance) ??
+		contentViews[0];
 	const filePath = active?.state?.filePath;
 	return typeof filePath === "string" ? filePath : null;
 }
@@ -966,7 +980,7 @@ async function expectSingleCentralDocumentSlot(page: Page): Promise<void> {
 	await expect
 		.poll(async () => await documentSlotViolationsFromUi(page), {
 			message:
-				"document views should only exist as the single active central view",
+				"document views should only exist as the single active central content tab beside the pinned Files home",
 			timeout: 3000,
 		})
 		.toEqual([]);
@@ -994,12 +1008,21 @@ async function documentSlotViolationsFromUi(page: Page): Promise<string[]> {
 	}
 	const central = panels?.central;
 	const centralViews = central?.views ?? [];
-	if (centralViews.length > 1) {
-		violations.push(`central has ${centralViews.length} views`);
+	// The central panel is always tabs with the Files view pinned first as the
+	// home tab; documents open as content tabs beside it.
+	const homeView = centralViews[0];
+	if (!homeView || homeView.instance !== "central-home") {
+		violations.push("central home tab is not the first view");
 	}
-	const centralView = centralViews[0];
+	const contentViews = centralViews.filter(
+		(view) => view.instance !== "central-home",
+	);
+	if (contentViews.length > 1) {
+		violations.push(`central has ${contentViews.length} content views`);
+	}
+	const centralView = contentViews[0];
 	if (centralView && !isDocumentView(centralView)) {
-		violations.push("central view is not a document view");
+		violations.push("central content view is not a document view");
 	}
 	if (
 		centralView &&
@@ -1018,8 +1041,12 @@ async function activeEditorRevisionStateFromUi(page: Page): Promise<{
 	const state = await atelierSessionStateFromUi(page);
 	const central = state?.panels.central;
 	const views = central?.views ?? [];
+	// The pinned Files home tab ("central-home") is always the first central
+	// view; document identity lives on the content tabs beside it.
+	const contentViews = views.filter((view) => view.instance !== "central-home");
 	const active =
-		views.find((view) => view.instance === central?.activeInstance) ?? views[0];
+		views.find((view) => view.instance === central?.activeInstance) ??
+		contentViews[0];
 	if (!active) return null;
 	const beforeCommitId = active.state?.beforeCommitId;
 	const afterCommitId = active.state?.afterCommitId;
@@ -1040,7 +1067,7 @@ async function expectFileTreeStatuses(
 	expected: Record<string, string | null>,
 	message: string,
 ): Promise<void> {
-	await ensureFilesViewOpenInLeftPanel(page);
+	await ensureFilesHomeTabActive(page);
 	await expect
 		.poll(async () => await fileTreeStatuses(page, Object.keys(expected)), {
 			message,

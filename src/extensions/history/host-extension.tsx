@@ -1,7 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { History } from "lucide-react";
 import type {
-	AtelierBuiltinExtensionId,
 	AtelierExtensionRegistration,
 	AtelierExtensionRuntime,
 	ExtensionManifest,
@@ -11,9 +10,11 @@ import type { Lix } from "@/lib/lix-types";
 import { HistoryView } from "./index";
 import manifestJson from "./history.manifest.json";
 
+// Atelier removed its bundled history extension (opral/atelier#59); the id is
+// now FlashType-owned but kept stable for persisted layouts.
 const manifest = {
 	...manifestJson,
-	id: "atelier_history" satisfies AtelierBuiltinExtensionId,
+	id: "atelier_history",
 } as ExtensionManifest;
 
 /**
@@ -44,11 +45,9 @@ function renderHistoryView(
 ) {
 	root.render(
 		<LixProvider lix={atelier.lix as unknown as Lix}>
-			<HistoryView
-				currentRevision={atelier.revisions.current}
-				showCheckpointDiff={atelier.revisions.show}
-				clearCheckpointDiff={atelier.revisions.clear}
-			/>
+			{/* Atelier's revisions runtime (checkpoint diff viewer) was removed
+			    upstream; the view degrades gracefully without those props. */}
+			<HistoryView />
 		</LixProvider>,
 	);
 }

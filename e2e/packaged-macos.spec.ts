@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import {
 	closeElectronApp,
-	ensureFilesViewOpenInLeftPanel,
+	ensureFilesHomeTabActive,
 	expectPathMissing,
 	fileTreeFiles,
 	launchPackagedElectronApp,
@@ -117,7 +117,7 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 		registerRendererConsoleLogging(page);
 
 		await expectPathMissing(path.join(workspaceDir, ".lix"));
-		await ensureFilesViewOpenInLeftPanel(page);
+		await ensureFilesHomeTabActive(page);
 		await expect(
 			page.locator(
 				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]',

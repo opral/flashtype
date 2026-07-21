@@ -41,11 +41,6 @@ describe("createFilesExtensionRegistration", () => {
 		const atelier = {
 			lix: { importFilesystemPaths },
 			documents: { open, closeActive },
-			revisions: {
-				current: { branchId: "checkpoint-1" },
-				show: vi.fn(),
-				clear: vi.fn(),
-			},
 		} as unknown as AtelierExtensionRuntime;
 		const registration = createFilesExtensionRegistration({
 			ephemeral: true,
@@ -77,7 +72,6 @@ describe("createFilesExtensionRegistration", () => {
 		expect("runtime" in registration).toBe(false);
 		const context = filesViewMock.mock.calls.at(-1)?.[0]
 			.context as ExtensionContext;
-		expect(context.checkpointBranchId).toBe("checkpoint-1");
 		await context.openFile?.({
 			panel: "central",
 			fileId: "watched:/docs/note.md",
@@ -118,11 +112,6 @@ describe("createFilesExtensionRegistration", () => {
 		const atelier = {
 			lix: { importFilesystemPaths },
 			documents: { open, closeActive: vi.fn().mockResolvedValue(undefined) },
-			revisions: {
-				current: null,
-				show: vi.fn(),
-				clear: vi.fn(),
-			},
 		} as unknown as AtelierExtensionRuntime;
 		const registration = createFilesExtensionRegistration({
 			ephemeral: true,

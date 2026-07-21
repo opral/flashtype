@@ -18,10 +18,15 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type {
-	AtelierRevisionSelection,
-	AtelierExtensionRuntime,
-} from "@opral/atelier";
+/**
+ * Atelier removed its checkpoint/revisions runtime (opral/atelier#59); these
+ * local types keep the optional diff-viewer wiring compilable for hosts that
+ * still provide one.
+ */
+type AtelierRevisionSelection = {
+	readonly branchId: string;
+};
+type ShowCheckpointDiff = (branchId: string) => Promise<void>;
 import type {
 	CheckpointDiff,
 	CheckpointDiffBranchRow,
@@ -38,7 +43,7 @@ type BranchRow = {
 
 type HistoryViewProps = {
 	readonly currentRevision?: AtelierRevisionSelection | null;
-	readonly showCheckpointDiff?: AtelierExtensionRuntime["revisions"]["show"];
+	readonly showCheckpointDiff?: ShowCheckpointDiff;
 	readonly clearCheckpointDiff?: () => void;
 };
 
@@ -143,7 +148,7 @@ function HistoryViewContent({
 	readonly branches: BranchRow[];
 	readonly activeBranchId: string;
 	readonly currentRevision?: AtelierRevisionSelection | null;
-	readonly showCheckpointDiff?: AtelierExtensionRuntime["revisions"]["show"];
+	readonly showCheckpointDiff?: ShowCheckpointDiff;
 	readonly clearCheckpointDiff?: () => void;
 }) {
 	const activeBranchRow =

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	closeElectronApp,
+	ensureFilesHomeTabActive,
 	expectPathMissing,
 	fileTreeFile,
 	launchDevElectronApp,
@@ -29,6 +30,7 @@ test("switching to an empty workspace closes the previous lix session", async ({
 		const page = await electronApp.firstWindow();
 		registerRendererConsoleLogging(page);
 
+		await ensureFilesHomeTabActive(page);
 		await expect(fileTreeFile(page, "/old-workspace-marker.md")).toBeVisible();
 		await expectPathMissing(path.join(firstWorkspaceDir, ".lix"));
 
@@ -40,7 +42,10 @@ test("switching to an empty workspace closes the previous lix session", async ({
 
 		await expect(page).toHaveTitle(path.basename(secondWorkspaceDir));
 		await expect(fileTreeFile(page, "/old-workspace-marker.md")).toHaveCount(0);
-		await expect(page.getByText("Start writing")).toBeVisible();
+		// The pinned Files home tab is the landing for an empty workspace now;
+		// the "Start writing" central empty state no longer exists.
+		await ensureFilesHomeTabActive(page);
+		await expect(page.getByRole("button", { name: "New file" })).toBeVisible();
 		await expectPathMissing(path.join(secondWorkspaceDir, ".lix"));
 	} finally {
 		await closeElectronApp(electronApp);

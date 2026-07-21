@@ -7,7 +7,7 @@ import { performance } from "node:perf_hooks";
 import seedrandom from "seedrandom";
 import {
 	closeElectronApp,
-	ensureFilesViewOpenInLeftPanel,
+	ensureFilesHomeTabActive,
 	fileTreeFile,
 	launchDevElectronApp,
 	registerRendererConsoleLogging,
@@ -451,7 +451,7 @@ function startLixTraceCapture(
 }
 
 async function openStressMarkdown(page: Page): Promise<void> {
-	await ensureFilesViewOpenInLeftPanel(page);
+	await ensureFilesHomeTabActive(page);
 	const file = fileTreeFile(page, stressAppPath);
 	await expect(file).toBeVisible();
 	await file.click();

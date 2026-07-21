@@ -67,6 +67,7 @@ export interface ExtensionContext {
 	readonly closeFileViews?: (args: {
 		readonly panel?: PanelSide;
 		readonly fileId: string;
+		readonly filePath?: string;
 	}) => void;
 	/** File id for the file currently active in the central editor panel. */
 	readonly activeFileId?: string | null;

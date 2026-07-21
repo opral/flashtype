@@ -642,7 +642,10 @@ describe("FilesView", () => {
 		await waitFor(() => {
 			expect(queryTreeItemByLabel(utils!, "hello.md")).toBeNull();
 		});
-		expect(closeFileViews).toHaveBeenCalledWith({ fileId: "file_1" });
+		expect(closeFileViews).toHaveBeenCalledWith({
+			fileId: "file_1",
+			filePath: "/hello.md",
+		});
 
 		utils!.unmount();
 		await lix.close();
@@ -707,7 +710,10 @@ describe("FilesView", () => {
 			});
 		});
 
-		expect(closeFileViews).toHaveBeenCalledWith({ fileId: "file_viewed" });
+		expect(closeFileViews).toHaveBeenCalledWith({
+			fileId: "file_viewed",
+			filePath: "/viewed.md",
+		});
 
 		utils!.unmount();
 		await lix.close();
@@ -1816,6 +1822,7 @@ describe("FilesView", () => {
 			});
 			expect(closeFileViews).toHaveBeenCalledWith({
 				fileId: "imported_loose",
+				filePath: "/loose.txt",
 			});
 		} finally {
 			utils?.unmount();

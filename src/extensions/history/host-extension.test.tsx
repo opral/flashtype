@@ -20,11 +20,8 @@ describe("createHistoryExtensionRegistration", () => {
 		const element = document.createElement("div");
 		document.body.append(element);
 		const controller = new AbortController();
-		const show = vi.fn(async () => null);
-		const clear = vi.fn();
 		const atelier = {
 			lix: {},
-			revisions: { current: null, show, clear },
 		} as unknown as AtelierExtensionRuntime;
 
 		let mounted: ReturnType<typeof registration.entry.mount>;
@@ -47,13 +44,6 @@ describe("createHistoryExtensionRegistration", () => {
 		expect(registration.manifest.id).toBe("atelier_history");
 		expect(registration.manifest.name).toBe("History");
 		expect(historyViewMock).toHaveBeenCalledOnce();
-		expect(historyViewMock.mock.calls.at(-1)?.[0]).toEqual(
-			expect.objectContaining({
-				currentRevision: null,
-				showCheckpointDiff: show,
-				clearCheckpointDiff: clear,
-			}),
-		);
 
 		await act(async () => {
 			mounted?.dispose?.();

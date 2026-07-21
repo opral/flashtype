@@ -80,10 +80,13 @@ function renderFilesView(
 				() => requestId === openRequest.current,
 			);
 		},
-		closeFileViews: () => {
+		closeFileViews: ({ filePath }) => {
+			if (filePath) {
+				void atelier.documents.close(filePath);
+				return;
+			}
 			void atelier.documents.closeActive();
 		},
-		checkpointBranchId: atelier.revisions.current?.branchId ?? null,
 		isPanelFocused: view.isFocused,
 		panelSide: view.panel,
 		viewInstance: view.instanceId,
