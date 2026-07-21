@@ -1,6 +1,3 @@
 ---
-type: minor
+type: patch
 ---
-
-- support for excalidraw files
-- colorful file tree explorer (upgraded atelier) 
