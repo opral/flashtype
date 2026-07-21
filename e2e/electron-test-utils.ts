@@ -92,40 +92,6 @@ export async function ensureFilesHomeTabActive(page: Page): Promise<void> {
 	await expect(filesTab).toHaveAttribute("data-focused", "true");
 }
 
-export async function ensureHistoryViewOpenInLeftPanel(
-	page: Page,
-): Promise<void> {
-	await waitForWorkspaceReady(page);
-	const leftPanel = page.locator("aside").first();
-	let historyTab = leftPanel
-		.locator('[data-view-key="atelier_history"]')
-		.first();
-	const leftPanelToggle = page.getByLabel("Toggle left panel").first();
-
-	if ((await historyTab.count()) === 0) {
-		await expect(leftPanelToggle).toBeVisible();
-		if ((await leftPanelToggle.getAttribute("aria-pressed")) !== "true") {
-			await leftPanelToggle.click();
-		}
-		await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
-		const addViewButton = leftPanel.getByLabel("Add view").first();
-		await expect(addViewButton).toBeVisible();
-		await addViewButton.click();
-		await page.getByRole("menuitem", { name: "History", exact: true }).click();
-		historyTab = leftPanel.locator('[data-view-key="atelier_history"]').first();
-	}
-
-	await expect(leftPanelToggle).toBeVisible();
-	if ((await leftPanelToggle.getAttribute("aria-pressed")) !== "true") {
-		await leftPanelToggle.click();
-	}
-
-	await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
-	await expect(historyTab).toBeVisible();
-	await historyTab.click();
-	await expect(historyTab).toHaveAttribute("data-focused", "true");
-}
-
 async function waitForWorkspaceReady(page: Page): Promise<void> {
 	await expect(page.locator(".atelier-panel-group")).toBeVisible();
 	await expect(page.getByLabel("Flashtype loading")).toHaveCount(0);

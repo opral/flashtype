@@ -1,5 +1,4 @@
 import type { Lix } from "@/lib/lix-types";
-import type { CheckpointDiff } from "./checkpoint-diff";
 
 /**
  * Persisted view state. Only include values that should survive reloads.
@@ -62,8 +61,6 @@ export interface ExtensionContext {
 		readonly trackDocumentOpenAttempt?: boolean;
 		readonly trackDocumentViewed?: boolean;
 	}) => void | Promise<void>;
-	readonly checkpointDiff?: CheckpointDiff | null;
-	readonly checkpointBranchId?: string | null;
 	readonly closeFileViews?: (args: {
 		readonly panel?: PanelSide;
 		readonly fileId: string;

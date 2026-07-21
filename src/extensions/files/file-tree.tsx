@@ -45,7 +45,6 @@ export type FileTreeProps = {
 	) => void;
 	readonly openDirectories?: ReadonlySet<string>;
 	readonly reviewPaths?: ReadonlySet<string>;
-	readonly reviewStatuses?: ReadonlyMap<string, ReviewGitStatus>;
 	readonly onOpenDirectoriesChange?: (paths: ReadonlySet<string>) => void;
 	readonly onCreateCommit?: (
 		request: FileTreeCreateRequest,
@@ -57,11 +56,9 @@ export type FileTreeProps = {
 	) => Promise<void> | void;
 };
 
-type ReviewGitStatus = GitStatusEntry["status"] | "recreated";
-
 type ReviewGitStatusEntry = {
 	readonly path: string;
-	readonly status: ReviewGitStatus;
+	readonly status: GitStatusEntry["status"];
 };
 
 type TreePathInfo = {
@@ -152,16 +149,6 @@ const FILE_TREE_UNSAFE_CSS = `
 		background: currentColor;
 	}
 
-	[data-item-git-status='recreated'] {
-		--trees-item-git-status-color: var(--trees-git-renamed-color);
-	}
-
-	[data-item-git-status='recreated'] > [data-item-section='git']::before {
-		content: "R";
-		font-size: var(--trees-font-size);
-		font-weight: var(--trees-font-weight-semibold);
-	}
-
 	[data-item-contains-git-change='true'] > [data-item-section='git'] {
 		color: var(--color-warning-600);
 		opacity: 0.75;
@@ -211,7 +198,6 @@ export function FileTree({
 	onSelectItem,
 	openDirectories,
 	reviewPaths,
-	reviewStatuses,
 	onOpenDirectoriesChange,
 	onCreateCommit,
 	onCreateCancel,
@@ -248,8 +234,8 @@ export function FileTree({
 		[openDirectoryTreePaths],
 	);
 	const reviewGitStatusEntries = useMemo(
-		() => buildReviewGitStatusEntries(reviewPaths, reviewStatuses, treeInput),
-		[reviewPaths, reviewStatuses, treeInput],
+		() => buildReviewGitStatusEntries(reviewPaths, treeInput),
+		[reviewPaths, treeInput],
 	);
 	const reviewGitStatusKey = useMemo(
 		() =>
@@ -343,9 +329,6 @@ export function FileTree({
 		if (info.source === "watched") {
 			return info.kind === "file";
 		}
-		if (info.source === "checkpoint-diff") {
-			return false;
-		}
 		return true;
 	};
 
@@ -368,9 +351,6 @@ export function FileTree({
 			return;
 		}
 		if (sourceInfo.source === "watched" && sourceInfo.kind !== "file") {
-			return;
-		}
-		if (sourceInfo.source === "checkpoint-diff") {
 			return;
 		}
 		void stateRef.current.onRenameCommit?.({
@@ -604,24 +584,12 @@ function buildTreeInput(
 
 function buildReviewGitStatusEntries(
 	reviewPaths: ReadonlySet<string> | undefined,
-	reviewStatuses: ReadonlyMap<string, ReviewGitStatus> | undefined,
 	treeInput: TreeInput,
 ): ReviewGitStatusEntry[] {
-	if (
-		(!reviewPaths || reviewPaths.size === 0) &&
-		(!reviewStatuses || reviewStatuses.size === 0)
-	) {
+	if (!reviewPaths || reviewPaths.size === 0) {
 		return [];
 	}
 	const entries: ReviewGitStatusEntry[] = [];
-	for (const [appPath, status] of reviewStatuses ?? []) {
-		const treePath = appPathToTreePath(appPath, false);
-		const info = treeInput.pathInfoByTreePath.get(treePath);
-		if (!info || info.kind !== "file" || info.createRequestId != null) {
-			continue;
-		}
-		entries.push({ path: treePath, status });
-	}
 	for (const appPath of reviewPaths ?? []) {
 		const treePath = appPathToTreePath(appPath, false);
 		const info = treeInput.pathInfoByTreePath.get(treePath);

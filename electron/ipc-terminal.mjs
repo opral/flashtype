@@ -17,7 +17,6 @@ import {
 import { checkAgentVersionPreflight } from "./agent-version-preflight.mjs";
 import { getPreferredAgent } from "./agent-status.mjs";
 import { refreshAgentExecutablePaths } from "./agent-executable-paths.mjs";
-import { generateCheckpointName } from "./checkpoint-name.mjs";
 
 const terminals = new Map();
 const ownerHooks = new Set();
@@ -180,23 +179,6 @@ export function registerTerminalIpc() {
 		);
 		return await getPreferredAgent({
 			cwd: payload?.cwd,
-			env: terminalEnv,
-			shell,
-			shellArgs,
-		});
-	});
-
-	ipcMain.handle("terminal:generateCheckpointName", async (_event, payload) => {
-		const shell = resolveShell(payload?.shell);
-		const shellArgs = resolveShellArgs(shell);
-		const terminalEnv = buildTerminalEnv(
-			process.env,
-			process.platform,
-			normalizeExtraEnv(payload?.env),
-		);
-		return await generateCheckpointName({
-			cwd: payload?.cwd,
-			diffContext: payload?.diffContext,
 			env: terminalEnv,
 			shell,
 			shellArgs,

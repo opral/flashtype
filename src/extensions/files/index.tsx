@@ -14,14 +14,8 @@ import {
 	type FileTreeCreateRequest,
 	type FileTreeRenameRequest,
 } from "./file-tree";
-import { qb, sql } from "@/lib/lix-kysely";
+import { qb } from "@/lib/lix-kysely";
 import type { FilesystemEntryRow } from "@/queries";
-import type {
-	CheckpointDiff,
-	CheckpointDiffBranchRow,
-	CheckpointDiffFile,
-	CheckpointDiffVisibleFile,
-} from "@/extension-runtime/checkpoint-diff";
 import type { Lix } from "@/lib/lix-types";
 import {
 	AGENT_TURN_COMMIT_RANGE_KEY,
@@ -31,7 +25,6 @@ import {
 	getPendingExternalWriteReviewPaths,
 	type ExternalWriteReviewFile,
 } from "@/shell/external-write-review-history";
-import { resolveCheckpointDiffForBranch } from "@/shell/checkpoint-diff";
 
 type FilesViewProps = {
 	readonly context?: ExtensionContext;
@@ -86,44 +79,11 @@ function FilesActiveFileLoader({
 			? activeFileRows[0].value
 			: null;
 	return (
-		<FilesCheckpointBranchesLoader
-			context={context}
-			lix={lix}
-			entries={entries}
-			activeFileId={activeFileId}
-		/>
-	);
-}
-
-function FilesCheckpointBranchesLoader({
-	context,
-	lix,
-	entries,
-	activeFileId,
-}: FilesViewProps & {
-	readonly lix: Lix;
-	readonly entries: FilesystemEntryRow[];
-	readonly activeFileId: string | null;
-}) {
-	// Keep the asynchronously resolved diff fresh when HEAD or checkpoint commits
-	// move while the same revision remains selected.
-	const checkpointBranches = useQuery<CheckpointDiffBranchRow>((queryLix) =>
-		qb(queryLix)
-			.selectFrom("lix_branch")
-			.select(["id", "name", "commit_id"])
-			.where(
-				() =>
-					sql`COALESCE(CAST(lix_branch.hidden AS TEXT), 'false') NOT IN ('true', '1', 't')`,
-			)
-			.orderBy("name", "asc"),
-	);
-	return (
 		<FilesRuntimeState
 			context={context}
 			lix={lix}
 			entries={entries}
 			activeFileId={activeFileId}
-			checkpointBranches={checkpointBranches}
 		/>
 	);
 }
@@ -133,18 +93,11 @@ function FilesRuntimeState({
 	lix,
 	entries,
 	activeFileId,
-	checkpointBranches,
 }: FilesViewProps & {
 	readonly lix: Lix;
 	readonly entries: FilesystemEntryRow[];
 	readonly activeFileId: string | null;
-	readonly checkpointBranches: readonly CheckpointDiffBranchRow[];
 }) {
-	const resolvedCheckpointDiff = useResolvedCheckpointDiff(
-		lix,
-		context?.checkpointBranchId ?? null,
-		checkpointBranches,
-	);
 	return (
 		<FilesViewContent
 			context={{
@@ -152,40 +105,11 @@ function FilesRuntimeState({
 				lix: context?.lix ?? lix,
 				setTabBadgeCount: context?.setTabBadgeCount ?? (() => {}),
 				activeFileId: context?.activeFileId ?? activeFileId,
-				checkpointDiff: context?.checkpointDiff ?? resolvedCheckpointDiff,
 			}}
 			lix={lix}
 			entries={entries}
 		/>
 	);
-}
-
-function useResolvedCheckpointDiff(
-	lix: Lix,
-	branchId: string | null,
-	checkpointBranches: readonly CheckpointDiffBranchRow[],
-): CheckpointDiff | null {
-	const [resolved, setResolved] = useState<{
-		readonly branchId: string;
-		readonly diff: CheckpointDiff | null;
-	} | null>(null);
-	useEffect(() => {
-		if (!branchId) return;
-		let cancelled = false;
-		void resolveCheckpointDiffForBranch({ lix, branchId })
-			.then((diff) => {
-				if (!cancelled) setResolved({ branchId, diff });
-			})
-			.catch((error: unknown) => {
-				if (cancelled) return;
-				console.warn("Failed to resolve checkpoint files", error);
-				setResolved({ branchId, diff: null });
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [branchId, checkpointBranches, lix]);
-	return branchId && resolved?.branchId === branchId ? resolved.diff : null;
 }
 
 function FilesViewContent({
@@ -217,42 +141,15 @@ function FilesViewContent({
 			return !upgradedWatchedFilePaths.has(filesystemEntryPathKey(entry));
 		});
 	}, [isEphemeralWorkspace, upgradedWatchedFilePaths, watchedEntries]);
-	const checkpointDiffEntries = useMemo(
-		() =>
-			checkpointDiffFilesystemEntries(
-				context?.checkpointDiff?.visibleFiles ??
-					context?.checkpointDiff?.files ??
-					[],
-			),
-		[context?.checkpointDiff?.files, context?.checkpointDiff?.visibleFiles],
+	const combinedEntries = useMemo(
+		() => unionFilesystemEntries(entries ?? [], visibleWatchedEntries),
+		[entries, visibleWatchedEntries],
 	);
-	const combinedEntries = useMemo(() => {
-		if (context?.checkpointDiff) return checkpointDiffEntries;
-		return unionFilesystemEntries(entries ?? [], visibleWatchedEntries);
-	}, [
-		context?.checkpointDiff,
-		entries,
-		visibleWatchedEntries,
-		checkpointDiffEntries,
-	]);
 	const nodes = useMemo(
 		() => buildFilesystemTree(combinedEntries),
 		[combinedEntries],
 	);
-	const pendingReviewPaths = usePendingExternalWriteReviewPaths(lix, nodes);
-	const checkpointReviewStatuses = useMemo(
-		() =>
-			new Map(
-				(context?.checkpointDiff?.files ?? []).map(
-					(file) => [normalizeFilePath(file.path), file.status] as const,
-				),
-			),
-		[context?.checkpointDiff?.files],
-	);
-	const reviewPaths = context?.checkpointDiff ? undefined : pendingReviewPaths;
-	const reviewStatuses = context?.checkpointDiff
-		? checkpointReviewStatuses
-		: undefined;
+	const reviewPaths = usePendingExternalWriteReviewPaths(lix, nodes);
 	const creatingRef = useRef(false);
 	const renamingRef = useRef(false);
 	const [pendingPaths, setPendingPaths] = useState<string[]>([]);
@@ -608,7 +505,6 @@ function FilesViewContent({
 	const handleRenameCommit = useCallback(
 		async (request: FileTreeRenameRequest) => {
 			if (renamingRef.current) return;
-			if (request.source === "checkpoint-diff") return;
 			const sourcePath =
 				request.kind === "directory"
 					? ensureDirectoryPath(request.sourcePath)
@@ -748,33 +644,17 @@ function FilesViewContent({
 
 	const handleOpenFile = useCallback(
 		(fileId: string, path: string) => {
-			const checkpointVisibleFile = context?.checkpointDiff
-				? (
-						context.checkpointDiff.visibleFiles ?? context.checkpointDiff.files
-					).find((file) => file.fileId === fileId)
-				: undefined;
 			setLocalSelection({
 				path,
 				fileId,
 				kind: "file",
-				source: checkpointVisibleFile ? "checkpoint-diff" : "lix",
+				source: "lix",
 			});
 			void context?.openFile?.({
 				panel: "central",
 				fileId,
 				filePath: path,
-				state: checkpointVisibleFile
-					? {
-							beforeCommitId: context?.checkpointDiff?.beforeCommitId,
-							afterCommitId: context?.checkpointDiff?.afterIsActiveHead
-								? null
-								: context?.checkpointDiff?.afterCommitId,
-						}
-					: undefined,
 				focus: false,
-				trackTelemetry: checkpointVisibleFile ? false : undefined,
-				trackDocumentOpenAttempt: checkpointVisibleFile ? false : undefined,
-				trackDocumentViewed: checkpointVisibleFile ? false : undefined,
 			});
 		},
 		[context, setLocalSelection],
@@ -817,7 +697,6 @@ function FilesViewContent({
 
 	const handleDeleteSelection = useCallback(async () => {
 		if (!selectedPath || !selectedKind) return;
-		if (selectedSource === "checkpoint-diff") return;
 		const normalizedPath =
 			selectedKind === "file"
 				? selectedPath
@@ -1131,7 +1010,6 @@ function FilesViewContent({
 					nodes={nodes}
 					openFileView={handleOpenFile}
 					reviewPaths={reviewPaths}
-					reviewStatuses={reviewStatuses}
 					onSelectItem={handleSelectItem}
 					selectedPath={selectedPath ?? undefined}
 					isPanelFocused={isPanelFocused}
@@ -1251,7 +1129,7 @@ function collectReviewableTreeFiles(
 	const files: ExternalWriteReviewFile[] = [];
 	const visit = (node: FilesystemTreeNode) => {
 		if (node.type === "file") {
-			if (node.source !== "watched" && node.source !== "checkpoint-diff") {
+			if (node.source !== "watched") {
 				files.push({ fileId: node.id, path: node.path });
 			}
 			return;
@@ -1500,42 +1378,6 @@ function unionFilesystemEntries(
 	return [...entriesByPath.values()].sort((left, right) =>
 		left.path.localeCompare(right.path),
 	);
-}
-
-function checkpointDiffFilesystemEntries(
-	files: readonly (CheckpointDiffFile | CheckpointDiffVisibleFile)[],
-): FilesystemEntryRow[] {
-	if (files.length === 0) return [];
-	const entriesByPath = new Map<string, FilesystemEntryRow>();
-	for (const file of files) {
-		const path = normalizeFilePath(file.path);
-		for (const directoryPath of ancestorDirectoryPathsForFilePath(path)) {
-			if (entriesByPath.has(directoryPath)) continue;
-			entriesByPath.set(directoryPath, {
-				id: `checkpoint-diff-dir:${directoryPath}`,
-				parent_id: null,
-				path: directoryPath,
-				display_name: leafNameFromPath(directoryPath),
-				kind: "directory",
-				source: "checkpoint-diff",
-			});
-		}
-		entriesByPath.set(path, {
-			id: file.fileId,
-			parent_id: null,
-			path,
-			display_name: leafNameFromPath(path),
-			kind: "file",
-			source: "checkpoint-diff",
-		});
-	}
-	return [...entriesByPath.values()];
-}
-
-function leafNameFromPath(path: string): string {
-	const normalized = path.endsWith("/") ? path.slice(0, -1) : path;
-	const segments = normalized.split("/").filter(Boolean);
-	return segments.at(-1) ?? "";
 }
 
 function filesystemEntryPathKey(entry: FilesystemEntryRow): string {

@@ -48,8 +48,6 @@ export function stripEditorRevisionState(
 	const {
 		[BEFORE_COMMIT_ID_STATE_KEY]: _beforeCommitId,
 		[AFTER_COMMIT_ID_STATE_KEY]: _afterCommitId,
-		checkpointDiffReviewId: _checkpointDiffReviewId,
-		checkpointDiffBranchId: _checkpointDiffBranchId,
 		...rest
 	} = state;
 	return Object.keys(rest).length > 0 ? rest : undefined;

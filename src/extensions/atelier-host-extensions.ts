@@ -4,7 +4,6 @@ import type {
 } from "@opral/atelier";
 import type { WorkspaceContext } from "@/extension-runtime/types";
 import { createFilesExtensionRegistration } from "./files/host-extension";
-import { createHistoryExtensionRegistration } from "./history/host-extension";
 import { FLASHTYPE_ATELIER_EXTENSIONS as TERMINAL_EXTENSIONS } from "./terminal/host-extensions";
 
 export const FLASHTYPE_FILES_EXTENSION_ID =
@@ -13,9 +12,5 @@ export const FLASHTYPE_FILES_EXTENSION_ID =
 export function createFlashTypeAtelierExtensions(
 	workspace: WorkspaceContext,
 ): readonly AtelierExtensionRegistration[] {
-	return [
-		createFilesExtensionRegistration(workspace),
-		createHistoryExtensionRegistration(),
-		...TERMINAL_EXTENSIONS,
-	];
+	return [createFilesExtensionRegistration(workspace), ...TERMINAL_EXTENSIONS];
 }

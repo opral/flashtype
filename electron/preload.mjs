@@ -103,8 +103,6 @@ const lix = {
 
 const terminal = {
 	create: (payload) => ipcRenderer.invoke("terminal:create", payload),
-	generateCheckpointName: (payload) =>
-		ipcRenderer.invoke("terminal:generateCheckpointName", payload),
 	getPreferredAgent: (payload) =>
 		ipcRenderer.invoke("terminal:getPreferredAgent", payload),
 	refreshAgentExecutablePaths: (payload) =>
