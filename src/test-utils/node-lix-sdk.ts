@@ -1,3 +1,4 @@
+import { FilesystemStorage } from "@lix-js/storage-filesystem";
 import { createRequire } from "node:module";
 import type {
 	BundledPluginArchive,
@@ -34,7 +35,7 @@ export async function openLix(options: OpenTestLixOptions = {}): Promise<Lix> {
 	const sdk = await loadSdk();
 	const sdkLix = await sdk.openLix(sdkOptions);
 	const localFilesystem =
-		sdkOptions.storage instanceof sdk.LocalFilesystem
+		sdkOptions.storage instanceof FilesystemStorage
 			? sdkOptions.storage
 			: undefined;
 	const lix = createTestLixAdapter(sdkLix, localFilesystem);
@@ -94,7 +95,7 @@ async function seedKeyValues(
 
 function createTestLixAdapter(
 	sdkLix: SdkLix,
-	localFilesystem?: InstanceType<SdkModule["LocalFilesystem"]>,
+	localFilesystem?: FilesystemStorage,
 ): Lix {
 	const observations = new Set<ObserveEvents>();
 	let closing = false;

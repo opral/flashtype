@@ -20,7 +20,7 @@ test("observe returns the current result snapshot until next is called", async (
 		const event = await withTimeout(events.next(), 2_000);
 
 		expect(event?.result.columns).toEqual(["value"]);
-		expect(event?.result.rows.map((row) => [row.get("value")])).toEqual([
+		expect(event?.result.rows.map((row) => [row["value"]])).toEqual([
 			["current"],
 		]);
 	} finally {

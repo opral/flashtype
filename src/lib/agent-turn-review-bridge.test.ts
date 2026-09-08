@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Lix, LixRuntimeQueryResult } from "@/lib/lix-types";
-import type { AtelierInstance } from "@opral/atelier";
+import type { AgentReviewHost as AtelierInstance } from "./agent-turn-review-bridge";
 
 import { createAgentTurnReviewHandler } from "./agent-turn-review-bridge";
 

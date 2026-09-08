@@ -656,7 +656,7 @@ async function activeCommitId(lix: Lix): Promise<string> {
 	const result = await lix.execute(
 		"SELECT lix_active_branch_commit_id() AS commit_id",
 	);
-	const commitId = result.rows[0]?.get("commit_id");
+	const commitId = result.rows[0]?.["commit_id"];
 	if (typeof commitId !== "string") {
 		throw new Error("Missing active commit id");
 	}

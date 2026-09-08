@@ -56,10 +56,10 @@ test("useQuery applies the first observe snapshot over the initial read", async 
 		sequence: 1,
 		mutationSequence: 1,
 		result: {
-			columns: ["value"],
+			columns: [{ name: "value", type: "jsonb" }],
 			rows: [
 				{
-					toObject: () => ({ value: "fresh" }),
+					value: "fresh",
 				},
 			] as unknown as ObserveEvent["result"]["rows"],
 			rowsAffected: 0,

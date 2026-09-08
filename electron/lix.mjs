@@ -1,12 +1,11 @@
+import { checkpointRepositoryMetadata } from "./initialize-checkpoint.mjs";
+import { createMemoryWorkspace } from "./memory-workspace.mjs";
 import { app } from "electron";
-import { LocalFilesystem, bundledPluginArchives, openLix } from "@lix-js/sdk";
+import { FilesystemStorage as LocalFilesystem } from "@lix-js/storage-filesystem";
+import { bundledPluginArchives, openLix } from "@lix-js/sdk";
 import path from "node:path";
 import { readFile, rm } from "node:fs/promises";
-import {
-	acquireWorkspaceLocalFilesystemOptions,
-	getWorkspace,
-	getWorkspaceLixDatabasePath,
-} from "./workspace.mjs";
+import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
 import {
 	clearWorkspaceLixOpenPendingSync,
 	markWorkspaceLixOpenPendingSync,
@@ -43,15 +42,18 @@ export async function ensureLixOpen(window) {
 							}),
 						);
 					}
-					const acquiredStorage =
-						await acquireWorkspaceLocalFilesystemOptions(window);
-					const storageOptions = acquiredStorage.options;
-					releaseStorageOptions = acquiredStorage.release;
-					const storage = new LocalFilesystem(storageOptions);
-					nativeLix = await openLix({
-						storage,
-					});
+					let storage;
+					if (tracksPersistentWorkspace) {
+						storage = new LocalFilesystem({ path: workspace.path });
+						nativeLix = await openLix({ storage });
+					} else {
+						nativeLix = await openLix();
+						storage = createMemoryWorkspace(nativeLix, workspace.path);
+					}
 					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
+					if (nativeLix.openReport?.initialized) {
+						await checkpointRepositoryMetadata(nativeLix);
+					}
 					if (tracksPersistentWorkspace) {
 						clearWorkspaceLixOpenPendingSync(userDataPath, workspace.path);
 					}
@@ -59,8 +61,9 @@ export async function ensureLixOpen(window) {
 						nativeLix,
 						storage,
 						workspace.path,
-						storageOptions.lixDir ??
-							path.join(workspace.path, LIX_DATABASE_DIR),
+						tracksPersistentWorkspace
+							? path.join(workspace.path, LIX_DATABASE_DIR)
+							: null,
 						crypto.randomUUID(),
 						releaseStorageOptions,
 					);
@@ -119,15 +122,15 @@ function pluginArchivePath(plugin) {
 
 async function readLixFileBytes(lix, path) {
 	const result = await lix.execute(
-		"SELECT data FROM lix_file WHERE path = $1",
+		"SELECT content FROM lix_file WHERE path = $1",
 		[path],
 	);
-	return result.rows[0]?.value("data").asBytes();
+	return result.rows[0]?.content;
 }
 
 async function writeLixFileBytes(lix, path, data) {
 	await lix.execute(
-		"INSERT INTO lix_file (path, data) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET data = excluded.data",
+		"INSERT INTO lix_file (path, content) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET content = excluded.content",
 		[path, data],
 	);
 }
@@ -330,7 +333,9 @@ function createDesktopLixHandle(
 	async function runQueued(operation) {
 		const release = await acquireOperationSlot();
 		try {
-			return await operation();
+			const result = await operation();
+			await storage.flush?.();
+			return result;
 		} finally {
 			release();
 		}
@@ -343,6 +348,15 @@ function createDesktopLixHandle(
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
 	}
+
+	const syncTimer = storage.flush
+		? setInterval(() => {
+				void runQueued(() => storage.syncDiskToLix()).catch((error) =>
+					console.error("Workspace file sync failed", error),
+				);
+			}, 750)
+		: null;
+	syncTimer?.unref();
 
 	return {
 		sessionId() {
@@ -379,6 +393,7 @@ function createDesktopLixHandle(
 					}
 					try {
 						await transaction.commit();
+						await storage.flush?.();
 					} finally {
 						transactionClosed = true;
 						releaseSlot();
@@ -397,6 +412,9 @@ function createDesktopLixHandle(
 				},
 			};
 		},
+		async executeBatch(statements) {
+			return await runQueued(() => nativeLix.executeBatch(statements));
+		},
 		async executeTransaction(statements) {
 			return await runQueued(async () => {
 				const transaction = await nativeLix.beginTransaction();
@@ -408,6 +426,7 @@ function createDesktopLixHandle(
 						]);
 					}
 					await transaction.commit();
+					await storage.flush?.();
 					return result;
 				} catch (error) {
 					await transaction.rollback();
@@ -455,8 +474,12 @@ function createDesktopLixHandle(
 			return await runQueued(() => storage.syncDiskToLix());
 		},
 		async close() {
+			if (syncTimer) clearInterval(syncTimer);
 			try {
-				await runQueued(() => nativeLix.close());
+				await runQueued(async () => {
+					await storage.flush?.();
+				});
+				await nativeLix.close();
 			} finally {
 				await releaseStorageOptions();
 			}

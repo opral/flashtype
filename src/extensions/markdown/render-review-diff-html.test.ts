@@ -851,14 +851,14 @@ async function fileIdByPath(lix: Lix, path: string): Promise<string> {
 	const result = await lix.execute("SELECT id FROM lix_file WHERE path = ?", [
 		path,
 	]);
-	const id = result.rows[0]?.get("id");
+	const id = result.rows[0]?.["id"];
 	if (typeof id !== "string") throw new Error(`Missing file id for ${path}`);
 	return id;
 }
 
 async function activeCommitId(lix: Lix): Promise<string> {
 	const result = await lix.execute("SELECT lix_active_branch_commit_id()");
-	const commitId = result.rows[0]?.get("lix_active_branch_commit_id()");
+	const commitId = result.rows[0]?.["lix_active_branch_commit_id()"];
 	if (typeof commitId !== "string") {
 		throw new Error("Missing active branch commit id");
 	}
@@ -896,7 +896,7 @@ async function historicalMarkdownBlocks(
 		historicalMarkdownNodeBlocks(
 			result.rows.map((row) => ({
 				start_commit_id: commitId,
-				snapshot_content: row.get("snapshot_content"),
+				snapshot_content: row["snapshot_content"],
 			})),
 			commitId,
 			markdown,

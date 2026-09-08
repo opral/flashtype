@@ -1,3 +1,4 @@
+import { createHistoryExtension } from "./history/host-extension";
 import type { AtelierExtensionRegistration } from "@opral/atelier";
 import { FLASHTYPE_ATELIER_EXTENSIONS as TERMINAL_EXTENSIONS } from "./terminal/host-extensions";
 
@@ -6,6 +7,11 @@ import { FLASHTYPE_ATELIER_EXTENSIONS as TERMINAL_EXTENSIONS } from "./terminal/
  * extension (transient workspaces feed it watched disk entries through
  * `createAtelier({ filesView })`).
  */
-export function createFlashTypeAtelierExtensions(): readonly AtelierExtensionRegistration[] {
-	return [...TERMINAL_EXTENSIONS];
+export function createFlashTypeAtelierExtensions(
+	options: { temporaryHistory?: boolean } = {},
+): readonly AtelierExtensionRegistration[] {
+	return [
+		...TERMINAL_EXTENSIONS,
+		createHistoryExtension(options.temporaryHistory === true),
+	];
 }

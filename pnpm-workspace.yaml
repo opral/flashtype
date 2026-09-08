@@ -4,6 +4,7 @@ packages:
 
 # Keep ProseMirror nominal types single-instance across FlashType and Atelier.
 overrides:
+  "@lix-js/sdk": 0.15.1
   prosemirror-model: 1.25.10
   prosemirror-transform: 1.12.0
   prosemirror-view: 1.42.0

@@ -1,4 +1,13 @@
-import type { AtelierInstance } from "@opral/atelier";
+export type AgentReviewHost = {
+	lix: Lix;
+	diff: {
+		open(options: {
+			beforeCommitId: string;
+			afterCommitId: string;
+			source?: { id: string; sessionId?: string; turnId?: string };
+		}): Promise<void>;
+	};
+};
 import type { Lix } from "@/lib/lix-types";
 import { buildFlashtypeActiveFilePrompt } from "@/shell/agent-launch";
 import { readCurrentAtelierDocumentPath } from "./atelier-document-state";
@@ -40,7 +49,7 @@ type AgentTurnEventHandler = (
  * active-document context on turn start and a diff review on turn stop.
  */
 export function createAgentTurnReviewHandler(
-	atelier: AtelierInstance,
+	atelier: AgentReviewHost,
 	options: AgentTurnReviewOptions = {},
 ) {
 	return composeAgentTurnEventHandlers(
@@ -50,7 +59,7 @@ export function createAgentTurnReviewHandler(
 }
 
 function createAgentTurnDiffHandler(
-	atelier: AtelierInstance,
+	atelier: AgentReviewHost,
 	fileCapture?: AgentTurnFileCaptureApi,
 ): AgentTurnEventHandler {
 	const activeTurns = new Map<string, ActiveAgentTurn>();
@@ -105,7 +114,7 @@ function createAgentTurnDiffHandler(
 }
 
 async function captureAgentTurnStart(
-	atelier: AtelierInstance,
+	atelier: AgentReviewHost,
 	fileCapture: AgentTurnFileCaptureApi | undefined,
 	captureId: string,
 ): Promise<string | null> {
@@ -123,7 +132,7 @@ async function captureAgentTurnStart(
 }
 
 async function importAgentTurnTouchedPaths(
-	atelier: AtelierInstance,
+	atelier: AgentReviewHost,
 	fileCapture: AgentTurnFileCaptureApi | undefined,
 	captureId: string,
 ): Promise<void> {
@@ -139,7 +148,7 @@ async function importAgentTurnTouchedPaths(
 }
 
 async function importAgentTurnPaths(
-	atelier: AtelierInstance,
+	atelier: AgentReviewHost,
 	paths: readonly string[],
 	kind: "baseline" | "touched",
 ): Promise<void> {
@@ -170,7 +179,7 @@ async function importAgentTurnPaths(
 }
 
 function createActiveDocumentContextHandler(
-	atelier: AtelierInstance,
+	atelier: AgentReviewHost,
 ): AgentTurnEventHandler {
 	return async (event) => {
 		if (event.phase !== "turn-start") return;
@@ -208,7 +217,7 @@ export function composeAgentTurnEventHandlers(
 }
 
 async function readSyncedActiveCommitId(
-	atelier: AtelierInstance,
+	atelier: AgentReviewHost,
 ): Promise<string | null> {
 	// The desktop bridge exposes filesystem synchronization in addition to the
 	// public Lix surface Atelier consumes.

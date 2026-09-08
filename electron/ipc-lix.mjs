@@ -73,6 +73,16 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		}
 	});
 
+	ipcMain.handle("lix:executeBatch", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
+		const results = await lix.executeBatch(
+			payload.statements.map((statement) => ({
+				sql: String(statement.sql),
+				params: normalizeParams(statement.params),
+			})),
+		);
+		return results.map(serializeQueryResult);
+	});
 	ipcMain.handle("lix:executeTransaction", async (event, payload) => {
 		const lix = await ensureLixOpenForEvent(event);
 		const statements = Array.isArray(payload?.statements)
@@ -691,6 +701,12 @@ function base64ToBytes(base64) {
 }
 
 function serializeQueryResult(result) {
+	result = {
+		...result,
+		columns: result.columns?.map((column) =>
+			typeof column === "string" ? column : column.name,
+		),
+	};
 	const rows = Array.isArray(result?.rows)
 		? result.rows.map((row) => serializeSqlRow(row, result.columns))
 		: [];

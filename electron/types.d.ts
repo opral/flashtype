@@ -46,9 +46,12 @@ export type DesktopObserveEvent = {
 };
 
 export type DesktopLixApi = {
+	executeBatch(payload: {
+		statements: ReadonlyArray<{ sql: string; params?: ReadonlyArray<unknown> }>;
+	}): Promise<SerializedQueryResult[]>;
 	open(): Promise<{ sessionId: string }>;
 	workspaceDir(): Promise<string>;
-	storageDir(): Promise<string>;
+	storageDir(): Promise<string | null>;
 	execute(payload: {
 		sql: string;
 		params?: ReadonlyArray<unknown>;
@@ -317,6 +320,7 @@ export type DesktopWorkspaceApi = {
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	disableTrackChanges(): Promise<DesktopWorkspace>;
+	initializeRepository(): Promise<DesktopWorkspace>;
 	resolveMarkdownImageSrc(payload: {
 		src: string;
 		sourceFilePath: string;

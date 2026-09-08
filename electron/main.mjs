@@ -510,8 +510,10 @@ function requestCloseFileFromApplicationMenu() {
 	window.webContents.send("workspace:closeFile");
 }
 
-async function toggleTrackChangesFromApplicationMenu(trackChanges) {
-	const window = getWorkspaceWindowForFileAction();
+async function toggleTrackChangesFromApplicationMenu(
+	trackChanges,
+	window = getWorkspaceWindowForFileAction(),
+) {
 	if (!window || window.isDestroyed() || !getWorkspace(window)) {
 		return null;
 	}
@@ -878,6 +880,12 @@ async function startWorkspaceLifecycle() {
 			source: "electron-workspace-recovery",
 		});
 	}
+	ipcMain.handle("workspace:initializeRepository", (event) =>
+		toggleTrackChangesFromApplicationMenu(
+			true,
+			BrowserWindow.fromWebContents(event.sender),
+		),
+	);
 	registerLixIpc((event) => BrowserWindow.fromWebContents(event.sender), {
 		disableTrackChanges: async (window) => {
 			const workspace = await disableWorkspaceTrackChanges(window);
@@ -1830,7 +1838,10 @@ function buildFileMenu() {
 			},
 			{
 				id: "track-changes",
-				label: "Track Changes",
+				label:
+					trackingWorkspace?.ephemeral === true
+						? "Initialize repository"
+						: "Track Changes",
 				type: "checkbox",
 				enabled: Boolean(trackingWorkspace),
 				checked: trackingWorkspace
@@ -1881,7 +1892,10 @@ function updateDockMenu() {
 			},
 			{
 				id: "dock-track-changes",
-				label: "Track Changes",
+				label:
+					trackingWorkspace?.ephemeral === true
+						? "Initialize repository"
+						: "Track Changes",
 				type: "checkbox",
 				enabled: Boolean(trackingWorkspace),
 				checked: trackingWorkspace

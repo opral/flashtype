@@ -6,7 +6,6 @@ import type {
 } from "@lix-js/sdk";
 import type {
 	Lix,
-	LixRow,
 	LixRuntimeQueryResult,
 	LixExecuteOptions,
 	ObserveEvent,
@@ -272,6 +271,12 @@ export async function openDesktopLix(): Promise<Lix> {
 	};
 
 	const lix = {
+		async executeBatch(statements: ReadonlyArray<TransactionStatement>) {
+			ensureOpen("executeBatch");
+			return (
+				await runQueued(() => desktop.lix.executeBatch({ statements }))
+			).map(toRuntimeQueryResult);
+		},
 		execute,
 		beginTransaction,
 		transaction,
@@ -338,84 +343,13 @@ function toRuntimeQueryResult(result: {
 	}>;
 }): LixRuntimeQueryResult {
 	return {
-		rows: result.rows.map((row) => new DesktopRow(result.columns, row)),
-		columns: result.columns,
+		rows: result.rows.map((row) =>
+			Object.fromEntries(
+				result.columns.map((column, index) => [column, row[index]]),
+			),
+		),
+		columns: result.columns.map((name) => ({ name, type: "null" as const })),
 		rowsAffected: result.rowsAffected ?? 0,
 		notices: result.notices ?? [],
 	};
-}
-
-type LixValueLike = ReturnType<LixRow["value"]>;
-type LixValueKind = LixValueLike["kind"];
-
-class DesktopRow implements LixRow {
-	constructor(
-		private readonly columns: string[],
-		private readonly values: unknown[],
-	) {}
-
-	get(column: string): unknown {
-		return this.value(column).toJS();
-	}
-
-	value(column: string): LixValueLike {
-		const index = this.columns.indexOf(column);
-		if (index === -1) {
-			throw new Error(
-				`Unknown column "${column}". Available columns: ${this.columns.join(", ")}`,
-			);
-		}
-		return new DesktopValue(this.values[index]);
-	}
-
-	toObject(): Record<string, unknown> {
-		return Object.fromEntries(
-			this.columns.map((column, index) => [
-				column,
-				new DesktopValue(this.values[index]).toJS(),
-			]),
-		);
-	}
-
-	toValueMap(): Record<string, LixValueLike> {
-		return Object.fromEntries(
-			this.columns.map((column, index) => [
-				column,
-				new DesktopValue(this.values[index]),
-			]),
-		);
-	}
-}
-
-class DesktopValue implements LixValueLike {
-	readonly kind: LixValueKind;
-
-	constructor(private readonly raw: unknown) {
-		this.kind = valueKind(raw);
-	}
-
-	toJS(): unknown {
-		if (this.raw instanceof Uint8Array) {
-			return new Uint8Array(this.raw);
-		}
-		return this.raw;
-	}
-
-	asBytes(): Uint8Array | undefined {
-		if (!(this.raw instanceof Uint8Array)) {
-			return undefined;
-		}
-		return new Uint8Array(this.raw);
-	}
-}
-
-function valueKind(value: unknown): LixValueKind {
-	if (value === null) return "null";
-	if (typeof value === "boolean") return "boolean";
-	if (typeof value === "string") return "text";
-	if (typeof value === "number") {
-		return Number.isSafeInteger(value) ? "integer" : "real";
-	}
-	if (value instanceof Uint8Array) return "blob";
-	return "json";
 }

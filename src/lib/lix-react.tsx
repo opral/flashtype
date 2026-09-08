@@ -144,11 +144,14 @@ export const useQueryTakeFirstOrThrow = <TResult,>(
 
 function queryResultToRows<TRow>(result: {
 	rows?: ReadonlyArray<{
-		toObject(): Record<string, unknown>;
+		[key: string]: unknown;
 	}>;
 }): TRow[] {
 	const rows = Array.isArray(result?.rows) ? result.rows : [];
-	return rows.map((row) => row.toObject() as TRow);
+	return rows.map(
+		(row) =>
+			(typeof row.toObject === "function" ? row.toObject() : row) as TRow,
+	);
 }
 
 function rowsEqual(a: unknown, b: unknown): boolean {

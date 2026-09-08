@@ -14,8 +14,8 @@ vi.mock("electron", () => ({
 	app: { getPath: () => "/tmp/flashtype-lix-lifecycle-user-data" },
 }));
 
-vi.mock("@lix-js/sdk", () => ({
-	LocalFilesystem: class FakeLocalFilesystem {
+vi.mock("@lix-js/storage-filesystem", () => ({
+	FilesystemStorage: class FakeLocalFilesystem {
 		constructor(options) {
 			mocks.storageOptions.push(options);
 		}
@@ -23,6 +23,9 @@ vi.mock("@lix-js/sdk", () => ({
 		async importPaths() {}
 		async syncDiskToLix() {}
 	},
+}));
+
+vi.mock("@lix-js/sdk", () => ({
 	bundledPluginArchives: async () => [],
 	openLix: mocks.openLix,
 }));
@@ -87,6 +90,12 @@ describe("Lix workspace lifecycle", () => {
 		mocks.openLix.mockImplementation(async () => {
 			const nativeLix = {
 				close: vi.fn(async () => {}),
+				execute: vi.fn(async () => ({
+					rows: [],
+					columns: [],
+					rowsAffected: 0,
+					notices: [],
+				})),
 			};
 			mocks.nativeLixHandles.push(nativeLix);
 			return nativeLix;
@@ -120,7 +129,8 @@ describe("Lix workspace lifecycle", () => {
 		await reopen;
 
 		expect(mocks.openLix).toHaveBeenCalledTimes(2);
-		expect(mocks.storageOptions).toEqual([persistentOptions, ephemeralOptions]);
+		expect(mocks.storageOptions).toEqual([{ path: "/workspace" }]);
+		expect(mocks.openLix).toHaveBeenNthCalledWith(2);
 	});
 });
 

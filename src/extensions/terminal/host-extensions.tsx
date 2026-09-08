@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import type {
 	AtelierExtensionRegistration,
+	AtelierDiffApi,
 	ExtensionManifest,
 	ExtensionRuntimeEntry,
 } from "@opral/atelier";
@@ -15,6 +16,19 @@ import { buildAgentLaunchArgsWithActiveFile } from "@/shell/agent-launch";
 import { TerminalView } from "./index";
 import claudeManifestJson from "./claude.manifest.json";
 import codexManifestJson from "./codex.manifest.json";
+
+const activeDiffs = new Set<AtelierDiffApi>();
+export const agentDiffBridge = {
+	async open(options: { beforeCommitId: string; afterCommitId: string }) {
+		const diff = [...activeDiffs].at(-1);
+		if (!diff) throw new Error("Agent review runtime is unavailable");
+		await diff.open({
+			base: { commitId: options.beforeCommitId },
+			target: { commitId: options.afterCommitId },
+			reveal: true,
+		});
+	},
+};
 
 const claudeManifest = claudeManifestJson as ExtensionManifest;
 const codexManifest = codexManifestJson as ExtensionManifest;
@@ -37,13 +51,20 @@ function createAgentExtension(args: {
 	readonly agent: "claude" | "codex";
 	readonly icon: typeof ClaudeIcon;
 }): AtelierExtensionRegistration {
-	const mount: ExtensionRuntimeEntry["mount"] = ({ element }) => {
+	const mount: ExtensionRuntimeEntry["mount"] = ({
+		element,
+		atelier: runtime,
+	}) => {
+		if (runtime.diff) activeDiffs.add(runtime.diff);
 		const root = createRoot(element);
 		root.render(
 			<TerminalView launchConfig={createAgentHostLaunchConfig(args.agent)} />,
 		);
 		return {
-			dispose: () => root.unmount(),
+			dispose: () => {
+				if (runtime.diff) activeDiffs.delete(runtime.diff);
+				root.unmount();
+			},
 		};
 	};
 	return {

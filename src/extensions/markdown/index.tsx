@@ -691,9 +691,7 @@ function historicalMarkdownBlocksQuery(
 		compile: () => ({ sql, parameters }),
 		execute: async () => {
 			const result = await lix.execute(sql, parameters);
-			return result.rows.map(
-				(row) => row.toObject() as HistoricalMarkdownNodeRow,
-			);
+			return result.rows.map((row) => row as HistoricalMarkdownNodeRow);
 		},
 	};
 }

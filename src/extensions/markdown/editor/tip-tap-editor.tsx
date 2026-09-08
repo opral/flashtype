@@ -445,9 +445,9 @@ function TipTapEditorLoadedContent({
 					continue;
 				}
 				const nextMarkdown = normalizePersistedMarkdown(
-					decodeMarkdownData(firstRow.get("data")),
+					decodeMarkdownData(firstRow["data"]),
 				);
-				const observedOriginKey = firstRow.get("origin_key");
+				const observedOriginKey = firstRow["origin_key"];
 				const currentMarkdown = buildNormalizedMarkdownFromEditor(editor);
 				if (!sawInitialSnapshot) {
 					sawInitialSnapshot = true;

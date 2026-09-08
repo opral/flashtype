@@ -143,7 +143,7 @@ function readResultValue(
 	const row = result.rows[0];
 	if (!row) return undefined;
 	if (Array.isArray(row)) {
-		const index = result.columns.indexOf(column);
+		const index = result.columns.findIndex((entry) => entry.name === column);
 		return index >= 0 ? row[index] : undefined;
 	}
 	if (typeof (row as { get?: unknown }).get === "function") {

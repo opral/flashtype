@@ -10,9 +10,9 @@ import {
 import { createRoot } from "react-dom/client";
 import {
 	Atelier,
-	createAtelier,
 	createMemorySessionStateStore,
-	type AtelierInstance,
+	type AtelierShellHandle,
+	type AtelierShellProps,
 	type AtelierExtensionRegistration,
 	type AtelierSessionUiState,
 } from "@opral/atelier";
@@ -29,6 +29,7 @@ import {
 	activatePostHogRecording,
 	syncPostHogWorkspaceContext,
 } from "./lib/posthog-client";
+import { agentDiffBridge } from "./extensions/terminal/host-extensions";
 import { createFlashTypeAtelierExtensions } from "./extensions/atelier-host-extensions";
 import { createEphemeralFilesViewOptions } from "./lib/atelier-files-view";
 import {
@@ -76,11 +77,13 @@ export const AppRoot = () => {
 	>(undefined);
 	const [isUpdateReady, setIsUpdateReady] = useState(false);
 	const [connectedAtelier, setConnectedAtelier] =
-		useState<AtelierInstance | null>(null);
+		useState<AtelierShellHandle | null>(null);
 	const atelierExtensions = useMemo(
 		() =>
 			workspace
-				? createFlashTypeAtelierExtensions()
+				? createFlashTypeAtelierExtensions({
+						temporaryHistory: workspace.ephemeral === true,
+					})
 				: ([] as readonly AtelierExtensionRegistration[]),
 		[workspace],
 	);
@@ -118,29 +121,7 @@ export const AppRoot = () => {
 			}
 		};
 	}, [atelierSessionStateStore]);
-	const atelier = useMemo(
-		() =>
-			lix
-				? createAtelier({
-						// FlashType's renderer-side Lix proxy implements Atelier's runtime
-						// contract but intentionally hides native SDK internals.
-						lix: lix as unknown as AtelierInstance["lix"],
-						extensions: atelierExtensions,
-						...(atelierFilesView ? { filesView: atelierFilesView } : {}),
-						defaultOpenPanels: defaultOpenAtelierPanels,
-						sessionStateStore: atelierSessionStateStore,
-						onEvent: handleAtelierEvent,
-					})
-				: null,
-		[
-			lix,
-			atelierExtensions,
-			atelierFilesView,
-			defaultOpenAtelierPanels,
-			atelierSessionStateStore,
-			handleAtelierEvent,
-		],
-	);
+	const [atelier, setAtelier] = useState<AtelierShellHandle | null>(null);
 
 	useEffect(() => {
 		void activatePostHogRecording();
@@ -323,9 +304,12 @@ export const AppRoot = () => {
 	useEffect(() => {
 		if (!lix || !atelier) return;
 		const handlePromptTelemetry = createAgentPromptTelemetryHandler(lix);
-		const handleAgentTurnReview = createAgentTurnReviewHandler(atelier, {
-			fileCapture: window.flashtypeDesktop?.workspace,
-		});
+		const handleAgentTurnReview = createAgentTurnReviewHandler(
+			{ lix, diff: agentDiffBridge },
+			{
+				fileCapture: window.flashtypeDesktop?.workspace,
+			},
+		);
 		const unsubscribe = window.flashtypeDesktop?.agentHooks?.onTurnEvent(
 			(event) => {
 				handlePromptTelemetry(event);
@@ -351,7 +335,7 @@ export const AppRoot = () => {
 			/>
 		);
 	}
-	if (!lix || !atelier) {
+	if (!lix) {
 		return (
 			<WorkspaceLoadingScreen
 				workspaceName={openingWorkspaceName ?? workspace.name}
@@ -362,8 +346,15 @@ export const AppRoot = () => {
 	return (
 		<Suspense fallback={<BootPlaceholder />}>
 			<div className="relative h-dvh">
-				<Atelier
-					instance={atelier}
+				<Atelier.Shell
+					ref={setAtelier}
+					lix={lix as unknown as AtelierShellProps["lix"]}
+					extensions={atelierExtensions}
+					filesView={atelierFilesView}
+					defaultOpenPanels={defaultOpenAtelierPanels}
+					sessionStateStore={atelierSessionStateStore}
+					onEvent={handleAtelierEvent}
+					onError={setError}
 					slots={{
 						navbarStart: isMacDesktop ? (
 							<span

@@ -25,6 +25,8 @@ const telemetry = {
 };
 
 const workspace = {
+	initializeRepository: () =>
+		ipcRenderer.invoke("workspace:initializeRepository"),
 	get: () => ipcRenderer.invoke("workspace:get"),
 	getRecovery: () => ipcRenderer.invoke("workspace:getRecovery"),
 	clearRecovery: () => ipcRenderer.invoke("workspace:clearRecovery"),
@@ -75,6 +77,7 @@ const workspace = {
 };
 
 const lix = {
+	executeBatch: (payload) => ipcRenderer.invoke("lix:executeBatch", payload),
 	open: () => ipcRenderer.invoke("lix:open"),
 	workspaceDir: () => ipcRenderer.invoke("lix:workspaceDir"),
 	storageDir: () => ipcRenderer.invoke("lix:storageDir"),
