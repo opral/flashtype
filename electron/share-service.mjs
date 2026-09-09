@@ -121,16 +121,16 @@ export function createShareService({
 		},
 		async publish(workspace, window, filePath, publish) {
 			const connection = await connectionFor(workspace);
-			const lix = await getLix(window);
-			const result = await lix.execute(
-				"SELECT id, content FROM lix_file WHERE path = $1",
-				[filePath],
-			);
-			if (!result.rows.length)
-				throw new Error(
-					"This file no longer exists. Open a file before sharing.",
-				);
 			if (publish) {
+				const lix = await getLix(window);
+				const result = await lix.execute(
+					"SELECT id, content FROM lix_file WHERE path = $1",
+					[filePath],
+				);
+				if (!result.rows.length)
+					throw new Error(
+						"This file no longer exists. Open a file before sharing.",
+					);
 				if (runtime.errors.has(workspace.path))
 					throw new Error("Reconnect sync from Share before publishing.");
 				const remote = await openRemote({

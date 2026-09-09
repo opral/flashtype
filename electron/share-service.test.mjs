@@ -116,3 +116,36 @@ test("publication waits for content equality, not just the same file id", async 
 	expect(reads).toBe(2);
 	expect(close).toHaveBeenCalledOnce();
 });
+
+test("unpublishing a deleted file does not require local content or sync", async () => {
+	const getLix = vi.fn(() => {
+		throw new Error("Local repository is unavailable");
+	});
+	const fetcher = vi.fn(async (_url, options) => {
+		expect(options.method).toBe("DELETE");
+		return Response.json({ published: false });
+	});
+	const service = createShareService({
+		runtime: {
+			origin: "https://lixray.test",
+			auth: { token: async () => "token", subject: async () => "owner" },
+			errors: new Map([["/workspace", "offline"]]),
+			store: {
+				getConnection: async () => ({
+					accountId: "owner",
+					repository: {
+						id: "11111111-1111-4111-8111-111111111111",
+						url: "https://lixray.test/lix/11111111-1111-4111-8111-111111111111",
+					},
+				}),
+			},
+		},
+		getLix,
+		fetcher,
+	});
+	expect(
+		await service.publish({ path: "/workspace" }, {}, "/deleted.md", false),
+	).toEqual({ published: false });
+	expect(getLix).not.toHaveBeenCalled();
+	expect(fetcher).toHaveBeenCalledOnce();
+});
