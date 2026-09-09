@@ -2,7 +2,10 @@ import { expect, test } from "@playwright/test";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { launchDevElectronApp } from "./electron-test-utils";
+import {
+	clickAndWaitForAppClose,
+	launchDevElectronApp,
+} from "./electron-test-utils";
 
 test("a stalled repository open offers deletion and recovers on restart", async () => {
 	const root = await mkdtemp(path.join(tmpdir(), "flashtype-timeout-e2e-"));
@@ -48,9 +51,7 @@ test("a stalled repository open offers deletion and recovers on restart", async 
 			process.on("unhandledRejection", record);
 			dialog.showErrorBox = (title, content) => record(title + ": " + content);
 		}, shutdownErrors);
-		const closed = app.waitForEvent("close");
-		await button.click();
-		await closed;
+		await clickAndWaitForAppClose(app, button);
 		expect(
 			await readFile(shutdownErrors, "utf8").catch((error) => {
 				if (error.code === "ENOENT") return "";
@@ -132,9 +133,10 @@ test("a previous native crash opens recovery without touching the damaged reposi
 			process.on("unhandledRejection", record);
 			dialog.showErrorBox = (title, content) => record(title + ": " + content);
 		}, shutdownErrors);
-		const closed = app.waitForEvent("close");
-		await page.getByRole("button", { name: "Delete .lix and restart" }).click();
-		await closed;
+		await clickAndWaitForAppClose(
+			app,
+			page.getByRole("button", { name: "Delete .lix and restart" }),
+		);
 		expect(
 			await readFile(shutdownErrors, "utf8").catch((error) => {
 				if (error.code === "ENOENT") return "";

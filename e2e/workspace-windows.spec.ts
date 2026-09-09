@@ -5,6 +5,7 @@ import { FilesystemStorage } from "@lix-js/storage-filesystem";
 import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+	clickAndWaitForAppClose,
 	closeElectronApp,
 	expectInstalledPluginArchives,
 	fileTreeDirectory,
@@ -449,9 +450,10 @@ test("Track Changes recovery screen deletes damaged tracking and restarts", asyn
 			page.getByText("Your normal files will not be deleted."),
 		).toBeVisible();
 
-		const closed = electronApp.waitForEvent("close");
-		await page.getByRole("button", { name: "Delete .lix and restart" }).click();
-		await closed;
+		await clickAndWaitForAppClose(
+			electronApp,
+			page.getByRole("button", { name: "Delete .lix and restart" }),
+		);
 		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
 			userDataDir,
 		});

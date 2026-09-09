@@ -82,6 +82,22 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 		registerRendererConsoleLogging(page);
 
 		await timeProfile(profile, "setup:open-file", null, async () => {
+			// This test measures durable history size after repeated changes.
+			// New folders start with in-memory history until initialized.
+			await expect(
+				page.getByRole("button", {
+					name: /Open checkpoint history|Review working changes/,
+				}),
+			).toBeVisible({ timeout: 30_000 });
+			await Promise.all([
+				page.waitForEvent("load"),
+				page.evaluate(() =>
+					window.flashtypeDesktop!.workspace.initializeRepository(),
+				),
+			]);
+			expect(
+				await page.evaluate(() => window.flashtypeDesktop!.lix.storageDir()),
+			).toBeTruthy();
 			await openStressMarkdown(page);
 			await installStressEditorHelpers(page);
 			// Mount the agent extension, as a real terminal turn does, so its
@@ -638,12 +654,26 @@ async function buildAgentReviewTimeoutMessage(args: {
 	const state = await readMarkdownState(args.page, args.diskPath).catch(
 		(error: unknown) => ({ stateReadError: String(error) }),
 	);
+	const syncDiagnostic = await args.page
+		.evaluate(() =>
+			Promise.race([
+				window.flashtypeDesktop!.lix.syncDiskToLix().then(
+					() => "completed",
+					(error: unknown) => String(error),
+				),
+				new Promise<string>((resolve) =>
+					setTimeout(() => resolve("still pending after 5 seconds"), 5_000),
+				),
+			]),
+		)
+		.catch((error: unknown) => String(error));
 	return [
 		"Timed out waiting for fake agent review controls.",
 		`operationIndex=${args.index}`,
 		`beforeAgentMarkdown=${JSON.stringify(args.beforeAgentMarkdown)}`,
 		`proposedMarkdown=${JSON.stringify(args.proposedMarkdown)}`,
 		`state=${JSON.stringify(state)}`,
+		`syncDiagnostic=${syncDiagnostic}`,
 		`cause=${
 			args.error instanceof Error ? args.error.message : String(args.error)
 		}`,

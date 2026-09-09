@@ -12,6 +12,29 @@ const rendererUrl = `http://127.0.0.1:${rendererPort}`;
 const electronCloseTimeoutMs = 5_000;
 export const devElectronHeadless = process.env.FLASHTYPE_HEADLESS ?? "1";
 
+export async function clickAndWaitForAppClose(
+	app: ElectronApplication,
+	button: Locator,
+): Promise<void> {
+	// On Linux, intentional app exit can close the page before Playwright
+	// acknowledges the click. Still require app closure and all recovery checks.
+	const closed = app.waitForEvent("close");
+	await Promise.all([
+		closed,
+		button.click().catch((error: unknown) => {
+			if (
+				!button.page().isClosed() ||
+				!(error instanceof Error) ||
+				!error.message.includes(
+					"Target page, context or browser has been closed",
+				)
+			) {
+				throw error;
+			}
+		}),
+	]);
+}
+
 export async function launchDevElectronApp(
 	workspaceDir: string,
 	options: LaunchDevElectronAppOptions = {},
