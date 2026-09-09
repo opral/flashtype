@@ -17,9 +17,9 @@ test("credentials are encrypted and replaced repositories do not inherit sync", 
 	};
 	try {
 		const store = createShareStore(dir, "https://lixray.test", encryption);
-		await store.setAuth({ tokens: { access_token: "secret-token" } });
+		await store.setAuth({ token: "secret-token" });
 		expect(await store.getAuth()).toEqual({
-			tokens: { access_token: "secret-token" },
+			token: "secret-token",
 		});
 		const [host] = await readdir(path.join(dir, "sharing"));
 		expect(
@@ -29,9 +29,19 @@ test("credentials are encrypted and replaced repositories do not inherit sync", 
 		expect((await store.getConnection(workspace)).repository.id).toBe(
 			"original",
 		);
+		const reopened = createShareStore(dir, "https://lixray.test", encryption);
+		expect((await reopened.getConnection(workspace)).repository.id).toBe(
+			"original",
+		);
 		await rm(path.join(workspace, ".lix"), { recursive: true });
 		await mkdir(path.join(workspace, ".lix"));
 		expect(await store.getConnection(workspace)).toBeNull();
+		await store.saveConnection(workspace, {
+			repository: { id: "replacement" },
+		});
+		expect((await store.getConnection(workspace)).repository.id).toBe(
+			"replacement",
+		);
 		const insecure = createShareStore(dir, "https://other.test", {
 			...encryption,
 			isEncryptionAvailable: () => false,
