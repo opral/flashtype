@@ -797,8 +797,19 @@ test("relaunch restores grouped transient file workspace", async ({
 		electronApp = await launchDevElectronAppWithArgs([firstPath, secondPath], {
 			userDataDir,
 		});
-		await pageWithTitle(electronApp, path.basename(groupedWorkspaceDir));
+		const initialPage = await pageWithTitle(
+			electronApp,
+			path.basename(groupedWorkspaceDir),
+		);
 		await expectWindowCount(electronApp, 1);
+		// The native title appears before document startup and session persistence.
+		// Relaunch should restore the selected document after that startup completes.
+		await expect(
+			initialPage.getByRole("heading", { name: "First" }),
+		).toBeVisible();
+		await expectWorkspaceSessionOpenFilePaths(userDataDir, groupedWorkspaceDir, [
+			"restore-markdown-first/first.md",
+		]);
 
 		await closeElectronApp(electronApp);
 		electronApp = undefined;
