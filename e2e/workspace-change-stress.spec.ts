@@ -34,6 +34,7 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 	const rng = seedrandom(stressSeed);
 	const userDataDir = testInfo.outputPath("user-data");
 	const workspaceDir = testInfo.outputPath("workspace");
+	const fakeBinDir = testInfo.outputPath("fake-bin");
 	const helperScriptPath = testInfo.outputPath("fake-agent-turn.mjs");
 	const payloadDir = testInfo.outputPath("agent-payloads");
 	const stressDiskPath = path.join(workspaceDir, stressFileName);
@@ -46,6 +47,12 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 		await timeProfile(profile, "setup:files", null, async () => {
 			await mkdir(workspaceDir, { recursive: true });
 			await mkdir(payloadDir, { recursive: true });
+			await mkdir(fakeBinDir, { recursive: true });
+			await writeFile(
+				path.join(fakeBinDir, "codex"),
+				"#!/bin/sh\nexec /bin/sh\n",
+				{ mode: 0o755 },
+			);
 			await writeFile(stressDiskPath, expectedMarkdown, "utf8");
 			await writeFakeAgentTurnHelper(helperScriptPath);
 		});
@@ -57,6 +64,8 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 			async () =>
 				await launchDevElectronApp(workspaceDir, {
 					env: {
+						PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
+						SHELL: "/bin/sh",
 						FLASHTYPE_TRACE_LIX_IPC: "1",
 						FLASHTYPE_TRACE_LIX_SLOW_MS: "0",
 					},
@@ -75,6 +84,15 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 		await timeProfile(profile, "setup:open-file", null, async () => {
 			await openStressMarkdown(page);
 			await installStressEditorHelpers(page);
+			// Mount the agent extension, as a real terminal turn does, so its
+			// Atelier review integration is available to the fake hook events.
+			await page
+				.getByRole("button", { name: "History panel view menu" })
+				.click();
+			await page.getByRole("menuitem", { name: "Codex", exact: true }).click();
+			await expect(
+				page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
+			).toBeVisible();
 		});
 		await timeProfile(profile, "setup:initial-settle", null, async () => {
 			await expectMarkdownSettled({
@@ -587,56 +605,26 @@ async function waitForReviewControls(page: Page): Promise<void> {
 }
 
 async function resolveReview(page: Page, keep: boolean): Promise<void> {
-	const remainingCount = await reviewRemainingCount(page);
-	if (keep) {
-		if (remainingCount > 1) {
-			await expect(reviewKeepAllButton(page)).toBeVisible();
-			await reviewKeepAllButton(page).click();
-			return;
-		}
-		await reviewKeepButton(page).click();
-		return;
-	}
-
-	for (
-		let resolvedCount = 0;
-		resolvedCount < remainingCount;
-		resolvedCount += 1
-	) {
-		await reviewUndoButton(page).click();
-		if (resolvedCount + 1 < remainingCount) {
-			await expect
-				.poll(async () => await reviewRemainingCount(page), {
-					timeout: 30_000,
-				})
-				.toBe(remainingCount - resolvedCount - 1);
-		}
-	}
+	// This fixture changes one file per turn; Atelier resolves the selected file.
+	await (keep ? reviewKeepButton(page) : reviewUndoButton(page)).click();
 }
 
 function reviewControls(page: Page) {
-	return page.locator('[role="group"][aria-label^="Review change "]');
+	return page.getByRole("group", { name: "Diff review actions" });
 }
 
 function reviewKeepButton(page: Page) {
-	return page.locator('[data-attr="review-change-keep"]');
-}
-
-function reviewKeepAllButton(page: Page) {
-	return page.locator('[data-attr="review-change-keep-all"]');
+	return reviewControls(page).getByRole("button", {
+		name: "Keep",
+		exact: true,
+	});
 }
 
 function reviewUndoButton(page: Page) {
-	return page.locator('[data-attr="review-change-undo"]');
-}
-
-async function reviewRemainingCount(page: Page): Promise<number> {
-	const label = await reviewControls(page).getAttribute("aria-label");
-	const match = /^Review change \d+ of \d+, (\d+) remaining$/.exec(label ?? "");
-	if (!match) {
-		throw new Error(`Could not read remaining review changes from ${label}.`);
-	}
-	return Number(match[1]);
+	return reviewControls(page).getByRole("button", {
+		name: "Undo",
+		exact: true,
+	});
 }
 
 async function buildAgentReviewTimeoutMessage(args: {
@@ -746,7 +734,7 @@ async function readPersistedMarkdown(
 ): Promise<string | null> {
 	return await page.evaluate(async (pathToFind) => {
 		const queryResult = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT data FROM lix_file WHERE path = $1",
+			sql: "SELECT content FROM lix_file WHERE path = $1",
 			params: [pathToFind],
 		});
 		return decodeMarkdownValue(queryResult?.rows?.[0]?.[0]);

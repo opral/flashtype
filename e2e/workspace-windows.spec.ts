@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
-import { LocalFilesystem, openLix } from "@lix-js/sdk";
+import { openLix } from "@lix-js/sdk";
+import { FilesystemStorage } from "@lix-js/storage-filesystem";
 import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -365,7 +366,7 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 
 		await page.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "UPDATE lix_file SET data = $1 WHERE path = $2",
+				sql: "UPDATE lix_file SET content = $1 WHERE path = $2",
 				params: [
 					new TextEncoder().encode("# Updated while off\n"),
 					"/marker.md",
@@ -394,7 +395,7 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 	}
 });
 
-test("Track Changes recovery screen can disable tracking", async ({
+test("Track Changes recovery screen deletes damaged tracking and restarts", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const workspaceDir = testInfo.outputPath("track-changes-recovery-workspace");
@@ -431,8 +432,9 @@ test("Track Changes recovery screen can disable tracking", async ({
 
 		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
 			userDataDir,
+			env: { FLASHTYPE_DEV_SUPERVISED: "1" },
 		});
-		const page = await pageWithTitle(electronApp, path.basename(workspaceDir));
+		let page = await pageWithTitle(electronApp, path.basename(workspaceDir));
 		registerRendererConsoleLogging(page);
 
 		await expectTrackChangesMenuChecked(electronApp, true);
@@ -444,13 +446,16 @@ test("Track Changes recovery screen can disable tracking", async ({
 			}),
 		).toBeVisible();
 		await expect(
-			page.getByText("Your project files will not be deleted."),
+			page.getByText("Your normal files will not be deleted."),
 		).toBeVisible();
 
-		await Promise.all([
-			page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-			page.getByRole("button", { name: "Disable Track Changes" }).click(),
-		]);
+		const closed = electronApp.waitForEvent("close");
+		await page.getByRole("button", { name: "Delete .lix and restart" }).click();
+		await closed;
+		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
+			userDataDir,
+		});
+		page = await pageWithTitle(electronApp, path.basename(workspaceDir));
 
 		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
 		await expectTrackChangesMenuChecked(electronApp, false);
@@ -566,7 +571,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 
 		await filePage.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "UPDATE lix_file SET data = $1 WHERE path = $2",
+				sql: "UPDATE lix_file SET content = $1 WHERE path = $2",
 				params: [new TextEncoder().encode("# Updated\n"), "/solo.md"],
 			});
 		});
@@ -577,7 +582,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 		expect(await readFile(siblingPath, "utf8")).toBe("# Sibling\n");
 		await filePage.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "INSERT INTO lix_file (path, data) VALUES ($1, $2)",
+				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
 				params: ["/generated.md", new TextEncoder().encode("# Generated\n")],
 			});
 		});
@@ -591,7 +596,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 		await expectPathMissing(path.join(directory, ".lix_system"));
 		await filePage.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "INSERT INTO lix_file (path, data) VALUES ($1, $2)",
+				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
 				params: [
 					"/.lix/app_data/transient-test.bin",
 					new TextEncoder().encode("internal"),
@@ -833,7 +838,7 @@ async function writeMarkerFile(
 
 async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
 	const lix = await openLix({
-		storage: new LocalFilesystem({ path: workspaceDir, syncAllFiles: true }),
+		storage: new FilesystemStorage({ path: workspaceDir }),
 	});
 	await lix.close();
 }

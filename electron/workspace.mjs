@@ -1,3 +1,4 @@
+import { assertRepositorySize } from "./repository-limits.mjs";
 import { dialog, ipcMain } from "electron";
 import os from "node:os";
 import path from "node:path";
@@ -470,6 +471,7 @@ export async function setWorkspaceTrackChanges(window, trackChanges) {
 			return workspace;
 		}
 		if (trackChanges) {
+			await assertRepositorySize(workspace.path);
 			disposeAgentTurnFileCaptures(state);
 			disposeEphemeralFileTreeState(state);
 			await moveExternalLixBackIntoWorkspace(state);

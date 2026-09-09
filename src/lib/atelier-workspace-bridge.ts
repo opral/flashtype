@@ -19,9 +19,12 @@ type DesktopWorkspaceBridge = Pick<
 >;
 
 type ConnectAtelierWorkspaceOptions = {
-	readonly documents: AtelierDocumentsApi;
+	readonly documents: Pick<
+		AtelierDocumentsApi,
+		"open" | "startNew" | "closeActive"
+	>;
 	readonly lix: Lix;
-	readonly sessionStateStore?: Pick<
+	readonly sessionStateStore: Pick<
 		AtelierSessionStateStore,
 		"getSnapshot" | "subscribe"
 	>;
@@ -65,15 +68,6 @@ export function connectAtelierWorkspace(
 	const unsubscribeCloseFile = workspace.onCloseFile(() => {
 		void documents.closeActive().catch(reportError);
 	});
-	const uiStateEvents = options.sessionStateStore
-		? null
-		: options.lix.observe(
-				`SELECT value
-			 FROM lix_key_value_by_branch
-			 WHERE key = $1
-			   AND lixcol_branch_id = $2`,
-				["atelier_ui_state", "global"],
-			);
 	const filePathEvents = options.lix.observe(
 		`SELECT id, path
 		 FROM lix_file
@@ -90,7 +84,7 @@ export function connectAtelierWorkspace(
 				if (abortController.signal.aborted) return;
 				const state = await readAtelierDocumentSessionState(
 					options.lix,
-					options.sessionStateStore?.getSnapshot(),
+					options.sessionStateStore.getSnapshot(),
 				);
 				if (abortController.signal.aborted) return;
 				await workspace.setSessionOpenFilePaths({
@@ -108,9 +102,8 @@ export function connectAtelierWorkspace(
 			persistSessionDocuments();
 		}
 	};
-	if (uiStateEvents) void watchSessionEvents(uiStateEvents).catch(reportError);
 	void watchSessionEvents(filePathEvents).catch(reportError);
-	const unsubscribeSessionState = options.sessionStateStore?.subscribe(
+	const unsubscribeSessionState = options.sessionStateStore.subscribe(
 		persistSessionDocuments,
 	);
 
@@ -132,7 +125,7 @@ export function connectAtelierWorkspace(
 		if (
 			await readCurrentAtelierDocumentPath(
 				options.lix,
-				options.sessionStateStore?.getSnapshot(),
+				options.sessionStateStore.getSnapshot(),
 			)
 		)
 			return;
@@ -144,7 +137,7 @@ export function connectAtelierWorkspace(
 		if (
 			await readCurrentAtelierDocumentPath(
 				options.lix,
-				options.sessionStateStore?.getSnapshot(),
+				options.sessionStateStore.getSnapshot(),
 			)
 		)
 			return;
@@ -162,9 +155,8 @@ export function connectAtelierWorkspace(
 		dispose: () => {
 			if (abortController.signal.aborted) return;
 			abortController.abort();
-			uiStateEvents?.close();
 			filePathEvents.close();
-			unsubscribeSessionState?.();
+			unsubscribeSessionState();
 			unsubscribeNewFile();
 			unsubscribeCloseFile();
 		},

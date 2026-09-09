@@ -1,10 +1,8 @@
-import { createRoot } from "react-dom/client";
 import { History } from "lucide-react";
 import {
 	Atelier,
 	ATELIER_BUILTIN_EXTENSION_IDS,
 	type AtelierExtensionRegistration,
-	type AtelierExtensionRuntime,
 } from "@opral/atelier";
 import { TemporaryHistoryNotice } from "@/shell/temporary-history-notice";
 
@@ -13,36 +11,35 @@ export function createHistoryExtension(
 	temporary: boolean,
 ): AtelierExtensionRegistration {
 	return {
-		manifest: {
-			apiVersion: 1,
-			id: ATELIER_BUILTIN_EXTENSION_IDS.history,
-			name: "History",
-			placement: ["left", "right", "central"],
+		id: ATELIER_BUILTIN_EXTENSION_IDS.history,
+		name: "History",
+		placement: ["left", "right", "central"],
+		icon: History,
+		HeaderAccessory: ({ atelier, view }) => {
+			if (!atelier.diff) return null;
+			return (
+				<Atelier.HistoryScopeSwitch
+					atelier={{ ...atelier, diff: atelier.diff }}
+					preferences={view.preferences}
+				/>
+			);
 		},
-		entry: {
-			icon: History,
-			mount: ({ element, atelier }) => {
-				const root = createRoot(element);
-				const render = (runtime: AtelierExtensionRuntime) => {
-					if (!runtime.diff)
-						throw new Error("History requires the shell's diff runtime");
-					root.render(
-						<div className="flex min-h-0 flex-1 flex-col">
-							{temporary ? (
-								<div className="shrink-0 pt-2">
-									<TemporaryHistoryNotice />
-								</div>
-							) : null}
-							<Atelier.History atelier={{ ...runtime, diff: runtime.diff }} />
-						</div>,
-					);
-				};
-				render(atelier);
-				return {
-					update: ({ atelier }) => render(atelier),
-					dispose: () => root.unmount(),
-				};
-			},
+		Component: ({ atelier, view }) => {
+			if (!atelier.diff)
+				throw new Error("History requires the shell's diff runtime");
+			return (
+				<div className="flex min-h-0 flex-1 flex-col">
+					{temporary ? (
+						<div className="shrink-0 pt-2">
+							<TemporaryHistoryNotice />
+						</div>
+					) : null}
+					<Atelier.History
+						atelier={{ ...atelier, diff: atelier.diff }}
+						preferences={view.preferences}
+					/>
+				</div>
+			);
 		},
 	};
 }

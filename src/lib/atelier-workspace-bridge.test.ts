@@ -100,7 +100,7 @@ describe("connectAtelierWorkspace", () => {
 			});
 		});
 		connection.dispose();
-		expect(harness.observeClose).toHaveBeenCalledTimes(2);
+		expect(harness.observeClose).toHaveBeenCalledTimes(1);
 	});
 
 	test("persists observation-driven document changes after startup", async () => {
@@ -260,25 +260,15 @@ function createHarness(
 			},
 		};
 	};
-	const uiStateEvents = createObservedEvents(["value"]);
+	const listeners = new Set<() => void>();
 	const filePathEvents = createObservedEvents(["id", "path"]);
 	const lix = {
 		importFilesystemPaths,
-		observe: vi.fn((sql: string) => {
-			const events = sql.includes("lix_key_value_by_branch")
-				? uiStateEvents
-				: filePathEvents;
-			return {
-				next: events.next,
-				close: events.close,
-			};
-		}),
+		observe: vi.fn(() => ({
+			next: filePathEvents.next,
+			close: filePathEvents.close,
+		})),
 		execute: vi.fn(async (sql: string, params?: ReadonlyArray<unknown>) => {
-			if (sql.includes("lix_key_value_by_branch")) {
-				return activeDocumentPath
-					? queryResult([uiState("active-file", activeDocumentPath)], ["value"])
-					: queryResult([], ["value"]);
-			}
 			if (sql.includes("WHERE id =")) {
 				const path = filesById.get(String(params?.[0]));
 				return queryResult(path ? [path] : [], ["path"]);
@@ -343,7 +333,9 @@ function createHarness(
 		unsubscribeNewFile,
 		unsubscribeCloseFile,
 		observeClose,
-		emitUiStateChange: uiStateEvents.emit,
+		emitUiStateChange: () => {
+			for (const listener of listeners) listener();
+		},
 		emitFilePathChange: filePathEvents.emit,
 		setActiveDocument,
 		setActiveFilePath,
@@ -354,6 +346,16 @@ function createHarness(
 			await closeFileListener?.();
 		},
 		options: {
+			sessionStateStore: {
+				getSnapshot: () =>
+					sessionUiState("active-file", activeDocumentPath ?? ""),
+				subscribe: (listener: () => void) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+			},
 			documents,
 			lix,
 			workspace: workspace as unknown as NonNullable<
@@ -409,7 +411,7 @@ function queryResult(
 						},
 					]
 				: [],
-		columns: [...columns],
+		columns: columns.map((name) => ({ name, type: "text" })),
 		rowsAffected: 0,
 		notices: [],
 	} as unknown as LixRuntimeQueryResult;

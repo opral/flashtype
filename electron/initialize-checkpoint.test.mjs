@@ -32,7 +32,7 @@ test("initialization checkpoints .lix files, leaves documents pending, and survi
 			).rows.map((row) => row.path);
 		expect(await pendingPaths()).toEqual(["/note.md"]);
 		const checkpoint = async () =>
-			(await lix.execute("SELECT lix_latest_checkpoint_commit_id() AS id"))
+			(await lix.execute("SELECT working_base_commit_id AS id FROM lix_branch WHERE id = lix_active_branch_id()"))
 				.rows[0].id;
 		const initial = await checkpoint();
 		await checkpointRepositoryMetadata(lix);

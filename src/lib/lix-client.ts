@@ -232,11 +232,14 @@ export async function openDesktopLix(): Promise<Lix> {
 		return await runQueued(() => desktop.lix.createBranch({ options }));
 	};
 
+	const branchListeners = new Set<() => void>();
 	const switchBranch = async (
 		options: SwitchBranchOptions,
 	): Promise<SwitchBranchReceipt> => {
 		ensureOpen("switchBranch");
-		return await runQueued(() => desktop.lix.switchBranch(options));
+		const receipt = await runQueued(() => desktop.lix.switchBranch(options));
+		for (const listener of branchListeners) listener();
+		return receipt;
 	};
 
 	const importFilesystemPaths = async (
@@ -259,6 +262,7 @@ export async function openDesktopLix(): Promise<Lix> {
 			return;
 		}
 		closed = true;
+		branchListeners.clear();
 		for (const tx of [...openSqlTransactions]) {
 			try {
 				await tx.forceRollback();
@@ -283,6 +287,12 @@ export async function openDesktopLix(): Promise<Lix> {
 		executeTransaction,
 		observe,
 		activeBranchId,
+		subscribeActiveBranch(listener: () => void) {
+			branchListeners.add(listener);
+			return () => {
+				branchListeners.delete(listener);
+			};
+		},
 		createBranch,
 		switchBranch,
 		importFilesystemPaths,

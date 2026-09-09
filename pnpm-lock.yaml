@@ -5,7 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@lix-js/sdk': 0.15.1
+  '@lix-js/sdk': 0.16.0
+  '@lix-js/storage-filesystem': 0.16.0
   prosemirror-model: 1.25.10
   prosemirror-transform: 1.12.0
   prosemirror-view: 1.42.0
@@ -33,11 +34,11 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@lix-js/sdk':
-        specifier: 0.15.1
-        version: 0.15.1
+        specifier: 0.16.0
+        version: 0.16.0
       '@lix-js/storage-filesystem':
-        specifier: 0.15.1
-        version: 0.15.1(@lix-js/sdk@0.15.1)
+        specifier: 0.16.0
+        version: 0.16.0(@lix-js/sdk@0.16.0)
       '@opral/atelier':
         specifier: workspace:*
         version: link:submodule/atelier
@@ -354,9 +355,15 @@ importers:
       pdfjs-dist:
         specifier: 5.4.624
         version: 5.4.624
+      perfect-freehand:
+        specifier: 1.2.0
+        version: 1.2.0
       react-resizable-panels:
         specifier: ^4.12.1
         version: 4.12.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      roughjs:
+        specifier: 4.6.6
+        version: 4.6.6
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -371,8 +378,8 @@ importers:
         version: 2.8.2
     devDependencies:
       '@lix-js/sdk':
-        specifier: 0.15.1
-        version: 0.15.1
+        specifier: 0.16.0
+        version: 0.16.0
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@8.1.4(@types/node@24.10.15)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.97.1)(sass@1.97.1)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
@@ -1541,33 +1548,33 @@ packages:
   '@lix-js/html-diff@0.1.0':
     resolution: {integrity: sha512-4dr7+xo8UEncWGjne9PoL6KqFGcOHZXyeBTTghTW196kK5xidQ8h4hufjHXYxv6x5VAFzXcBCuFnW1GgPS5kqw==}
 
-  '@lix-js/sdk-darwin-arm64@0.15.1':
-    resolution: {integrity: sha512-RTe5hNe8lkF4uZ/ktKQFaXbFtowf617XTLs8Q/lPbAvCN/87A7KkmGyWV2mO8uZyposn/UO8q2NnD2yns8bPPA==}
+  '@lix-js/sdk-darwin-arm64@0.16.0':
+    resolution: {integrity: sha512-nSDCjB4m96SnUpG9uSA2c6sGkUtNdmMp3tqFHSJfgNaib4yP4b0FSGJGhcWRqEw2iWqw/oPtbOdYxpCwHYFodw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@lix-js/sdk-linux-arm64@0.15.1':
-    resolution: {integrity: sha512-uxyc4NzNGDVyytz8CZblVW++X1JtP9qin28CVyqLKV3iM0CQ/VcUog0WwyEWL7OogvjXilZLJdu1pskDzsRm1A==}
+  '@lix-js/sdk-linux-arm64@0.16.0':
+    resolution: {integrity: sha512-vAvfgxCx8uzP9pQuE84gYctRYtiJ+L5O5U0Hl2tCOnx/G+JqV/MT6FyLKX54HKjXTvgIz9YSDbyPBj0vuxMuHA==}
     cpu: [arm64]
     os: [linux]
 
-  '@lix-js/sdk-linux-x64@0.15.1':
-    resolution: {integrity: sha512-gCEN5Ql2JvQn4MpwiILpmFxxO3AHAfmoa4mMvBWFwdKUICaJf5Yzr0zUfHEeLYtvcKpXbpu6dxyZ+AOc8I18ng==}
+  '@lix-js/sdk-linux-x64@0.16.0':
+    resolution: {integrity: sha512-9XOIg62ZwDBMO9ERk6yfUmg7qZppim1rFEvkQm6vMhczX6emMZFHvk9zOEc8ktsRr5XwQ6KoKFgePkbU6USCpA==}
     cpu: [x64]
     os: [linux]
 
-  '@lix-js/sdk-win32-x64@0.15.1':
-    resolution: {integrity: sha512-hyo2Sj67mBwhMZ2DFO1UgN4barByYiHojUnVQI9WGue5Slva5vBusbecQG1XSXrYv6HkVxLpS2zwUrr7DTjWQg==}
+  '@lix-js/sdk-win32-x64@0.16.0':
+    resolution: {integrity: sha512-Hn+Qhg87S6XGNPmGxBtawT8KfjreRwPxlKq21NoeS+VREo9QammIgQZc4nBUs6V+uiHhf6PBQBuVGtu8dWJZ1g==}
     cpu: [x64]
     os: [win32]
 
-  '@lix-js/sdk@0.15.1':
-    resolution: {integrity: sha512-mgtPwKg1Etx4NLGADesa+0DNkwVYOrSsIFVhv+VaBGJTisFYMVMucgzYXZQ1XHRpA1jxdFaKhheK3x3tArvv8Q==}
+  '@lix-js/sdk@0.16.0':
+    resolution: {integrity: sha512-oMwU3nPpwIj1kDttjK7EVqjyHmC7xaU4dTFmz7jeeT2pZ4GxbmLuZSzcvojJgeSExatCzUUUZSzxW/6nNDyyCA==}
 
-  '@lix-js/storage-filesystem@0.15.1':
-    resolution: {integrity: sha512-mDbfsq2YFC5vznuurPiWMCTtz+hnPzSx6ita38itOINSRkLl6eVb9PLWYQVL7vXoARXSx4VEQD1yvexPzltm/g==}
+  '@lix-js/storage-filesystem@0.16.0':
+    resolution: {integrity: sha512-WizCuGFwA4LMpsoJUIeOyflAU/Jma8ooz4GBJX/Z+lASGkpCEN4Ocm80utviXNtVzB7TCTKT8F16KeuFIYy3cw==}
     peerDependencies:
-      '@lix-js/sdk': 0.15.1
+      '@lix-js/sdk': 0.16.0
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -8506,30 +8513,30 @@ snapshots:
       diff: 8.0.4
       parse5: 7.3.0
 
-  '@lix-js/sdk-darwin-arm64@0.15.1':
+  '@lix-js/sdk-darwin-arm64@0.16.0':
     optional: true
 
-  '@lix-js/sdk-linux-arm64@0.15.1':
+  '@lix-js/sdk-linux-arm64@0.16.0':
     optional: true
 
-  '@lix-js/sdk-linux-x64@0.15.1':
+  '@lix-js/sdk-linux-x64@0.16.0':
     optional: true
 
-  '@lix-js/sdk-win32-x64@0.15.1':
+  '@lix-js/sdk-win32-x64@0.16.0':
     optional: true
 
-  '@lix-js/sdk@0.15.1':
+  '@lix-js/sdk@0.16.0':
     dependencies:
       fflate: 0.8.3
     optionalDependencies:
-      '@lix-js/sdk-darwin-arm64': 0.15.1
-      '@lix-js/sdk-linux-arm64': 0.15.1
-      '@lix-js/sdk-linux-x64': 0.15.1
-      '@lix-js/sdk-win32-x64': 0.15.1
+      '@lix-js/sdk-darwin-arm64': 0.16.0
+      '@lix-js/sdk-linux-arm64': 0.16.0
+      '@lix-js/sdk-linux-x64': 0.16.0
+      '@lix-js/sdk-win32-x64': 0.16.0
 
-  '@lix-js/storage-filesystem@0.15.1(@lix-js/sdk@0.15.1)':
+  '@lix-js/storage-filesystem@0.16.0(@lix-js/sdk@0.16.0)':
     dependencies:
-      '@lix-js/sdk': 0.15.1
+      '@lix-js/sdk': 0.16.0
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:

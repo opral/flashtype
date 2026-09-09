@@ -1,3 +1,4 @@
+import { RECOVERY_RESTART_EXIT_CODE } from "../electron/workspace-open-recovery.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import {
 	existsSync,
@@ -30,6 +31,7 @@ const electronArgs = [
 ];
 const children = new Set();
 let shuttingDown = false;
+let restartedAfterNativeCrash = false;
 
 process.on("SIGINT", () => shutdown(130));
 process.on("SIGTERM", () => shutdown(143));
@@ -65,19 +67,42 @@ try {
 	}
 
 	console.log(`Starting Flashtype Electron with ${rendererUrl}`);
-	const electron = spawnCommand(electronCommand, electronArgs, {
-		env: {
-			...process.env,
-			FLASHTYPE_DEV_RUNTIME: "1",
-			VITE_DEV_SERVER_URL: rendererUrl,
-		},
-	});
+	function startElectron() {
+		const electron = spawnCommand(electronCommand, electronArgs, {
+			env: {
+				...process.env,
+				FLASHTYPE_DEV_RUNTIME: "1",
+				FLASHTYPE_DEV_SUPERVISED: "1",
+				VITE_DEV_SERVER_URL: rendererUrl,
+			},
+		});
 
-	electron.on("exit", (code, signal) => {
-		if (shuttingDown) return;
-		console.log(`Electron exited ${formatExitReason(code, signal)}.`);
-		shutdown(code ?? 0);
-	});
+		electron.on("exit", (code, signal) => {
+			if (shuttingDown) return;
+			if (code === RECOVERY_RESTART_EXIT_CODE) {
+				startElectron();
+				return;
+			}
+			if (
+				!restartedAfterNativeCrash &&
+				signal &&
+				["SIGTRAP", "SIGABRT", "SIGSEGV", "SIGBUS", "SIGKILL"].includes(
+					signal,
+				) &&
+				existsSync(path.join(userDataDir, "workspace-pending-lix-open.json"))
+			) {
+				restartedAfterNativeCrash = true;
+				console.warn(
+					"Electron crashed while opening a repository. Restarting into recovery.",
+				);
+				startElectron();
+				return;
+			}
+			console.log(`Electron exited ${formatExitReason(code, signal)}.`);
+			shutdown(code ?? 0);
+		});
+	}
+	startElectron();
 } catch (error) {
 	console.error(error instanceof Error ? error.message : String(error));
 	shutdown(1);
@@ -109,18 +134,9 @@ function prepareMacOSDevelopmentElectronApp() {
 		repoRoot,
 		"node_modules/electron/dist/Electron.app",
 	);
-	const targetApp = path.resolve(
-		repoRoot,
-		".flashtype-dev/Flashtype Dev.app",
-	);
-	const sourceExecutable = path.join(
-		sourceApp,
-		"Contents/MacOS/Electron",
-	);
-	const targetExecutable = path.join(
-		targetApp,
-		"Contents/MacOS/Electron",
-	);
+	const targetApp = path.resolve(repoRoot, ".flashtype-dev/Flashtype Dev.app");
+	const sourceExecutable = path.join(sourceApp, "Contents/MacOS/Electron");
+	const targetExecutable = path.join(targetApp, "Contents/MacOS/Electron");
 	const sourceInfoPlist = path.join(sourceApp, "Contents/Info.plist");
 	const targetInfoPlist = path.join(targetApp, "Contents/Info.plist");
 

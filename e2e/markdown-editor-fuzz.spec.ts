@@ -5,23 +5,13 @@ import path from "node:path";
 import seedrandom from "seedrandom";
 import {
 	applyOperationToSimplifiedState,
-	buildOperationFailureMessage,
-	buildPlainTextMismatchMessage,
-	buildSelectionInvariantFailureMessage,
 	createSimplifiedState,
 	expectedPlainText,
-	MARKDOWN_EDITOR_FUZZ_DEFAULT_SEED,
-	MARKDOWN_EDITOR_FUZZ_HARD_BREAK,
-	MARKDOWN_EDITOR_FUZZ_OPERATION_COUNT,
-	MARKDOWN_EDITOR_FUZZ_PARAGRAPH_BREAK,
 	nextOperation,
 	renderPlainTextFromMarkdown,
-	validateSimplifiedSelectionInvariant,
 	type FuzzOperation,
-	type MarkdownFuzzSnapshot,
-	type SimplifiedSelection,
 	type SimplifiedState,
-} from "../src/extensions/markdown/editor/markdown-editor-fuzz";
+} from "../submodule/atelier/src/extensions/markdown/editor/markdown-editor-fuzz";
 import {
 	closeElectronApp,
 	ensureFilesViewOpenInLeftPanel,
@@ -30,69 +20,14 @@ import {
 	registerRendererConsoleLogging,
 } from "./electron-test-utils";
 
-const rendererPort = process.env.FLASHTYPE_E2E_RENDERER_PORT ?? "4174";
-const rendererUrl = `http://127.0.0.1:${rendererPort}`;
+const MARKDOWN_EDITOR_FUZZ_HARD_BREAK = "\n";
+const MARKDOWN_EDITOR_FUZZ_PARAGRAPH_BREAK = "\x1E";
+type SimplifiedSelection = NonNullable<
+	import("../submodule/atelier/src/extensions/markdown/editor/markdown-editor-fuzz").MarkdownFuzzSnapshot["selection"]
+>;
 const uiFuzzFilePath = "/fuzz.md";
 
 test.setTimeout(600_000);
-
-test("fuzzes markdown editor plain text in a real browser", async ({
-	page,
-}) => {
-	const seed =
-		process.env.FLASHTYPE_MARKDOWN_FUZZ_SEED ??
-		MARKDOWN_EDITOR_FUZZ_DEFAULT_SEED;
-	const rng = seedrandom(seed);
-	const state = createSimplifiedState();
-
-	await page.goto(`${rendererUrl}/?e2e=markdown-editor-fuzz`);
-	await expect(page.getByTestId("markdown-editor-fuzz-harness")).toBeVisible();
-	await page.waitForFunction(() =>
-		Boolean((window as any).__flashtypeMarkdownFuzz),
-	);
-
-	for (
-		let index = 0;
-		index < MARKDOWN_EDITOR_FUZZ_OPERATION_COUNT;
-		index += 1
-	) {
-		const operation = nextOperation(rng, state);
-		try {
-			await applyOperationToHarnessPage(page, operation);
-			applyOperationToSimplifiedState(state, operation);
-		} catch (error) {
-			const snapshot = await safeHarnessSnapshot(page);
-			throw new Error(
-				buildOperationFailureMessage({
-					seed,
-					index,
-					operation,
-					state,
-					editorJson: snapshot?.editorJson,
-					cause: error,
-				}),
-			);
-		}
-
-		const snapshot = await readSnapshot(page);
-		assertSnapshotSelectionMatches(snapshot, state, seed, index, operation);
-		const expected = expectedPlainText(state);
-		if (snapshot.plainText !== expected) {
-			throw new Error(
-				buildPlainTextMismatchMessage({
-					seed,
-					index,
-					operation,
-					state,
-					expected,
-					actual: snapshot.plainText,
-					markdown: snapshot.markdown,
-					editorJson: snapshot.editorJson,
-				}),
-			);
-		}
-	}
-});
 
 test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 	browserName: _browserName,
@@ -182,65 +117,6 @@ test("fuzzes markdown editor plain text through the Flashtype UI", async ({
 	}
 });
 
-function assertSnapshotSelectionMatches(
-	snapshot: MarkdownFuzzSnapshot,
-	state: SimplifiedState,
-	seed: number,
-	index: number,
-	operation: FuzzOperation,
-): void {
-	const reason = validateSimplifiedSelectionInvariant({
-		state,
-		positions: snapshot.positions,
-		docSize: snapshot.docSize,
-		domSelection: snapshot.domSelection,
-		selection: snapshot.selection,
-	});
-
-	if (!reason) return;
-
-	throw new Error(
-		buildSelectionInvariantFailureMessage({
-			seed,
-			index,
-			operation,
-			state,
-			reason,
-			positions: snapshot.positions,
-			docSize: snapshot.docSize,
-			domSelection: snapshot.domSelection,
-			selection: snapshot.selection,
-			editorJson: snapshot.editorJson,
-		}),
-	);
-}
-
-async function applyOperationToHarnessPage(
-	page: Page,
-	operation: FuzzOperation,
-): Promise<void> {
-	switch (operation.kind) {
-		case "move":
-			await setHarnessPageSelection(page, operation.anchor, operation.head);
-			return;
-		case "type":
-			await page.keyboard.type(operation.value);
-			return;
-		case "enter":
-			await page.keyboard.press("Enter");
-			return;
-		case "shiftEnter":
-			await page.keyboard.press("Shift+Enter");
-			return;
-		case "left":
-			await page.keyboard.press("ArrowLeft");
-			return;
-		case "right":
-			await page.keyboard.press("ArrowRight");
-			return;
-	}
-}
-
 async function applyOperationToUiPage(
 	page: Page,
 	operation: FuzzOperation,
@@ -264,37 +140,6 @@ async function applyOperationToUiPage(
 		case "right":
 			await page.keyboard.press("ArrowRight");
 			return;
-	}
-}
-
-async function setHarnessPageSelection(
-	page: Page,
-	anchor: number,
-	head: number,
-): Promise<void> {
-	await page.evaluate(
-		({ anchor, head }) => {
-			(window as any).__flashtypeMarkdownFuzz.setSelection(anchor, head);
-		},
-		{ anchor, head },
-	);
-}
-
-async function readSnapshot(page: Page): Promise<MarkdownFuzzSnapshot> {
-	return await page.evaluate(() => {
-		const api = (window as any).__flashtypeMarkdownFuzz;
-		if (!api) throw new Error("Markdown fuzz harness API is not available.");
-		return api.snapshot();
-	});
-}
-
-async function safeHarnessSnapshot(
-	page: Page,
-): Promise<MarkdownFuzzSnapshot | null> {
-	try {
-		return await readSnapshot(page);
-	} catch {
-		return null;
 	}
 }
 
@@ -344,7 +189,7 @@ async function readPersistedMarkdown(
 ): Promise<string | null> {
 	return await page.evaluate(async (pathToFind) => {
 		const queryResult = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT data FROM lix_file WHERE path = $1",
+			sql: "SELECT content FROM lix_file WHERE path = $1",
 			params: [pathToFind],
 		});
 		const value = queryResult?.rows?.[0]?.[0];

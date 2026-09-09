@@ -34,6 +34,7 @@ type AgentTurnFileCaptureApi = Pick<
 
 type AgentTurnReviewOptions = {
 	readonly fileCapture?: AgentTurnFileCaptureApi;
+	readonly getUiState?: () => unknown;
 };
 
 export type AgentTurnEventResult = void | {
@@ -53,7 +54,7 @@ export function createAgentTurnReviewHandler(
 	options: AgentTurnReviewOptions = {},
 ) {
 	return composeAgentTurnEventHandlers(
-		createActiveDocumentContextHandler(atelier),
+		createActiveDocumentContextHandler(atelier, options.getUiState),
 		createAgentTurnDiffHandler(atelier, options.fileCapture),
 	);
 }
@@ -180,12 +181,14 @@ async function importAgentTurnPaths(
 
 function createActiveDocumentContextHandler(
 	atelier: AgentReviewHost,
+	getUiState?: () => unknown,
 ): AgentTurnEventHandler {
 	return async (event) => {
 		if (event.phase !== "turn-start") return;
 		try {
 			const filePath = await readCurrentAtelierDocumentPath(
 				atelier.lix as unknown as Lix,
+				getUiState?.(),
 			);
 			const additionalContext = buildFlashtypeActiveFilePrompt(filePath);
 			return additionalContext ? { additionalContext } : undefined;

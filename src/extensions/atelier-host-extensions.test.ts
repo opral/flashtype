@@ -5,7 +5,7 @@ describe("createFlashTypeAtelierExtensions", () => {
 	test("registers agent terminals and the host-composed History view", () => {
 		const extensions = createFlashTypeAtelierExtensions();
 
-		expect(extensions.map((extension) => extension.manifest.id)).toEqual([
+		expect(extensions.map((extension) => extension.id)).toEqual([
 			"flashtype_claude",
 			"flashtype_codex",
 			"atelier_history",

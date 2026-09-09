@@ -68,7 +68,8 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
 		await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 
-		await page.locator('[data-attr="agent-start-codex"]').click();
+		await page.getByRole("button", { name: "History panel view menu" }).click();
+		await page.getByRole("menuitem", { name: "Codex", exact: true }).click();
 		await expect(
 			page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
 		).toBeVisible();
@@ -92,14 +93,14 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 
 		await expect(
 			page.getByRole("group", {
-				name: /^Review change 1 of \d+(?:, \d+ remaining)?$/,
+				name: "Diff review actions",
 			}),
 		).toBeVisible();
 		await expect(
-			page.getByRole("button", { name: "Keep change" }),
+			page.getByRole("button", { name: "Keep", exact: true }),
 		).toBeVisible();
 		await expect(
-			page.getByRole("button", { name: "Undo change" }),
+			page.getByRole("button", { name: "Undo", exact: true }),
 		).toBeVisible();
 		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(fileTreeFile(page, "/changelog.md")).toHaveAttribute(
@@ -108,7 +109,7 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		);
 		await expect(fileTreeFile(page, "/codex-created.md")).toHaveAttribute(
 			"data-item-git-status",
-			"modified",
+			"added",
 		);
 	} finally {
 		process.env.PATH = originalPath;

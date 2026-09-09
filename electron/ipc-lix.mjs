@@ -2,6 +2,7 @@ import { ipcMain } from "electron";
 import { Value } from "@lix-js/sdk";
 import {
 	closeAllLixSessions,
+	closeLix,
 	ensureLixOpen,
 	exportCurrentLixImage,
 	resetLixRepository,
@@ -347,7 +348,10 @@ export async function closeLixSession(window, options = {}) {
 	if (!window) {
 		return;
 	}
-	await runWithLixSessionClosed(window, async () => {}, options);
+	await closeLix(window, {
+		...options,
+		beforeClose: () => closeAllHandles(window.id),
+	});
 }
 
 export async function runWithLixSessionClosed(window, operation, options = {}) {

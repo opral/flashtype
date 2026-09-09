@@ -40,7 +40,7 @@ test("switching to an empty workspace closes the previous lix session", async ({
 
 		await expect(page).toHaveTitle(path.basename(secondWorkspaceDir));
 		await expect(fileTreeFile(page, "/old-workspace-marker.md")).toHaveCount(0);
-		await expect(page.getByText("Start writing")).toBeVisible();
+		await expect(page.getByTestId("files-view-wide").getByRole("button", { name: "New", exact: true })).toBeVisible();
 		await expectPathMissing(path.join(secondWorkspaceDir, ".lix"));
 	} finally {
 		await closeElectronApp(electronApp);

@@ -38,11 +38,18 @@ vi.mock("./workspace.mjs", () => ({
 }));
 
 vi.mock("./workspace-recovery.mjs", () => ({
+	readWorkspaceRecovery: vi.fn(async () => null),
 	clearWorkspaceLixOpenPendingSync: vi.fn(),
 	markWorkspaceLixOpenPendingSync: vi.fn(),
 	writeWorkspaceRecoverySync: vi.fn(),
 }));
 
+vi.mock("./workspace-open-preflight.mjs", () => ({
+	assertWorkspaceCanOpen: vi.fn(async () => {}),
+}));
+vi.mock("./share-runtime.mjs", () => ({
+	getShareServer: vi.fn(async () => undefined),
+}));
 vi.mock("./telemetry.mjs", () => ({
 	captureTelemetryException: vi.fn(),
 }));

@@ -18,7 +18,7 @@ describe("readCurrentAtelierDocumentPath", () => {
 			files: { file_one: "/renamed.md", file_two: "/second.md" },
 		});
 
-		await expect(readCurrentAtelierDocumentPath(lix)).resolves.toBe(
+		await expect(readCurrentAtelierDocumentPath(lix, lix.state)).resolves.toBe(
 			"/renamed.md",
 		);
 	});
@@ -29,7 +29,9 @@ describe("readCurrentAtelierDocumentPath", () => {
 			files: { file_one: "/one.md" },
 		});
 
-		await expect(readCurrentAtelierDocumentPath(lix)).resolves.toBe("/one.md");
+		await expect(readCurrentAtelierDocumentPath(lix, lix.state)).resolves.toBe(
+			"/one.md",
+		);
 	});
 
 	test("returns validated active and open central document paths for sessions", async () => {
@@ -45,7 +47,9 @@ describe("readCurrentAtelierDocumentPath", () => {
 			files: { file_one: "/one.md", file_two: "/renamed-two.md" },
 		});
 
-		await expect(readAtelierDocumentSessionState(lix)).resolves.toEqual({
+		await expect(
+			readAtelierDocumentSessionState(lix, lix.state),
+		).resolves.toEqual({
 			activePath: "/renamed-two.md",
 			openPaths: ["/renamed-two.md", "/one.md"],
 		});
@@ -87,7 +91,9 @@ describe("readCurrentAtelierDocumentPath", () => {
 			files: {},
 		});
 
-		await expect(readCurrentAtelierDocumentPath(lix)).resolves.toBeNull();
+		await expect(
+			readCurrentAtelierDocumentPath(lix, lix.state),
+		).resolves.toBeNull();
 	});
 
 	test("returns null for a malformed document instance", async () => {
@@ -104,7 +110,9 @@ describe("readCurrentAtelierDocumentPath", () => {
 			files: { file_one: "/one.md" },
 		});
 
-		await expect(readCurrentAtelierDocumentPath(lix)).resolves.toBeNull();
+		await expect(
+			readCurrentAtelierDocumentPath(lix, lix.state),
+		).resolves.toBeNull();
 	});
 
 	test("returns null when the persisted document was deleted", async () => {
@@ -116,7 +124,9 @@ describe("readCurrentAtelierDocumentPath", () => {
 			files: {},
 		});
 
-		await expect(readCurrentAtelierDocumentPath(lix)).resolves.toBeNull();
+		await expect(
+			readCurrentAtelierDocumentPath(lix, lix.state),
+		).resolves.toBeNull();
 	});
 });
 
@@ -139,19 +149,17 @@ function uiState(views: readonly unknown[], activeInstance: string | null) {
 function createTestLix(args: {
 	readonly state: unknown;
 	readonly files: Readonly<Record<string, string>>;
-}): Lix {
+}): Lix & { state: unknown } {
 	return {
+		state: args.state,
 		execute: vi.fn(async (sql: string, params?: ReadonlyArray<unknown>) => {
-			if (sql.includes("lix_key_value_by_branch")) {
-				return queryResult([args.state], ["value"]);
-			}
 			if (sql.includes("FROM lix_file")) {
 				const path = args.files[String(params?.[0])];
 				return queryResult(path ? [path] : [], ["path"]);
 			}
 			throw new Error(`Unexpected query: ${sql}`);
 		}),
-	} as unknown as Lix;
+	} as unknown as Lix & { state: unknown };
 }
 
 function queryResult(
@@ -160,7 +168,7 @@ function queryResult(
 ): LixRuntimeQueryResult {
 	return {
 		rows: row.length > 0 ? [row] : [],
-		columns: [...columns],
+		columns: columns.map((name) => ({ name, type: "text" })),
 		rowsAffected: 0,
 		notices: [],
 	} as unknown as LixRuntimeQueryResult;

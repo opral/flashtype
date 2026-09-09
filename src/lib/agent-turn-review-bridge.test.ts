@@ -10,6 +10,9 @@ function createTestLix(args: {
 }) {
 	const commitIds = [...args.commitIds];
 	return {
+		state: args.activeFilePath
+			? uiState("active-file", args.activeFilePath)
+			: null,
 		syncDiskToLix: vi.fn(async () => {}),
 		importFilesystemPaths: vi.fn(async () => {}),
 		execute: vi.fn(async (query: string, params?: ReadonlyArray<unknown>) => {
@@ -31,7 +34,7 @@ function createTestLix(args: {
 			}
 			throw new Error(`Unexpected query: ${query}`);
 		}),
-	} as unknown as Lix;
+	} as unknown as Lix & { state: unknown };
 }
 
 describe("createAgentTurnReviewHandler", () => {
@@ -47,7 +50,9 @@ describe("createAgentTurnReviewHandler", () => {
 			lix,
 			diff: { open },
 		} as unknown as AtelierInstance;
-		const handle = createAgentTurnReviewHandler(atelier);
+		const handle = createAgentTurnReviewHandler(atelier, {
+			getUiState: () => lix.state,
+		});
 
 		const startResult = await handle({
 			id: "start",
@@ -92,7 +97,9 @@ describe("createAgentTurnReviewHandler", () => {
 			lix,
 			diff: { open },
 		} as unknown as AtelierInstance;
-		const handle = createAgentTurnReviewHandler(atelier);
+		const handle = createAgentTurnReviewHandler(atelier, {
+			getUiState: () => lix.state,
+		});
 		const base = {
 			instanceId: "terminal-1",
 			agent: "claude" as const,
@@ -122,7 +129,9 @@ describe("createAgentTurnReviewHandler", () => {
 			lix,
 			diff: { open: vi.fn(async () => {}) },
 		} as unknown as AtelierInstance;
-		const handle = createAgentTurnReviewHandler(atelier);
+		const handle = createAgentTurnReviewHandler(atelier, {
+			getUiState: () => lix.state,
+		});
 
 		const result = await handle({
 			id: "start",
@@ -218,7 +227,7 @@ async function runCapturedFileTurn(args: {
 			}
 			throw new Error(`Unexpected query: ${query}`);
 		}),
-	} as unknown as Lix;
+	} as unknown as Lix & { state: unknown };
 	let status: "added" | "deleted" | "modified" | "unchanged" = "unchanged";
 	const atelier = {
 		lix,

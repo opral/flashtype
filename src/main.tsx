@@ -1,6 +1,6 @@
+import { ShareButton } from "./shell/share-button";
 import {
 	Suspense,
-	lazy,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -11,8 +11,8 @@ import { createRoot } from "react-dom/client";
 import {
 	Atelier,
 	createMemorySessionStateStore,
-	type AtelierShellHandle,
-	type AtelierShellProps,
+	type AtelierLocation,
+	type AtelierProps,
 	type AtelierExtensionRegistration,
 	type AtelierSessionUiState,
 } from "@opral/atelier";
@@ -37,6 +37,7 @@ import {
 	createAtelierTelemetryHandler,
 } from "./lib/atelier-telemetry";
 import { createAgentTurnReviewHandler } from "./lib/agent-turn-review-bridge";
+import { createDesktopDocumentCommands } from "./lib/atelier-desktop-commands";
 import { connectAtelierWorkspace } from "./lib/atelier-workspace-bridge";
 
 type Workspace = Awaited<
@@ -76,8 +77,8 @@ export const AppRoot = () => {
 		string | null | undefined
 	>(undefined);
 	const [isUpdateReady, setIsUpdateReady] = useState(false);
-	const [connectedAtelier, setConnectedAtelier] =
-		useState<AtelierShellHandle | null>(null);
+	const [location, setLocation] = useState<AtelierLocation | undefined>();
+	const [connectedLix, setConnectedLix] = useState<Lix | null>(null);
 	const atelierExtensions = useMemo(
 		() =>
 			workspace
@@ -121,7 +122,17 @@ export const AppRoot = () => {
 			}
 		};
 	}, [atelierSessionStateStore]);
-	const [atelier, setAtelier] = useState<AtelierShellHandle | null>(null);
+	const documents = useMemo(
+		() =>
+			lix
+				? createDesktopDocumentCommands({
+						lix,
+						store: atelierSessionStateStore,
+						navigate: setLocation,
+					})
+				: null,
+		[lix, atelierSessionStateStore],
+	);
 
 	useEffect(() => {
 		void activatePostHogRecording();
@@ -283,31 +294,32 @@ export const AppRoot = () => {
 
 	useEffect(() => {
 		const desktopWorkspace = window.flashtypeDesktop?.workspace;
-		if (!atelier || !lix || !desktopWorkspace) return;
+		if (!documents || !lix || !desktopWorkspace) return;
 		let cancelled = false;
 		const connection = connectAtelierWorkspace({
-			documents: atelier.documents,
+			documents,
 			lix,
 			sessionStateStore: atelierSessionStateStore,
 			workspace: desktopWorkspace,
 			onError: setError,
 		});
 		void connection.ready.then(() => {
-			if (!cancelled) setConnectedAtelier(atelier);
+			if (!cancelled) setConnectedLix(lix);
 		});
 		return () => {
 			cancelled = true;
 			connection.dispose();
 		};
-	}, [atelier, atelierSessionStateStore, lix]);
+	}, [documents, atelierSessionStateStore, lix]);
 
 	useEffect(() => {
-		if (!lix || !atelier) return;
+		if (!lix) return;
 		const handlePromptTelemetry = createAgentPromptTelemetryHandler(lix);
 		const handleAgentTurnReview = createAgentTurnReviewHandler(
 			{ lix, diff: agentDiffBridge },
 			{
 				fileCapture: window.flashtypeDesktop?.workspace,
+				getUiState: () => atelierSessionStateStore.getSnapshot(),
 			},
 		);
 		const unsubscribe = window.flashtypeDesktop?.agentHooks?.onTurnEvent(
@@ -317,7 +329,7 @@ export const AppRoot = () => {
 			},
 		);
 		return () => unsubscribe?.();
-	}, [atelier, lix]);
+	}, [lix, atelierSessionStateStore]);
 
 	if (workspaceRecovery) return <ErrorFallback recovery={workspaceRecovery} />;
 	if (error) return <ErrorFallback error={error} />;
@@ -339,6 +351,7 @@ export const AppRoot = () => {
 		return (
 			<WorkspaceLoadingScreen
 				workspaceName={openingWorkspaceName ?? workspace.name}
+				workspacePath={workspace.ephemeral ? undefined : workspace.path}
 			/>
 		);
 	}
@@ -346,9 +359,9 @@ export const AppRoot = () => {
 	return (
 		<Suspense fallback={<BootPlaceholder />}>
 			<div className="relative h-dvh">
-				<Atelier.Shell
-					ref={setAtelier}
-					lix={lix as unknown as AtelierShellProps["lix"]}
+				<Atelier
+					location={location}
+					lix={lix as unknown as AtelierProps["lix"]}
 					extensions={atelierExtensions}
 					filesView={atelierFilesView}
 					defaultOpenPanels={defaultOpenAtelierPanels}
@@ -362,15 +375,23 @@ export const AppRoot = () => {
 								className="flashtype-traffic-light-spacer"
 							/>
 						) : null,
-						navbarEnd: isUpdateReady ? (
-							<button
-								type="button"
-								className="flashtype-update-button"
-								onClick={() => void handleInstallUpdate()}
-							>
-								Update
-							</button>
-						) : null,
+						navbarEnd: (
+							<div className="flex items-center gap-2">
+								<ShareButton
+									store={atelierSessionStateStore}
+									workspace={workspace}
+								/>
+								{isUpdateReady ? (
+									<button
+										type="button"
+										className="flashtype-update-button"
+										onClick={() => void handleInstallUpdate()}
+									>
+										Update
+									</button>
+								) : null}
+							</div>
+						),
 						rightPanelEmpty: ({ openExtension }) => (
 							<AgentInvite
 								onStartClaude={() => openExtension("flashtype_claude")}
@@ -379,9 +400,12 @@ export const AppRoot = () => {
 						),
 					}}
 				/>
-				{connectedAtelier !== atelier ? (
+				{connectedLix !== lix ? (
 					<div className="absolute inset-0 z-50">
-						<WorkspaceLoadingScreen workspaceName={workspace.name} />
+						<WorkspaceLoadingScreen
+							workspaceName={workspace.name}
+							workspacePath={workspace.ephemeral ? undefined : workspace.path}
+						/>
 					</div>
 				) : null}
 			</div>
@@ -403,33 +427,6 @@ function workspaceNameFromPath(path: string): string | null {
 }
 
 const root = createRoot(document.getElementById("root")!);
-const MarkdownEditorFuzzHarness = import.meta.env.DEV
-	? lazy(async () => {
-			const module =
-				await import("./extensions/markdown/editor/markdown-editor-fuzz-harness");
-			return { default: module.MarkdownEditorFuzzHarness };
-		})
-	: null;
-
-if (shouldRenderMarkdownEditorFuzzHarness() && MarkdownEditorFuzzHarness) {
-	root.render(
-		<Suspense fallback={<BootPlaceholder />}>
-			<MarkdownEditorFuzzHarness />
-		</Suspense>,
-	);
-} else {
-	// Atelier hosts extensions through imperative nested React roots. Rendering
-	// the desktop shell in StrictMode would synchronously simulate teardown of
-	// those roots (and the shared Lix connection) during development startup.
-	// Use the same lifecycle as the packaged Electron app; editor components keep
-	// dedicated StrictMode coverage in their tests.
-	root.render(<AppRoot />);
-}
-
-function shouldRenderMarkdownEditorFuzzHarness(): boolean {
-	return (
-		import.meta.env.DEV &&
-		new URLSearchParams(window.location.search).get("e2e") ===
-			"markdown-editor-fuzz"
-	);
-}
+// Atelier owns the editor implementation and its isolated fuzz tests. The
+// desktop end-to-end fuzz suite exercises the same AppRoot users run.
+root.render(<AppRoot />);

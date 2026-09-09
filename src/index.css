@@ -558,3 +558,37 @@ body,
 		float: left;
 	}
 }
+
+.flashtype-share-button {
+	-webkit-app-region: no-drag;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 10px;
+	border-radius: 7px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.flashtype-share-button:hover {
+	background: var(--color-bg-surface-hover);
+}
+.flashtype-share-button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.flashtype-share-dialog {
+	margin: auto;
+	width: min(480px, calc(100vw - 32px));
+	max-height: calc(100dvh - 48px);
+	overflow: auto;
+	border: 1px solid var(--color-border-subtle);
+	border-radius: 16px;
+	background: var(--color-bg-app);
+	color: var(--color-text-primary);
+	box-shadow: 0 24px 80px #0003;
+}
+.flashtype-share-dialog::backdrop {
+	background: #0005;
+}

@@ -1,5 +1,0 @@
-- **Best for:** first-time visitors who want museums, food markets, canals, and relaxed neighborhood wandering.
-- **Trip length:** three days and two nights.
-- **Transit:** U-Bahn, S-Bahn, tram, regional trains, and plenty of walking.
-- **Pace:** one main plan per day, with open space around it.
-- **Budget:** moderate, with inexpensive lunches and a few paid attractions.

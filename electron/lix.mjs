@@ -1,3 +1,9 @@
+import { getShareRuntime, getShareServer } from "./share-runtime.mjs";
+import { createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { assertWorkspaceCanOpen } from "./workspace-open-preflight.mjs";
+import { getDevSyncServer } from "./dev-sync.mjs";
 import { checkpointRepositoryMetadata } from "./initialize-checkpoint.mjs";
 import { createMemoryWorkspace } from "./memory-workspace.mjs";
 import { app } from "electron";
@@ -7,6 +13,7 @@ import path from "node:path";
 import { readFile, rm } from "node:fs/promises";
 import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
 import {
+	readWorkspaceRecovery,
 	clearWorkspaceLixOpenPendingSync,
 	markWorkspaceLixOpenPendingSync,
 	writeWorkspaceRecoverySync,
@@ -29,6 +36,18 @@ export async function ensureLixOpen(window) {
 						"No workspace is open. Open a folder before using lix.",
 					);
 				}
+				// Keep an existing crash report intact and avoid entering native code
+				// at all until recovery has explicitly been cleared.
+				if (workspace.ephemeral !== true) {
+					const recovery = await readWorkspaceRecovery(
+						app.getPath("userData"),
+						workspace.path,
+					);
+					if (recovery)
+						throw new Error(
+							"This repository needs recovery before it can be opened.",
+						);
+				}
 				let nativeLix;
 				let releaseStorageOptions = async () => {};
 				const tracksPersistentWorkspace = workspace.ephemeral !== true;
@@ -44,8 +63,24 @@ export async function ensureLixOpen(window) {
 					}
 					let storage;
 					if (tracksPersistentWorkspace) {
+						await assertWorkspaceCanOpen(userDataPath, workspace.path);
 						storage = new LocalFilesystem({ path: workspace.path });
-						nativeLix = await openLix({ storage });
+						const server =
+							getDevSyncServer(workspace) ?? (await getShareServer(workspace));
+						try {
+							nativeLix = await openLix({
+								storage,
+								...(server ? { server } : {}),
+							});
+						} catch (error) {
+							if (!server) throw error;
+							getShareRuntime().errors.set(
+								workspace.path,
+								"Sync is unavailable. You can keep working locally and reconnect from Share.",
+							);
+							storage = new LocalFilesystem({ path: workspace.path });
+							nativeLix = await openLix({ storage });
+						}
 					} else {
 						nativeLix = await openLix();
 						storage = createMemoryWorkspace(nativeLix, workspace.path);
@@ -166,6 +201,7 @@ export async function closeLix(window, options = {}) {
 		return;
 	}
 	await enqueue(session, async () => {
+		await options.beforeClose?.();
 		await closeCurrentLix(session, options);
 	});
 }
@@ -359,6 +395,14 @@ function createDesktopLixHandle(
 	syncTimer?.unref();
 
 	return {
+		async exportShareSnapshot(destination) {
+			await runQueued(() =>
+				pipeline(
+					Readable.fromWeb(nativeLix.exportSnapshot()),
+					createWriteStream(destination, { flags: "wx", mode: 0o600 }),
+				),
+			);
+		},
 		sessionId() {
 			return sessionId;
 		},

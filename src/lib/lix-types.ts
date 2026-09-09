@@ -40,16 +40,7 @@ export type OpenLixKeyValueEntry = {
 	key: string;
 	value: unknown;
 	lixcol_untracked?: boolean;
-} & (
-	| {
-			lixcol_branch_id: string;
-			lixcol_global: boolean;
-	  }
-	| {
-			lixcol_branch_id?: undefined;
-			lixcol_global?: boolean;
-	  }
-);
+};
 
 export type OpenLixOptions = SdkOpenLixOptions & {
 	keyValues?: ReadonlyArray<OpenLixKeyValueEntry>;
@@ -61,6 +52,7 @@ type SdkLixBase = Pick<
 >;
 
 export interface FlashtypeLix extends SdkLixBase {
+	subscribeActiveBranch?(listener: () => void): () => void;
 	execute(
 		sql: string,
 		params?: ReadonlyArray<unknown>,

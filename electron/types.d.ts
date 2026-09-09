@@ -120,14 +120,14 @@ export type DesktopAgentName = "claude" | "codex";
 export type DesktopAgentAuthStatus =
 	| "unknown"
 	| "notSignedIn"
-	| "signedIn"
+	| "hasToken"
 	| "free"
 	| "paid";
 
 export type DesktopAgentPreferenceReason =
 	| "paid"
 	| "free"
-	| "signedIn"
+	| "hasToken"
 	| "supportedVersion"
 	| "installed"
 	| "fallback";
@@ -282,6 +282,7 @@ export type DesktopWatchedFilesystemEntry = {
 export type DesktopWorkspaceApi = {
 	get(): Promise<DesktopWorkspace | null>;
 	getRecovery(): Promise<DesktopWorkspaceRecovery | null>;
+	deleteLixAndRestart(workspacePath: string): Promise<void>;
 	clearRecovery(): Promise<void>;
 	/** Returns workspace-relative file paths queued for editor opening. */
 	consumePendingOpenFiles(): Promise<string[]>;
@@ -321,6 +322,13 @@ export type DesktopWorkspaceApi = {
 	resetLixRepository(): Promise<void>;
 	disableTrackChanges(): Promise<DesktopWorkspace>;
 	initializeRepository(): Promise<DesktopWorkspace>;
+	inspectRepositorySize(): Promise<{
+		fileCount: number;
+		totalBytes: number;
+		complete: boolean;
+		allowed: boolean;
+		maxBytes: number;
+	}>;
 	resolveMarkdownImageSrc(payload: {
 		src: string;
 		sourceFilePath: string;
@@ -411,6 +419,23 @@ declare global {
 		flashtypeDesktop?: {
 			agentHooks: DesktopAgentHooksApi;
 			app: DesktopAppApi;
+			share: {
+				setToken(token: string): Promise<void>;
+				status(path: string): Promise<{
+					hasToken: boolean;
+					connected: boolean;
+					published?: boolean;
+					inherited?: boolean;
+					url?: string;
+					error?: string;
+				}>;
+				connect(confirmed: boolean): Promise<{ reload: boolean }>;
+				publish(
+					path: string,
+					publish: boolean,
+				): Promise<{ published: boolean; inherited: boolean; url: string }>;
+				reconnect(): Promise<void>;
+			};
 			platform: string;
 			telemetry: DesktopTelemetryApi;
 			lix: DesktopLixApi;

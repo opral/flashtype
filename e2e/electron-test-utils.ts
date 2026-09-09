@@ -91,7 +91,7 @@ export async function ensureFilesViewOpenInLeftPanel(
 	await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
 	await expect(filesTab).toBeVisible();
 	await filesTab.click();
-	await expect(filesTab).toHaveAttribute("data-focused", "true");
+	await expect(filesTab).toHaveAttribute("data-active", "true");
 }
 
 async function waitForWorkspaceReady(page: Page): Promise<void> {
@@ -100,17 +100,24 @@ async function waitForWorkspaceReady(page: Page): Promise<void> {
 }
 
 export function fileTreeFiles(page: Page): Locator {
-	return page.locator(
-		'[data-type="item"][data-item-type="file"][data-item-path]',
-	);
+	return page
+		.locator("aside")
+		.first()
+		.locator('[data-type="item"][data-item-type="file"][data-item-path]');
 }
 
 export function fileTreeFile(page: Page, appPath: string): Locator {
-	return page.locator(fileTreeItemSelector(appPath, "file"));
+	return page
+		.locator("aside")
+		.first()
+		.locator(fileTreeItemSelector(appPath, "file"));
 }
 
 export function fileTreeDirectory(page: Page, appPath: string): Locator {
-	return page.locator(fileTreeItemSelector(appPath, "folder"));
+	return page
+		.locator("aside")
+		.first()
+		.locator(fileTreeItemSelector(appPath, "folder"));
 }
 
 function fileTreeItemSelector(
@@ -172,7 +179,7 @@ export async function expectInstalledPluginArchives(
 	await expect
 		.poll(() =>
 			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_md_v2.lixplugin"),
+				path.join(workspaceDir, ".lix", "plugins", "plugin_markdown.lixplugin"),
 			),
 		)
 		.toBeGreaterThan(0);

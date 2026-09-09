@@ -101,15 +101,14 @@ export function ErrorFallback(props: {
 		setBusyAction("disable");
 		setActionError(null);
 		try {
-			const disableTrackChanges =
-				window.flashtypeDesktop?.workspace?.disableTrackChanges;
-			if (typeof disableTrackChanges !== "function") {
+			const api = window.flashtypeDesktop?.workspace;
+			const workspacePath = recovery?.workspacePath ?? (await api?.get())?.path;
+			if (!api?.deleteLixAndRestart || !workspacePath) {
 				throw new Error(
-					"Disabling Track Changes is only available in the desktop app.",
+					"Restart Flashtype to load the repository recovery action.",
 				);
 			}
-			await disableTrackChanges();
-			window.location.reload();
+			await api.deleteLixAndRestart(workspacePath);
 		} catch (error) {
 			setActionError(error);
 			setBusyAction(null);
@@ -177,13 +176,14 @@ export function ErrorFallback(props: {
 						{recovery?.workspaceName
 							? ` ${recovery.workspaceName}`
 							: " this workspace"}
-						. You can disable Track Changes to remove the workspace .lix data
-						and open the folder normally. Your project files will not be
-						deleted.
+						. Delete .lix and restart to open this folder with temporary
+						history. Your normal files will not be deleted. All Flashtype
+						windows will restart.
 					</p>
 					<div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 mb-4">
 						<p className="text-sm font-medium text-destructive">
-							Disabling Track Changes removes change history stored in .lix.
+							Deleting .lix permanently removes this folder’s saved change
+							history.
 						</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-3">
@@ -194,8 +194,8 @@ export function ErrorFallback(props: {
 						>
 							<Trash2 className="h-4 w-4" />
 							{busyAction === "disable"
-								? "Disabling..."
-								: "Disable Track Changes"}
+								? "Restarting..."
+								: "Delete .lix and restart"}
 						</button>
 						<button
 							onClick={

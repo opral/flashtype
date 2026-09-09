@@ -164,7 +164,7 @@ test("deleting the active file closes the central file view", async ({
 		await expect(
 			page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 		).toHaveCount(0);
-		await expect(page.getByTestId("central-panel-empty-state")).toBeVisible();
+		await expect(page.getByTestId("files-view-wide")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}

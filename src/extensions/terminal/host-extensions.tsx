@@ -1,9 +1,8 @@
-import { createRoot } from "react-dom/client";
+import { useEffect } from "react";
 import type {
 	AtelierExtensionRegistration,
 	AtelierDiffApi,
 	ExtensionManifest,
-	ExtensionRuntimeEntry,
 } from "@opral/atelier";
 import {
 	ClaudeIcon,
@@ -26,6 +25,7 @@ export const agentDiffBridge = {
 			base: { commitId: options.beforeCommitId },
 			target: { commitId: options.afterCommitId },
 			reveal: true,
+			intent: "review-applied",
 		});
 	},
 };
@@ -51,27 +51,20 @@ function createAgentExtension(args: {
 	readonly agent: "claude" | "codex";
 	readonly icon: typeof ClaudeIcon;
 }): AtelierExtensionRegistration {
-	const mount: ExtensionRuntimeEntry["mount"] = ({
-		element,
-		atelier: runtime,
-	}) => {
-		if (runtime.diff) activeDiffs.add(runtime.diff);
-		const root = createRoot(element);
-		root.render(
-			<TerminalView launchConfig={createAgentHostLaunchConfig(args.agent)} />,
-		);
-		return {
-			dispose: () => {
-				if (runtime.diff) activeDiffs.delete(runtime.diff);
-				root.unmount();
-			},
-		};
-	};
 	return {
-		manifest: args.manifest,
-		entry: {
-			icon: args.icon,
-			mount,
+		...args.manifest,
+		icon: args.icon,
+		Component: ({ atelier }) => {
+			useEffect(() => {
+				if (!atelier.diff) return;
+				activeDiffs.add(atelier.diff);
+				return () => {
+					activeDiffs.delete(atelier.diff!);
+				};
+			}, [atelier.diff]);
+			return (
+				<TerminalView launchConfig={createAgentHostLaunchConfig(args.agent)} />
+			);
 		},
 	};
 }
