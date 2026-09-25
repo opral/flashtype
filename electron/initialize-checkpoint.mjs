@@ -5,7 +5,7 @@ export async function checkpointRepositoryMetadata(lix) {
 	const pending = await lix.execute(metadataDiff);
 	if (pending.rows.length === 0) return;
 	const result = await lix.execute(
-		`SELECT commit_id FROM lix_create_checkpoint(ARRAY(${metadataDiff}))`,
+		`SELECT commit_id FROM lix_create_checkpoint(NULL, NULL, ARRAY(${metadataDiff}))`,
 	);
 	if (typeof result.rows[0]?.commit_id !== "string") {
 		throw new Error(

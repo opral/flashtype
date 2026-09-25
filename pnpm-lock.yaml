@@ -32,11 +32,11 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@lix-js/sdk':
-        specifier: 0.18.0
-        version: 0.18.0
+        specifier: 0.18.1
+        version: 0.18.1
       '@lix-js/storage-filesystem':
-        specifier: 0.18.0
-        version: 0.18.0(@lix-js/sdk@0.18.0)
+        specifier: 0.18.1
+        version: 0.18.1(@lix-js/sdk@0.18.1)
       '@opral/atelier':
         specifier: workspace:*
         version: link:submodule/atelier
@@ -1671,33 +1671,33 @@ packages:
   '@lix-js/html-diff@0.1.0':
     resolution: {integrity: sha512-4dr7+xo8UEncWGjne9PoL6KqFGcOHZXyeBTTghTW196kK5xidQ8h4hufjHXYxv6x5VAFzXcBCuFnW1GgPS5kqw==}
 
-  '@lix-js/sdk-darwin-arm64@0.18.0':
-    resolution: {integrity: sha512-636u2q39edVGiCz+Y5lUyaQZ7sMvdxmH8MIRfwvT1zjdYql+l3AEMOYTK9QLLHf7oisBTrDwTOpGCbcH4ptEuA==}
+  '@lix-js/sdk-darwin-arm64@0.18.1':
+    resolution: {integrity: sha512-d5AjKHKBcF+tfK5Eeucn3hTN4gKC+PBZZzwWEzkOcmWG3UglL17OGPvT2VOU+QllwuAG/K1BGrBBztl1UvpEFQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@lix-js/sdk-linux-arm64@0.18.0':
-    resolution: {integrity: sha512-3IfOVWpugB/XFgCM6G2DZbWytgz+ZAb4TM8voYCc0hfxKL+1TV8ZmU/W1s7zXEkR58tKrDhvU8y43tkXR2oWTg==}
+  '@lix-js/sdk-linux-arm64@0.18.1':
+    resolution: {integrity: sha512-B5akmWsl+V+bWRsDC6Lzt3MbUTAfW2rokzliK2qtAhGJdBk9P4nZZjCIac9/5kY3OJPWFxmxddnRODA42ec32g==}
     cpu: [arm64]
     os: [linux]
 
-  '@lix-js/sdk-linux-x64@0.18.0':
-    resolution: {integrity: sha512-b4+UaGaNM7ZtNSI2fi/5f5+J5y01OQgcO/udt1i1F7Yys9wJbPvBfyQUyZ85OdiBg1sux3w0ZBDbYDQTKXx4lQ==}
+  '@lix-js/sdk-linux-x64@0.18.1':
+    resolution: {integrity: sha512-fUjpS50ik1Z8LueWwnEA6YCffbhna4ittuIUiK1oFHxvYB/oYQp6gDM1cvEW7RZ9D0CQRg1cXcNTQyHPRUg2Ig==}
     cpu: [x64]
     os: [linux]
 
-  '@lix-js/sdk-win32-x64@0.18.0':
-    resolution: {integrity: sha512-ugYByQIAD5QVjOk15OaRWzh9AOwcAoKnjq0fgtFPrEioQIUKcQfY9kM7g9l3dwiNevXO8bLqScw9EqIZvGX7Yw==}
+  '@lix-js/sdk-win32-x64@0.18.1':
+    resolution: {integrity: sha512-pJYBIayv7O/RWEIPtksx828DZnW0ypCLR4cnCW849YafHjUVOWmYezOxbf3aj1+h1oq0Kgq9YnufY74YiY7B6Q==}
     cpu: [x64]
     os: [win32]
 
-  '@lix-js/sdk@0.18.0':
-    resolution: {integrity: sha512-raO0ccG1DQJWCE0647qFAgHeB0V5qYFYfJCJZo+AaAnpvSdBe09QAru87cNywkZ3pbsH2t+13eh48ORK4PHEpg==}
+  '@lix-js/sdk@0.18.1':
+    resolution: {integrity: sha512-PIU7V//11++YBNmA7O8vKwyHFksvFBBGDfhSFNqx1uivKBx7eqncQHbw8SND2Oh/s0WlGaMM7p6j/+2NMsmBaQ==}
 
-  '@lix-js/storage-filesystem@0.18.0':
-    resolution: {integrity: sha512-OW/E581ZhPevKOaG3yzeZIgL9Pt3slkwH+zLDcxH4OZh0zdBoVDJK0UzNFTZhfgOqNpHCOygKy+DkbR7/PCk/w==}
+  '@lix-js/storage-filesystem@0.18.1':
+    resolution: {integrity: sha512-QsJbzI0wx+tTJFvuvqGCcJ0Vd+RxRGIsch01j1hbW8b1hzMJ9RQ0ULUKiOJYgCLH071XHLBBELuVw7fcgMtEPg==}
     peerDependencies:
-      '@lix-js/sdk': 0.18.0
+      '@lix-js/sdk': 0.18.1
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -8886,32 +8886,32 @@ snapshots:
       diff: 8.0.4
       parse5: 7.3.0
 
-  '@lix-js/sdk-darwin-arm64@0.18.0':
+  '@lix-js/sdk-darwin-arm64@0.18.1':
     optional: true
 
-  '@lix-js/sdk-linux-arm64@0.18.0':
+  '@lix-js/sdk-linux-arm64@0.18.1':
     optional: true
 
-  '@lix-js/sdk-linux-x64@0.18.0':
+  '@lix-js/sdk-linux-x64@0.18.1':
     optional: true
 
-  '@lix-js/sdk-win32-x64@0.18.0':
+  '@lix-js/sdk-win32-x64@0.18.1':
     optional: true
 
-  '@lix-js/sdk@0.18.0':
+  '@lix-js/sdk@0.18.1':
     dependencies:
       '@bytecodealliance/jco-transpile': 0.13.0
       binaryen: 130.0.0
       fflate: 0.8.3
     optionalDependencies:
-      '@lix-js/sdk-darwin-arm64': 0.18.0
-      '@lix-js/sdk-linux-arm64': 0.18.0
-      '@lix-js/sdk-linux-x64': 0.18.0
-      '@lix-js/sdk-win32-x64': 0.18.0
+      '@lix-js/sdk-darwin-arm64': 0.18.1
+      '@lix-js/sdk-linux-arm64': 0.18.1
+      '@lix-js/sdk-linux-x64': 0.18.1
+      '@lix-js/sdk-win32-x64': 0.18.1
 
-  '@lix-js/storage-filesystem@0.18.0(@lix-js/sdk@0.18.0)':
+  '@lix-js/storage-filesystem@0.18.1(@lix-js/sdk@0.18.1)':
     dependencies:
-      '@lix-js/sdk': 0.18.0
+      '@lix-js/sdk': 0.18.1
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
