@@ -1,11 +1,11 @@
 import type {
-	ExecuteResult,
+	StatementResult as ExecuteResult,
 	Lix as SdkLix,
-	LixTransaction as SdkLixTransaction,
+	ObserveEvent as SdkObserveEvent,
 	OpenLixOptions as SdkOpenLixOptions,
 } from "@lix-js/sdk";
 
-export type { ExecuteResult as LixRuntimeQueryResult } from "@lix-js/sdk";
+export type { StatementResult as LixRuntimeQueryResult } from "@lix-js/sdk";
 export type ExecuteOptions = { originKey?: string };
 export type LixExecuteOptions = ExecuteOptions;
 
@@ -16,7 +16,9 @@ export type TransactionStatement = {
 	params?: ReadonlyArray<unknown>;
 };
 
-export type SqlTransaction = Pick<SdkLixTransaction, "commit" | "rollback"> & {
+export type SqlTransaction = {
+	commit(): Promise<void>;
+	rollback(): Promise<void>;
 	execute(
 		sql: string,
 		params?: ReadonlyArray<unknown>,
@@ -24,17 +26,8 @@ export type SqlTransaction = Pick<SdkLixTransaction, "commit" | "rollback"> & {
 	): Promise<ExecuteResult>;
 };
 
-export type ObserveEvent = {
-	sequence: number;
-	mutationSequence: number;
-	result: ExecuteResult;
-};
-
-export type ObserveEvents = {
-	/** First event is the current result snapshot; later events are changes. */
-	next(): Promise<ObserveEvent | undefined>;
-	close(): void;
-};
+export type ObserveEvent = SdkObserveEvent;
+export type ObserveEvents = ReturnType<SdkLix["observe"]>;
 
 export type OpenLixKeyValueEntry = {
 	key: string;
@@ -63,7 +56,11 @@ export interface FlashtypeLix extends SdkLixBase {
 	executeTransaction(
 		statements: ReadonlyArray<TransactionStatement>,
 	): Promise<ExecuteResult>;
-	observe(sql: string, params?: ReadonlyArray<unknown>): ObserveEvents;
+	observe(
+		sql: string,
+		params?: ReadonlyArray<unknown>,
+		options?: Parameters<SdkLix["observe"]>[2],
+	): ObserveEvents;
 	importFilesystemPaths(paths: readonly string[]): Promise<void>;
 	mergeBranchPreview?: SdkLix["mergeBranchPreview"];
 	mergeBranch?: SdkLix["mergeBranch"];

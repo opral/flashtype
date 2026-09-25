@@ -3,6 +3,7 @@ import {
 	readFile,
 	writeFile,
 	mkdir,
+	rmdir,
 	unlink,
 	lstat,
 	realpath,
@@ -14,6 +15,7 @@ const equal = (a, b) =>
 /** Disk files remain durable; only their Lix history lives in memory. */
 export function createMemoryWorkspace(lix, root) {
 	const baseline = new Map();
+	const createdDirectories = new Set();
 	async function diskPath(relative) {
 		const parts = relative.replace(/^\/+/, "").split("/");
 		if (
@@ -62,6 +64,19 @@ export function createMemoryWorkspace(lix, root) {
 		}
 	}
 	async function flush() {
+		const directoryResult = await lix.execute(
+			"SELECT path FROM lix_directory WHERE path != '/' AND path NOT LIKE '/.lix%'",
+		);
+		const directories = new Set(
+			directoryResult.rows
+				.map((row) => row.path)
+				.filter((directoryPath) => typeof directoryPath === "string")
+				.map(normalizeDirectoryPath),
+		);
+		for (const directoryPath of [...directories].sort(compareWorkspacePaths)) {
+			await ensureDirectory(directoryPath);
+		}
+
 		const result = await lix.execute(
 			"SELECT path, content FROM lix_file WHERE path NOT LIKE '/.lix/%'",
 		);
@@ -89,10 +104,83 @@ export function createMemoryWorkspace(lix, root) {
 			}
 			baseline.set(key, next);
 		}
+
+		for (const directoryPath of [...createdDirectories].sort(
+			compareWorkspacePathsDescending,
+		)) {
+			if (directories.has(directoryPath)) continue;
+			const target = await diskPath(directoryPath);
+			try {
+				await rmdir(target);
+				createdDirectories.delete(directoryPath);
+			} catch (error) {
+				if (error.code === "ENOENT") {
+					createdDirectories.delete(directoryPath);
+					continue;
+				}
+				if (error.code !== "ENOTEMPTY" && error.code !== "EEXIST") {
+					throw error;
+				}
+			}
+		}
+	}
+	async function ensureDirectory(relative) {
+		const target = await diskPath(relative);
+		const base = await realpath(root);
+		const parts = relative.replace(/^\/+/, "").split("/");
+		let current = base;
+		for (let index = 0; index < parts.length; index += 1) {
+			current = path.join(current, parts[index]);
+			try {
+				const metadata = await lstat(current);
+				if (metadata.isSymbolicLink()) {
+					throw new Error(
+						"Symbolic links are not supported for in-memory workspace files",
+					);
+				}
+				if (!metadata.isDirectory()) {
+					throw new Error(
+						`Workspace directory path is not a directory: ${relative}`,
+					);
+				}
+			} catch (error) {
+				if (error.code !== "ENOENT") throw error;
+				try {
+					await mkdir(current);
+					createdDirectories.add(`/${parts.slice(0, index + 1).join("/")}`);
+				} catch (mkdirError) {
+					if (mkdirError.code !== "EEXIST") throw mkdirError;
+					const metadata = await lstat(current);
+					if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+						throw new Error(
+							`Workspace directory path is not a directory: ${relative}`,
+						);
+					}
+				}
+			}
+		}
+		return target;
 	}
 	return {
 		importPaths,
 		flush,
 		syncDiskToLix: () => importPaths([...baseline.keys()]),
 	};
+}
+
+function normalizeDirectoryPath(directoryPath) {
+	return directoryPath.endsWith("/") && directoryPath !== "/"
+		? directoryPath.slice(0, -1)
+		: directoryPath;
+}
+
+function compareWorkspacePaths(left, right) {
+	return (
+		left.split("/").length - right.split("/").length ||
+		left.localeCompare(right)
+	);
+}
+
+function compareWorkspacePathsDescending(left, right) {
+	return compareWorkspacePaths(right, left);
 }

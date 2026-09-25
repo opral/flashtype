@@ -1,6 +1,7 @@
 import path from "node:path";
 
 export const APP_BUNDLE_ID = "com.flashtype.app";
+export const APPLE_NUMBERS_BUNDLE_ID = "com.apple.iWork.Numbers";
 export const APP_NAME = "Flashtype";
 export const DOCUMENT_CONTENT_TYPES = [
 	"public.markdown",
@@ -29,20 +30,28 @@ export function isCanonicalInstalledAppBundle(appBundlePath) {
 	);
 }
 
-// LaunchServices does not distinguish a fallback from a deliberate user choice.
-// Preserve every other app, including Apple apps; never reclaim a changed default.
+// Preserve an explicitly selected app. CSV's uncustomized Numbers fallback is
+// handled separately after checking the user's LaunchServices preferences.
 export function shouldReplaceDocumentDefaultHandler(handlerBundleId) {
 	return (
 		handlerBundleId == null || handlerBundleId.toLowerCase() === APP_BUNDLE_ID
 	);
 }
 
-export function getDocumentContentTypesToRegister(currentHandlers) {
-	return DOCUMENT_CONTENT_TYPES.filter(
-		(contentType) =>
-			Object.hasOwn(currentHandlers, contentType) &&
-			shouldReplaceDocumentDefaultHandler(currentHandlers[contentType]),
-	);
+export function getDocumentContentTypesToRegister(
+	currentHandlers,
+	explicitUserDefaults = [],
+) {
+	return DOCUMENT_CONTENT_TYPES.filter((contentType) => {
+		if (!Object.hasOwn(currentHandlers, contentType)) return false;
+		const handler = currentHandlers[contentType];
+		if (shouldReplaceDocumentDefaultHandler(handler)) return true;
+		return (
+			contentType === "public.comma-separated-values-text" &&
+			handler?.toLowerCase() === APPLE_NUMBERS_BUNDLE_ID.toLowerCase() &&
+			!explicitUserDefaults.includes(contentType)
+		);
+	});
 }
 
 export function getNonCanonicalFlashtypeBundlePathsFromLsregisterDump(dump) {
@@ -68,7 +77,27 @@ export function getNonCanonicalFlashtypeBundlePathsFromLsregisterDump(dump) {
 function buildDocumentHandlerQueryScript() {
 	return `
 ObjC.import("CoreServices");
+ObjC.import("Foundation");
 const contentTypes = ${JSON.stringify(DOCUMENT_CONTENT_TYPES)};
+const csvContentType = "public.comma-separated-values-text";
+const csvExtension = "csv";
+const preferenceDomain = "com.apple.LaunchServices/com.apple.launchservices.secure";
+const preferences = ObjC.deepUnwrap(
+	$.NSUserDefaults.standardUserDefaults.persistentDomainForName(
+		$.NSString.stringWithString(preferenceDomain)
+	)
+);
+const savedHandlers = preferences && preferences.LSHandlers || [];
+function hasExplicitUserDefault(contentType) {
+	return savedHandlers.some(function(saved) {
+		const matchesType = saved.LSHandlerContentType === contentType;
+		const matchesCsvExtension = contentType === csvContentType &&
+			saved.LSHandlerContentTagClass === "public.filename-extension" &&
+			String(saved.LSHandlerContentTag || "").toLowerCase() === csvExtension;
+		return (matchesType || matchesCsvExtension) &&
+			(saved.LSHandlerRoleEditor || saved.LSHandlerRoleAll);
+	});
+}
 const handlers = {};
 for (const contentType of contentTypes) {
 	const handler = $.LSCopyDefaultRoleHandlerForContentType(
@@ -77,19 +106,45 @@ for (const contentType of contentTypes) {
 	);
 	handlers[contentType] = handler ? ObjC.unwrap(ObjC.castRefToObject(handler)) : null;
 }
-console.log(JSON.stringify(handlers));
+const explicitUserDefaults = contentTypes.filter(hasExplicitUserDefault);
+console.log(JSON.stringify({ handlers: handlers, explicitUserDefaults: explicitUserDefaults }));
 `;
 }
 
 function buildDocumentHandlerRegistrationScript(contentTypes) {
 	return `
 ObjC.import("CoreServices");
+ObjC.import("Foundation");
 const bundleId = ${JSON.stringify(APP_BUNDLE_ID)};
+const numbersBundleId = ${JSON.stringify(APPLE_NUMBERS_BUNDLE_ID)};
+const csvContentType = "public.comma-separated-values-text";
+const csvExtension = "csv";
+const preferenceDomain = "com.apple.LaunchServices/com.apple.launchservices.secure";
+const preferences = ObjC.deepUnwrap(
+	$.NSUserDefaults.standardUserDefaults.persistentDomainForName(
+		$.NSString.stringWithString(preferenceDomain)
+	)
+);
+const savedHandlers = preferences && preferences.LSHandlers || [];
+function hasExplicitCsvDefault() {
+	return savedHandlers.some(function(saved) {
+		const matchesType = saved.LSHandlerContentType === csvContentType;
+		const matchesExtension = saved.LSHandlerContentTagClass === "public.filename-extension" &&
+			String(saved.LSHandlerContentTag || "").toLowerCase() === csvExtension;
+		return (matchesType || matchesExtension) &&
+			(saved.LSHandlerRoleEditor || saved.LSHandlerRoleAll);
+});
+}
 const contentTypes = ${JSON.stringify(contentTypes)};
 for (const contentType of contentTypes) {
 	// A user may have changed the default since the initial query.
 	const current = $.LSCopyDefaultRoleHandlerForContentType($(contentType), $.kLSRolesEditor);
-	if (current && ObjC.unwrap(ObjC.castRefToObject(current)).toLowerCase() !== bundleId) continue;
+	if (current) {
+		const currentBundleId = ObjC.unwrap(ObjC.castRefToObject(current)).toLowerCase();
+		const isNumbersSystemFallback = contentType === csvContentType &&
+			currentBundleId === numbersBundleId.toLowerCase() && !hasExplicitCsvDefault();
+		if (currentBundleId !== bundleId && !isNumbersSystemFallback) continue;
+	}
 	const status = $.LSSetDefaultRoleHandlerForContentType(
 		$(contentType),
 		$.kLSRolesEditor,
@@ -102,7 +157,7 @@ for (const contentType of contentTypes) {
 `;
 }
 
-async function getCurrentDocumentDefaultHandlers(execFileAsync) {
+async function getCurrentDocumentDefaults(execFileAsync) {
 	const { stdout } = await execFileAsync(
 		"/usr/bin/osascript",
 		["-l", "JavaScript", "-e", buildDocumentHandlerQueryScript()],
@@ -157,9 +212,12 @@ export async function registerDocumentDefaultHandlers({
 		timeout: 5000,
 	});
 
-	const currentHandlers =
-		await getCurrentDocumentDefaultHandlers(execFileAsync);
-	const contentTypes = getDocumentContentTypesToRegister(currentHandlers);
+	const { handlers, explicitUserDefaults } =
+		await getCurrentDocumentDefaults(execFileAsync);
+	const contentTypes = getDocumentContentTypesToRegister(
+		handlers,
+		explicitUserDefaults,
+	);
 	if (contentTypes.length === 0) {
 		return { status: "skipped", reason: "user-handler-preserved" };
 	}

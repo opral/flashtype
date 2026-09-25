@@ -28,7 +28,7 @@ for (const source of ["launch argument", "macOS open-file event"] as const) {
 				.poll(
 					async () => {
 						for (const page of app.windows())
-							if (await page.locator(".csv-view").isVisible()) return true;
+							if (await page.locator(".csv-view[data-document]").isVisible()) return true;
 						return false;
 					},
 					{ timeout: 30_000 },

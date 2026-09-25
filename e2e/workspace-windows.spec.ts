@@ -7,7 +7,7 @@ import path from "node:path";
 import {
 	clickAndWaitForAppClose,
 	closeElectronApp,
-	expectInstalledPluginArchives,
+	expectInstalledMarkdownPlugin,
 	fileTreeDirectory,
 	fileTreeFile,
 	launchDevElectronAppWithArgs,
@@ -384,7 +384,7 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 		await expectTrackChangesSettled(electronApp, workspaceDir, true);
 		await expectLixFilePath(page, "/marker.md");
 		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
-		await expectInstalledPluginArchives(workspaceDir);
+		await expectInstalledMarkdownPlugin(workspaceDir);
 
 		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
@@ -447,7 +447,7 @@ test("Track Changes recovery screen deletes damaged tracking and restarts", asyn
 			}),
 		).toBeVisible();
 		await expect(
-			page.getByText("Your normal files will not be deleted."),
+			page.getByText("Your files and saved history have not been deleted."),
 		).toBeVisible();
 
 		await clickAndWaitForAppClose(
@@ -762,7 +762,12 @@ test("mixed folder and standalone markdown args create folder and grouped file w
 		await expect(
 			fileTreeFile(groupedFilePage, "/folder-marker.md"),
 		).toHaveCount(0);
-		await fileTreeDirectory(groupedFilePage, "/standalone-mixed-two/").click();
+		const secondDirectory = fileTreeDirectory(
+			groupedFilePage,
+			"/standalone-mixed-two/",
+		);
+		await secondDirectory.click();
+		await secondDirectory.press("ArrowRight");
 		const secondItem = fileTreeFile(
 			groupedFilePage,
 			"/standalone-mixed-two/two.md",
@@ -807,9 +812,11 @@ test("relaunch restores grouped transient file workspace", async ({
 		await expect(
 			initialPage.getByRole("heading", { name: "First" }),
 		).toBeVisible();
-		await expectWorkspaceSessionOpenFilePaths(userDataDir, groupedWorkspaceDir, [
-			"restore-markdown-first/first.md",
-		]);
+		await expectWorkspaceSessionOpenFilePaths(
+			userDataDir,
+			groupedWorkspaceDir,
+			["restore-markdown-first/first.md"],
+		);
 
 		await closeElectronApp(electronApp);
 		electronApp = undefined;

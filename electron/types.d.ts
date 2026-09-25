@@ -46,9 +46,15 @@ export type DesktopObserveEvent = {
 };
 
 export type DesktopLixApi = {
+	onOpenProgress(
+		listener: (progress: import("@lix-js/sdk").LixOpenProgress) => void,
+	): () => void;
 	executeBatch(payload: {
 		statements: ReadonlyArray<{ sql: string; params?: ReadonlyArray<unknown> }>;
-	}): Promise<SerializedQueryResult[]>;
+	}): Promise<{
+		results: Array<SerializedQueryResult & { statementIndex: number }>;
+		commit: import("@lix-js/sdk").CommitSpan | null;
+	}>;
 	open(): Promise<{ sessionId: string }>;
 	workspaceDir(): Promise<string>;
 	storageDir(): Promise<string | null>;
@@ -419,23 +425,6 @@ declare global {
 		flashtypeDesktop?: {
 			agentHooks: DesktopAgentHooksApi;
 			app: DesktopAppApi;
-			share: {
-				setToken(token: string): Promise<void>;
-				status(path: string): Promise<{
-					hasToken: boolean;
-					connected: boolean;
-					published?: boolean;
-					inherited?: boolean;
-					url?: string;
-					error?: string;
-				}>;
-				connect(confirmed: boolean): Promise<{ reload: boolean }>;
-				publish(
-					path: string,
-					publish: boolean,
-				): Promise<{ published: boolean; inherited: boolean; url: string }>;
-				reconnect(): Promise<void>;
-			};
 			platform: string;
 			telemetry: DesktopTelemetryApi;
 			lix: DesktopLixApi;

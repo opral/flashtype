@@ -1,5 +1,5 @@
 import type {
-	AtelierDocumentsApi,
+	AtelierExtensionRuntime,
 	AtelierSessionStateStore,
 } from "@opral/atelier";
 import type { Lix } from "@/lib/lix-types";
@@ -20,7 +20,7 @@ type DesktopWorkspaceBridge = Pick<
 
 type ConnectAtelierWorkspaceOptions = {
 	readonly documents: Pick<
-		AtelierDocumentsApi,
+		AtelierExtensionRuntime["documents"],
 		"open" | "startNew" | "closeActive"
 	>;
 	readonly lix: Lix;
@@ -73,6 +73,8 @@ export function connectAtelierWorkspace(
 		 FROM lix_file
 		 WHERE path NOT LIKE '/.lix/%'
 		 ORDER BY id`,
+		[],
+		{ signal: abortController.signal },
 	);
 	let startupReady = false;
 	let sessionPersistenceQueue = Promise.resolve();
@@ -96,9 +98,8 @@ export function connectAtelierWorkspace(
 	const watchSessionEvents = async (
 		events: ReturnType<Lix["observe"]>,
 	): Promise<void> => {
-		while (!abortController.signal.aborted) {
-			const event = await events.next();
-			if (!event || abortController.signal.aborted) return;
+		for await (const _event of events) {
+			if (abortController.signal.aborted) return;
 			persistSessionDocuments();
 		}
 	};
@@ -155,7 +156,7 @@ export function connectAtelierWorkspace(
 		dispose: () => {
 			if (abortController.signal.aborted) return;
 			abortController.abort();
-			filePathEvents.close();
+			void filePathEvents.return?.();
 			unsubscribeSessionState();
 			unsubscribeNewFile();
 			unsubscribeCloseFile();
@@ -165,7 +166,7 @@ export function connectAtelierWorkspace(
 
 /** Imports a lazy Electron filesystem entry, then opens it through Atelier. */
 export async function openAtelierWorkspacePath(args: {
-	readonly documents: Pick<AtelierDocumentsApi, "open">;
+	readonly documents: Pick<AtelierExtensionRuntime["documents"], "open">;
 	readonly lix: Lix;
 	readonly path: string;
 }): Promise<void> {

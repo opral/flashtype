@@ -15,15 +15,6 @@ const app = {
 	},
 };
 
-const share = {
-	setToken: (token) => ipcRenderer.invoke("share:setToken", token),
-	status: (filePath) => ipcRenderer.invoke("share:status", filePath),
-	connect: (confirmed) => ipcRenderer.invoke("share:connect", confirmed),
-	publish: (filePath, publish) =>
-		ipcRenderer.invoke("share:publish", filePath, publish),
-	reconnect: () => ipcRenderer.invoke("share:reconnect"),
-};
-
 const telemetry = {
 	capture: (payload) => ipcRenderer.invoke("telemetry:capture", payload),
 	captureException: (payload) =>
@@ -90,6 +81,11 @@ const workspace = {
 };
 
 const lix = {
+	onOpenProgress: (listener) => {
+		const wrapped = (_event, progress) => listener(progress);
+		ipcRenderer.on("lix:openProgress", wrapped);
+		return () => ipcRenderer.off("lix:openProgress", wrapped);
+	},
 	executeBatch: (payload) => ipcRenderer.invoke("lix:executeBatch", payload),
 	open: () => ipcRenderer.invoke("lix:open"),
 	workspaceDir: () => ipcRenderer.invoke("lix:workspaceDir"),
@@ -189,7 +185,6 @@ function normalizeAgentHookListenerResult(value) {
 contextBridge.exposeInMainWorld("flashtypeDesktop", {
 	agentHooks,
 	app,
-	share,
 	platform: process.platform,
 	telemetry,
 	lix,

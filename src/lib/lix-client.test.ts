@@ -54,6 +54,41 @@ describe("openDesktopLix syncDiskToLix", () => {
 		expect(desktop.syncDiskToLix).toHaveBeenCalledOnce();
 		expect(desktop.order).toEqual(["sync"]);
 	});
+
+	test("exposes desktop observations as standard async iterators", async () => {
+		const desktop = createDesktop({
+			workspace: {
+				ephemeral: false,
+				path: "/workspace",
+				name: "workspace",
+			},
+			trackedPaths: [],
+		});
+		desktop.observeNext
+			.mockResolvedValueOnce({
+				sequence: 1,
+				mutationSequence: 2,
+				result: {
+					columns: ["value"],
+					rows: [["snapshot"]],
+					rowsAffected: 0,
+					notices: [],
+					commit: null,
+				},
+			})
+			.mockResolvedValueOnce(undefined);
+		window.flashtypeDesktop = desktop.api;
+
+		const lix = await openDesktopLix();
+		const events = lix.observe("SELECT 'snapshot' AS value");
+		const observed = [];
+		for await (const event of events) observed.push(event);
+
+		expect(observed).toHaveLength(1);
+		expect(observed[0]?.result.rows).toEqual([{ value: "snapshot" }]);
+		expect(desktop.observeStart).toHaveBeenCalledOnce();
+		expect(desktop.observeClose).toHaveBeenCalledOnce();
+	});
 });
 
 function createDesktop(args: {
@@ -81,6 +116,19 @@ function createDesktop(args: {
 	const syncDiskToLix = vi.fn(async () => {
 		order.push("sync");
 	});
+	const observeStart = vi.fn(async () => "observe-1");
+	const observeNext = vi.fn(async (): Promise<{
+		sequence: number;
+		mutationSequence: number;
+		result: {
+			columns: string[];
+			rows: unknown[][];
+			rowsAffected: number;
+			notices: never[];
+			commit: null;
+		};
+	} | undefined> => undefined);
+	const observeClose = vi.fn(async () => {});
 	const api = {
 		lix: {
 			open: vi.fn(async () => ({ sessionId: "desktop-session" })),
@@ -88,6 +136,9 @@ function createDesktop(args: {
 			importFilesystemPaths,
 			syncDiskToLix,
 			close: vi.fn(async () => {}),
+			observeStart,
+			observeNext,
+			observeClose,
 		},
 		workspace: {
 			get: vi.fn(async () => args.workspace),
@@ -99,5 +150,8 @@ function createDesktop(args: {
 		importFilesystemPaths,
 		order,
 		syncDiskToLix,
+		observeStart,
+		observeNext,
+		observeClose,
 	};
 }

@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { runInNewContext } from "node:vm";
 import {
 	APP_BUNDLE_ID,
 	getAppBundlePathFromExecutablePath,
@@ -130,8 +131,11 @@ identifier:                 com.flashtype.app
 			.mockResolvedValueOnce({ stdout: "" })
 			.mockResolvedValueOnce({
 				stdout: JSON.stringify({
-					"public.markdown": null,
-					"net.daringfireball.markdown": null,
+					handlers: {
+						"public.markdown": null,
+						"net.daringfireball.markdown": null,
+					},
+					explicitUserDefaults: [],
 				}),
 			})
 			.mockResolvedValueOnce({ stdout: "" });
@@ -197,8 +201,11 @@ identifier:                 com.flashtype.app
 			.mockResolvedValueOnce({ stdout: "" })
 			.mockResolvedValueOnce({
 				stdout: JSON.stringify({
-					"public.markdown": null,
-					"net.daringfireball.markdown": "com.microsoft.VSCode",
+					handlers: {
+						"public.markdown": null,
+						"net.daringfireball.markdown": "com.microsoft.VSCode",
+					},
+					explicitUserDefaults: [],
 				}),
 			})
 			.mockResolvedValueOnce({ stdout: "" });
@@ -228,8 +235,11 @@ identifier:                 com.flashtype.app
 			.mockResolvedValueOnce({ stdout: "" })
 			.mockResolvedValueOnce({
 				stdout: JSON.stringify({
-					"public.markdown": "com.microsoft.VSCode",
-					"net.daringfireball.markdown": "md.obsidian",
+					handlers: {
+						"public.markdown": "com.microsoft.VSCode",
+						"net.daringfireball.markdown": "md.obsidian",
+					},
+					explicitUserDefaults: [],
 				}),
 			});
 
@@ -250,10 +260,19 @@ identifier:                 com.flashtype.app
 
 describe("CSV default handler registration", () => {
 	const csv = "public.comma-separated-values-text";
-	test("claims CSV when unassigned and preserves every existing app", () => {
+	test("claims CSV when unassigned or when Numbers is only the system fallback", () => {
 		expect(getDocumentContentTypesToRegister({ [csv]: null })).toEqual([csv]);
+		expect(
+			getDocumentContentTypesToRegister({
+				[csv]: "com.apple.iWork.Numbers",
+			}),
+		).toEqual([csv]);
+		expect(
+			getDocumentContentTypesToRegister({ [csv]: "com.apple.iWork.Numbers" }, [
+				csv,
+			]),
+		).toEqual([]);
 		for (const handler of [
-			"com.apple.iWork.Numbers",
 			"com.microsoft.Excel",
 			"com.apple.TextEdit",
 			"com.apple.dt.Xcode",
@@ -273,9 +292,12 @@ describe("CSV default handler registration", () => {
 			.mockResolvedValueOnce({ stdout: "" })
 			.mockResolvedValueOnce({
 				stdout: JSON.stringify({
-					"public.markdown": "com.microsoft.VSCode",
-					"net.daringfireball.markdown": "com.apple.TextEdit",
-					[csv]: null,
+					handlers: {
+						"public.markdown": "com.microsoft.VSCode",
+						"net.daringfireball.markdown": "com.apple.TextEdit",
+						[csv]: null,
+					},
+					explicitUserDefaults: [],
 				}),
 			})
 			.mockResolvedValueOnce({ stdout: "" });
@@ -290,19 +312,135 @@ describe("CSV default handler registration", () => {
 		const registration = execFileAsync.mock.calls[3][1][3];
 		expect(registration).toContain(csv);
 		expect(registration).not.toContain('"public.markdown"');
+
+		const query = execFileAsync.mock.calls[2][1][3];
+		const csvPreference = {
+			LSHandlerContentTag: "CSV",
+			LSHandlerContentTagClass: "public.filename-extension",
+			LSHandlerRoleEditor: "com.apple.iWork.Numbers",
+		};
+		const queryOutput = vi.fn();
+		const query$ = Object.assign((value: unknown) => value, {
+			kLSRolesEditor: 4,
+			LSCopyDefaultRoleHandlerForContentType: (contentType: string) =>
+				contentType === csv ? "com.apple.iWork.Numbers" : null,
+			NSString: { stringWithString: (value: string) => value },
+			NSUserDefaults: {
+				standardUserDefaults: {
+					persistentDomainForName: () => ({ LSHandlers: [csvPreference] }),
+				},
+			},
+		});
+		runInNewContext(query, {
+			$: query$,
+			ObjC: {
+				import: () => {},
+				deepUnwrap: (value: unknown) => value,
+				unwrap: (value: unknown) => value,
+				castRefToObject: (value: unknown) => value,
+			},
+			console: { log: queryOutput },
+		});
+		expect(JSON.parse(queryOutput.mock.calls[0][0])).toMatchObject({
+			handlers: { [csv]: "com.apple.iWork.Numbers" },
+			explicitUserDefaults: [csv],
+		});
+
 		// Execute the generated JXA logic with CoreServices mocked: a late user
 		// override must survive even after the first query said CSV was unassigned.
-		const { runInNewContext } = await import("node:vm");
 		const set = vi.fn().mockReturnValue(0);
 		const $ = Object.assign((value: unknown) => value, {
 			kLSRolesEditor: 4,
 			LSCopyDefaultRoleHandlerForContentType: () => "com.microsoft.Excel",
 			LSSetDefaultRoleHandlerForContentType: set,
+			NSString: { stringWithString: (value: string) => value },
+			NSUserDefaults: {
+				standardUserDefaults: {
+					persistentDomainForName: () => ({ LSHandlers: [] }),
+				},
+			},
 		});
 		runInNewContext(registration, {
 			$,
 			ObjC: {
 				import: () => {},
+				deepUnwrap: (value: unknown) => value,
+				unwrap: (value: unknown) => value,
+				castRefToObject: (value: unknown) => value,
+			},
+		});
+		expect(set).not.toHaveBeenCalled();
+
+		const setNumbersFallback = vi.fn().mockReturnValue(0);
+		const numbersFallback = Object.assign((value: unknown) => value, {
+			kLSRolesEditor: 4,
+			LSCopyDefaultRoleHandlerForContentType: () => "com.apple.iWork.Numbers",
+			LSSetDefaultRoleHandlerForContentType: setNumbersFallback,
+			NSString: { stringWithString: (value: string) => value },
+			NSUserDefaults: {
+				standardUserDefaults: {
+					persistentDomainForName: () => ({ LSHandlers: [] }),
+				},
+			},
+		});
+		runInNewContext(registration, {
+			$: numbersFallback,
+			ObjC: {
+				import: () => {},
+				deepUnwrap: (value: unknown) => value,
+				unwrap: (value: unknown) => value,
+				castRefToObject: (value: unknown) => value,
+			},
+		});
+		expect(setNumbersFallback).toHaveBeenCalledWith(
+			expect.anything(),
+			4,
+			APP_BUNDLE_ID,
+		);
+	});
+	test("keeps a user-selected Numbers default during the late registration check", async () => {
+		const execFileAsync = vi
+			.fn()
+			.mockResolvedValueOnce({ stdout: "" })
+			.mockResolvedValueOnce({ stdout: "" })
+			.mockResolvedValueOnce({
+				stdout: JSON.stringify({
+					handlers: { [csv]: "com.apple.iWork.Numbers" },
+					explicitUserDefaults: [],
+				}),
+			})
+			.mockResolvedValueOnce({ stdout: "" });
+		await registerDocumentDefaultHandlers({
+			execFileAsync,
+			executablePath: "/Applications/Flashtype.app/Contents/MacOS/Flashtype",
+			isPackaged: true,
+			platform: "darwin",
+		});
+		const registration = execFileAsync.mock.calls[3][1][3];
+		const set = vi.fn().mockReturnValue(0);
+		const $ = Object.assign((value: unknown) => value, {
+			kLSRolesEditor: 4,
+			LSCopyDefaultRoleHandlerForContentType: () => "com.apple.iWork.Numbers",
+			LSSetDefaultRoleHandlerForContentType: set,
+			NSString: { stringWithString: (value: string) => value },
+			NSUserDefaults: {
+				standardUserDefaults: {
+					persistentDomainForName: () => ({
+						LSHandlers: [
+							{
+								LSHandlerContentType: csv,
+								LSHandlerRoleEditor: "com.apple.iWork.Numbers",
+							},
+						],
+					}),
+				},
+			},
+		});
+		runInNewContext(registration, {
+			$,
+			ObjC: {
+				import: () => {},
+				deepUnwrap: (value: unknown) => value,
 				unwrap: (value: unknown) => value,
 				castRefToObject: (value: unknown) => value,
 			},

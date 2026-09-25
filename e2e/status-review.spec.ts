@@ -51,9 +51,16 @@ test("History header switches between active-file and repository history", async
 		await expect(
 			page.getByRole("button", { name: /since checkpoint/ }),
 		).toBeVisible();
-		await page.getByRole("button", { name: "Files", exact: true }).click();
+		await page
+			.locator('[data-area-side="right"] [data-attr="panel-section-picker"]')
+			.click();
+		await page.getByRole("menuitem", { name: "History", exact: true }).click();
 		await expect(
-			page.getByLabel("Showing the repository", { exact: true }).first(),
+			page
+				.getByRole("button", {
+					name: /Showing (this file|the repository)/,
+				})
+				.first(),
 		).toBeVisible();
 		await page
 			.getByTestId("atelier-view:files-default")

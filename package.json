@@ -33,9 +33,7 @@
 		"pretest:e2e:headed": "pnpm run pretest:e2e",
 		"test:e2e:headed": "FLASHTYPE_HEADLESS=0 playwright test",
 		"test:e2e:packaged-macos": "playwright test --config playwright.packaged.config.ts",
-		"ci": "pnpm run build && pnpm test",
-		"dev:sync": "node scripts/dev-sync.mjs",
-		"predev:sync": "pnpm run predev"
+		"ci": "pnpm run build && pnpm test"
 	},
 	"dependencies": {
 		"@base-ui-components/react": "1.0.0-beta.4",
@@ -44,8 +42,8 @@
 		"@dnd-kit/utilities": "^3.2.2",
 		"@glideapps/glide-data-grid": "^6.0.3",
 		"@lix-js/html-diff": "^0.1.0",
-		"@lix-js/sdk": "0.16.0",
-		"@lix-js/storage-filesystem": "0.16.0",
+		"@lix-js/sdk": "0.18.0",
+		"@lix-js/storage-filesystem": "0.18.0",
 		"@opral/atelier": "workspace:*",
 		"@pierre/trees": "1.0.0-beta.4",
 		"@radix-ui/react-dropdown-menu": "^2.1.16",

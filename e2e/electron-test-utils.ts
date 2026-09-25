@@ -196,20 +196,13 @@ export async function writeStarterFiles(workspaceDir: string): Promise<void> {
 	);
 }
 
-export async function expectInstalledPluginArchives(
+export async function expectInstalledMarkdownPlugin(
 	workspaceDir: string,
 ): Promise<void> {
 	await expect
 		.poll(() =>
 			readBinaryFile(
 				path.join(workspaceDir, ".lix", "plugins", "plugin_markdown.lixplugin"),
-			),
-		)
-		.toBeGreaterThan(0);
-	await expect
-		.poll(() =>
-			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_csv.lixplugin"),
 			),
 		)
 		.toBeGreaterThan(0);

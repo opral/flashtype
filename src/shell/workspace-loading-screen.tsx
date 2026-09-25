@@ -11,6 +11,15 @@ export function WorkspaceLoadingScreen({
 	readonly workspacePath?: string;
 }): JSX.Element {
 	const name = workspaceName?.trim();
+	const [phase, setPhase] = useState<string>();
+	useEffect(
+		() =>
+			window.flashtypeDesktop?.lix?.onOpenProgress?.((progress) =>
+				setPhase(progress.phase),
+			),
+		[],
+	);
+	const migrating = phase === "migrating" || phase === "validating";
 	const [timedOut, setTimedOut] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -49,12 +58,18 @@ export function WorkspaceLoadingScreen({
 			<main className="flex min-h-0 flex-1 flex-col items-center justify-center px-8 pb-9 text-center">
 				<AnimatedZap size={96} label="Flashtype loading" tone="brand" />
 				<h1 className="mt-6 text-[18px] font-bold tracking-normal text-[var(--color-text-primary)]">
-					{name ? `Opening ${name}` : "Opening folder"}
+					{migrating
+						? `Upgrading ${name || "repository"}`
+						: name
+							? `Opening ${name}`
+							: "Opening folder"}
 				</h1>
 				<p className="mt-2 max-w-72 text-[13px] leading-relaxed text-[var(--color-text-secondary)] text-pretty">
-					Teaching the zap where the files live.
+					{migrating
+						? "Updating this repository for the latest Lix. Your files and saved history are preserved. Please keep Flashtype open."
+						: "Opening your local files and history…"}
 				</p>
-				{timedOut && workspacePath ? (
+				{timedOut && workspacePath && !migrating ? (
 					<section
 						className="mt-6 max-w-md rounded-xl border border-[var(--color-border)] p-5"
 						aria-label="Opening recovery"

@@ -949,9 +949,6 @@ async function startWorkspaceLifecycle() {
 			return workspace;
 		},
 	});
-	(await import("./share-ipc.mjs")).registerShareIpc((event) =>
-		BrowserWindow.fromWebContents(event.sender),
-	);
 	registerTerminalIpc();
 	registerWorkspaceIpc((event) => BrowserWindow.fromWebContents(event.sender), {
 		...createWorkspaceChangeOptions(),

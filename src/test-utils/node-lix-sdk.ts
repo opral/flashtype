@@ -1,8 +1,7 @@
 import { FilesystemStorage } from "@lix-js/storage-filesystem";
 import { createRequire } from "node:module";
 import type {
-	BundledPluginArchive,
-	ExecuteResult,
+	StatementResult as ExecuteResult,
 	Lix as SdkLix,
 	OpenLixOptions as SdkOpenLixOptions,
 	SqlParam,
@@ -19,7 +18,6 @@ import type {
 type ExecuteOptions = LixExecuteOptions;
 
 export type { Lix, SqlTransaction } from "@/lib/lix-types";
-export type { BundledPluginArchive };
 
 type OpenTestLixOptions = SdkOpenLixOptions & {
 	keyValues?: ReadonlyArray<OpenLixKeyValueEntry>;
@@ -43,11 +41,6 @@ export async function openLix(options: OpenTestLixOptions = {}): Promise<Lix> {
 		await seedKeyValues(lix, keyValues);
 	}
 	return lix;
-}
-
-export async function bundledPluginArchives(): Promise<BundledPluginArchive[]> {
-	const sdk = await loadSdk();
-	return await sdk.bundledPluginArchives();
 }
 
 async function loadSdk(): Promise<SdkModule> {
@@ -140,24 +133,40 @@ function createTestLixAdapter(
 				throw error;
 			}
 		},
-		observe(sql: string, params: ReadonlyArray<unknown> = []): ObserveEvents {
-			const sdkEvents = sdkLix.observe(sql, toSqlParams(params));
+		observe(
+			sql: string,
+			params: ReadonlyArray<unknown> = [],
+			options?: Parameters<Lix["observe"]>[2],
+		): ObserveEvents {
+			const controller = new AbortController();
+			const signal = options?.signal;
+			const abort = () => controller.abort();
+			if (signal?.aborted) abort();
+			else signal?.addEventListener("abort", abort, { once: true });
+			const sdkEvents = sdkLix.observe(sql, toSqlParams(params), {
+				signal: controller.signal,
+			});
 			let closed = false;
 			const events: ObserveEvents = {
 				async next() {
-					if (closed || closing) return undefined;
+					if (closed || closing) return { done: true, value: undefined };
 					try {
 						return await sdkEvents.next();
 					} catch (error) {
-						if (closed || closing) return undefined;
+						if (closed || closing) return { done: true, value: undefined };
 						throw error;
 					}
 				},
-				close() {
-					if (closed) return;
+				async return() {
+					if (closed) return { done: true, value: undefined };
 					closed = true;
 					observations.delete(events);
-					sdkEvents.close();
+					controller.abort();
+					await sdkEvents.return?.();
+					return { done: true, value: undefined };
+				},
+				[Symbol.asyncIterator]() {
+					return this;
 				},
 			};
 			observations.add(events);
@@ -195,7 +204,7 @@ function createTestLixAdapter(
 		async close() {
 			closing = true;
 			for (const observation of [...observations]) {
-				observation.close();
+				await observation.return?.();
 			}
 			await sdkLix.close();
 		},

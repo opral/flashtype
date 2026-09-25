@@ -14,7 +14,7 @@ export type AtelierDocumentSessionState = {
 	readonly openPaths: readonly string[];
 };
 
-/** Reads the central documents Atelier's host session state describes. */
+/** Reads the main documents Atelier's host session state describes. */
 export async function readAtelierDocumentSessionState(
 	lix: Lix,
 	uiState: unknown,
@@ -51,7 +51,7 @@ export async function readAtelierDocumentSessionState(
 	return { activePath, openPaths };
 }
 
-/** Reads Atelier's current central document from host session state. */
+/** Reads Atelier's current main document from host session state. */
 export async function readCurrentAtelierDocumentPath(
 	lix: Lix,
 	uiState: unknown,
@@ -70,13 +70,13 @@ function documentCandidates(rawState: unknown): {
 	}[];
 } {
 	const state = parseObject(rawState);
-	const panels = parseObject(state?.panels);
-	const central = parseObject(panels?.central);
-	const views = Array.isArray(central?.views)
-		? (central.views as readonly PersistedDocumentView[])
+	const areas = parseObject(state?.areas ?? state?.panels);
+	const main = parseObject(areas?.main ?? areas?.central);
+	const views = Array.isArray(main?.views)
+		? (main.views as readonly PersistedDocumentView[])
 		: [];
 	const activeInstance =
-		typeof central?.activeInstance === "string" ? central.activeInstance : null;
+		typeof main?.activeInstance === "string" ? main.activeInstance : null;
 	const candidates = views.flatMap((view) => {
 		const fileId = view.state?.fileId;
 		const filePath = view.state?.filePath;

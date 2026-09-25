@@ -25,6 +25,7 @@ export async function openDesktopLix(): Promise<Lix> {
 	const openSqlTransactions = new Set<{
 		forceRollback: () => Promise<void>;
 	}>();
+	const observations = new Set<ObserveEvents>();
 
 	const ensureOpen = (methodName: string): void => {
 		if (closed) {
@@ -175,11 +176,14 @@ export async function openDesktopLix(): Promise<Lix> {
 	const observe = (
 		sql: string,
 		params: ReadonlyArray<unknown> = [],
+		options?: Parameters<Lix["observe"]>[2],
 	): ObserveEvents => {
 		ensureOpen("observe");
 
 		let localClosed = false;
 		let observeIdPromise: Promise<string> | null = null;
+		let closePromise: Promise<void> | undefined;
+		const signal = options?.signal;
 
 		const ensureObserveId = async (): Promise<string> => {
 			if (!observeIdPromise) {
@@ -188,36 +192,62 @@ export async function openDesktopLix(): Promise<Lix> {
 			return await observeIdPromise;
 		};
 
-		return {
-			async next(): Promise<ObserveEvent | undefined> {
-				if (closed || localClosed) {
-					return undefined;
+		const close = async (): Promise<void> => {
+			if (localClosed) return closePromise;
+			localClosed = true;
+			observations.delete(events);
+			signal?.removeEventListener("abort", abortObservation);
+			if (!observeIdPromise) return;
+			closePromise = (async () => {
+				const observeId = await ensureObserveId();
+				await desktop.lix.observeClose({ observeId });
+			})();
+			await closePromise;
+		};
+		const events: ObserveEvents = {
+			async next() {
+				if (closed || localClosed || signal?.aborted) {
+					return { done: true, value: undefined };
 				}
 				const observeId = await ensureObserveId();
-				const event = await desktop.lix.observeNext({ observeId });
-				if (!event) {
-					return undefined;
+				if (closed || localClosed || signal?.aborted) {
+					return { done: true, value: undefined };
+				}
+				let event: Awaited<ReturnType<typeof desktop.lix.observeNext>>;
+				try {
+					event = await desktop.lix.observeNext({ observeId });
+				} catch (error) {
+					if (closed || localClosed || signal?.aborted) {
+						return { done: true, value: undefined };
+					}
+					throw error;
+				}
+				if (closed || localClosed || signal?.aborted || !event) {
+					if (!localClosed) await close();
+					return { done: true, value: undefined };
 				}
 				return {
-					sequence: event.sequence,
-					mutationSequence: event.mutationSequence,
-					result: toRuntimeQueryResult(event.result),
-				} as ObserveEvent;
+					done: false,
+					value: {
+						sequence: event.sequence,
+						mutationSequence: event.mutationSequence,
+						result: toRuntimeQueryResult(event.result),
+					} as ObserveEvent,
+				};
 			},
-			close(): void {
-				if (localClosed) {
-					return;
-				}
-				localClosed = true;
-				if (!observeIdPromise) {
-					return;
-				}
-				void (async () => {
-					const observeId = await ensureObserveId();
-					await desktop.lix.observeClose({ observeId });
-				})();
+			async return() {
+				await close();
+				return { done: true, value: undefined };
+			},
+			[Symbol.asyncIterator]() {
+				return this;
 			},
 		};
+		const abortObservation = () => void close();
+		observations.add(events);
+		if (signal?.aborted) abortObservation();
+		else signal?.addEventListener("abort", abortObservation, { once: true });
+		return events;
 	};
 
 	const activeBranchId = async (): Promise<string> => {
@@ -263,6 +293,14 @@ export async function openDesktopLix(): Promise<Lix> {
 		}
 		closed = true;
 		branchListeners.clear();
+		for (const observation of [...observations]) {
+			try {
+				await observation.return?.();
+			} catch {
+				// ignore observation cleanup failures while shutting down
+			}
+		}
+		observations.clear();
 		for (const tx of [...openSqlTransactions]) {
 			try {
 				await tx.forceRollback();
@@ -277,9 +315,16 @@ export async function openDesktopLix(): Promise<Lix> {
 	const lix = {
 		async executeBatch(statements: ReadonlyArray<TransactionStatement>) {
 			ensureOpen("executeBatch");
-			return (
-				await runQueued(() => desktop.lix.executeBatch({ statements }))
-			).map(toRuntimeQueryResult);
+			const batch = await runQueued(() =>
+				desktop.lix.executeBatch({ statements }),
+			);
+			return {
+				...batch,
+				results: batch.results.map((result) => ({
+					...toRuntimeQueryResult(result),
+					statementIndex: result.statementIndex,
+				})),
+			};
 		},
 		execute,
 		beginTransaction,

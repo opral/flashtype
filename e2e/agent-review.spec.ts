@@ -68,8 +68,8 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
 		await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
 
-		await page.getByRole("button", { name: "History panel view menu" }).click();
-		await page.getByRole("menuitem", { name: "Codex", exact: true }).click();
+		await expect(page.getByRole("button", { name: "Start Claude Code", exact: true })).toBeVisible();
+		await page.getByRole("button", { name: "Use Codex instead", exact: true }).click();
 		await expect(
 			page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
 		).toBeVisible();
@@ -102,6 +102,16 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 		await expect(
 			page.getByRole("button", { name: "Undo", exact: true }),
 		).toBeVisible();
+		await expect(page.locator('[data-review-status="added"]').first()).toBeVisible();
+		await expect.poll(() => page.locator('.xterm-viewport').first().evaluate(
+			(element) => getComputedStyle(element).backgroundColor,
+		)).toBe('rgb(255, 255, 255)');
+		await expect.poll(() => page.locator('.xterm-screen').first().evaluate((screen) => {
+			const container = screen.closest('.xterm')!.parentElement!;
+			const screenBounds = screen.getBoundingClientRect();
+			const containerBounds = container.getBoundingClientRect();
+			return screenBounds.bottom <= containerBounds.bottom && screenBounds.right <= containerBounds.right;
+		})).toBe(true);
 		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(fileTreeFile(page, "/changelog.md")).toHaveAttribute(
 			"data-item-git-status",
@@ -111,6 +121,21 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 			"data-item-git-status",
 			"added",
 		);
+		const reviewActions = page.getByRole("group", { name: "Diff review actions" });
+		for (let attempt = 0; attempt < 8 && (await reviewActions.isVisible()); attempt++) {
+			await reviewActions
+				.getByRole("button", { name: "Keep", exact: true })
+				.click({ force: true });
+			await expect(reviewActions).toBeVisible().catch(() => undefined);
+		}
+		await expect(reviewActions).toHaveCount(0);
+		await expect(page.getByText("This file changed while it was being reviewed.", { exact: false })).toHaveCount(0);
+		await expect.poll(() => readFile(welcomeFilePath, "utf8")).toContain("Codex e2e edit");
+		await expect.poll(() => readFile(changelogFilePath, "utf8")).toContain("Codex unopened edit");
+		await expect.poll(() => readFile(createdFilePath, "utf8")).toContain("Codex created file");
+		await page.getByRole("button", { name: "Add view", exact: true }).click();
+		await page.getByRole("menuitem", { name: "Codex", exact: true }).click();
+		await expect(page.getByRole("button", { name: "Close Codex", exact: true })).toBeVisible();
 	} finally {
 		process.env.PATH = originalPath;
 		if (originalShell === undefined) {
@@ -163,7 +188,7 @@ run_hook() {
 
 run_hook UserPromptSubmit turn-start
 printf '\\nCodex e2e edit.\\n' >> welcome.md
-printf '\\nCodex unopened edit.\\n' >> changelog.md
+printf '# Changelog\\n\\nCodex unopened edit.\\n' > changelog.md
 printf '# Codex created file\\n' > codex-created.md
 run_hook Stop turn-stop
 printf '%s\\n' "$PWD" > "$FLASHTYPE_E2E_CODEX_COMPLETION_PATH"

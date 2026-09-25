@@ -2,12 +2,13 @@
 import { test, expect } from "vitest";
 import { createRequire } from "node:module";
 import { FilesystemStorage } from "@lix-js/storage-filesystem";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { checkpointRepositoryMetadata } from "./initialize-checkpoint.mjs";
-const { openLix, bundledPluginArchives } = createRequire(import.meta.url)(
-	"@lix-js/sdk",
+const { openLix } = createRequire(import.meta.url)("@lix-js/sdk");
+const markdownPluginArchive = await readFile(
+	new URL("./assets/plugin_markdown.lixplugin", import.meta.url),
 );
 
 test("initialization checkpoints .lix files, leaves documents pending, and survives reopening", async () => {
@@ -17,12 +18,10 @@ test("initialization checkpoints .lix files, leaves documents pending, and survi
 		await writeFile(path.join(root, "note.md"), "# Keep for review\n");
 		lix = await openLix({ storage: new FilesystemStorage({ path: root }) });
 		expect(lix.openReport.initialized).toBe(true);
-		for (const plugin of await bundledPluginArchives()) {
-			await lix.execute(
-				"INSERT INTO lix_file (path, content) VALUES ($1, $2)",
-				[`/.lix/plugins/${plugin.key}.lixplugin`, plugin.archiveBytes],
-			);
-		}
+		await lix.execute(
+			"INSERT INTO lix_file (path, content) VALUES ($1, $2)",
+			["/.lix/plugins/plugin_markdown.lixplugin", markdownPluginArchive],
+		);
 		await checkpointRepositoryMetadata(lix);
 		const pendingPaths = async () =>
 			(

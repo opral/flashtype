@@ -122,7 +122,7 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(
 			page.locator(
-				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]',
+				'[data-area-side="main"][data-active="true"][data-view-key="atelier_file"]',
 			),
 		).toBeVisible();
 

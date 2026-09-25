@@ -17,6 +17,12 @@
 	-webkit-app-region: no-drag;
 }
 
+/* Atelier's `bg-accent` is brand-colored; Flashtype uses --accent for neutral UI. */
+.atelier-root {
+	--accent: var(--atelier-accent);
+	--accent-foreground: var(--atelier-accent-on);
+}
+
 .flashtype-update-button {
 	-webkit-app-region: no-drag;
 	border: 0;
@@ -591,4 +597,99 @@ body,
 }
 .flashtype-share-dialog::backdrop {
 	background: #0005;
+}
+
+.flashtype-share-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--atelier-accent);
+	font-size: 14px;
+	font-weight: 600;
+	text-decoration: underline;
+	text-underline-offset: 4px;
+}
+.flashtype-share-link:focus-visible {
+	outline: 2px solid currentColor;
+	outline-offset: 4px;
+}
+
+.share-teaser {
+	padding: 28px;
+}
+.share-teaser-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	margin-bottom: 22px;
+}
+.share-teaser-icon {
+	display: grid;
+	place-items: center;
+	width: 48px;
+	height: 48px;
+	border-radius: 14px;
+	color: var(--atelier-accent);
+	background: var(--atelier-accent-subtle);
+}
+.share-teaser-close {
+	padding: 6px;
+	border-radius: 8px;
+	color: var(--color-text-secondary);
+	cursor: pointer;
+}
+.share-teaser-close:hover {
+	background: var(--color-bg-surface-hover);
+}
+.share-teaser h2 {
+	font-size: 24px;
+	line-height: 1.25;
+	font-weight: 650;
+	letter-spacing: -0.6px;
+}
+.share-teaser-description {
+	margin: 12px 0 22px;
+	font-size: 15px;
+	line-height: 1.6;
+	color: var(--color-text-secondary);
+}
+.share-teaser-primary {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 18px;
+	border-radius: 10px;
+	background: var(--atelier-accent);
+	color: white;
+	font-size: 14px;
+	font-weight: 600;
+	box-shadow: 0 3px 8px transparent;
+}
+.share-teaser-primary:hover {
+	background: var(--atelier-accent-hover);
+}
+.share-teaser-primary:focus-visible,
+.share-teaser-close:focus-visible {
+	outline: 2px solid var(--atelier-accent);
+	outline-offset: 4px;
+}
+.share-teaser-sync {
+	margin-top: 26px;
+	padding-top: 22px;
+	border-top: 1px solid var(--color-border-subtle);
+}
+.share-teaser-sync h3 {
+	font-size: 14px;
+	font-weight: 600;
+}
+.share-teaser-sync p {
+	margin: 6px 0 12px;
+	font-size: 13px;
+	line-height: 1.6;
+	color: var(--color-text-secondary);
+}
+
+.share-teaser-sync .flashtype-share-link {
+	margin-top: 10px;
 }

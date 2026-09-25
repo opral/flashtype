@@ -280,8 +280,8 @@ async function runCapturedFileTurn(args: {
 
 function uiState(fileId: string, filePath: string) {
 	return {
-		panels: {
-			central: {
+		areas: {
+			main: {
 				activeInstance: `atelier_file:${fileId}`,
 				views: [
 					{

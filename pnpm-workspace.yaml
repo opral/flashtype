@@ -4,8 +4,6 @@ packages:
 
 # Keep ProseMirror nominal types single-instance across FlashType and Atelier.
 overrides:
-  "@lix-js/sdk": 0.16.0
-  "@lix-js/storage-filesystem": 0.16.0
   prosemirror-model: 1.25.10
   prosemirror-transform: 1.12.0
   prosemirror-view: 1.42.0
@@ -16,11 +14,11 @@ peerDependencyRules:
     "@glideapps/glide-data-grid>react-dom": "^19.0.0"
 
 minimumReleaseAgeExclude:
-  - "@lix-js/sdk-darwin-arm64@0.16.0"
-  - "@lix-js/sdk-linux-arm64@0.16.0"
-  - "@lix-js/sdk-linux-x64@0.16.0"
-  - "@lix-js/sdk-win32-x64@0.16.0"
-  - "@lix-js/sdk@0.16.0"
+  - "@lix-js/sdk-darwin-arm64@0.18.0"
+  - "@lix-js/sdk-linux-arm64@0.18.0"
+  - "@lix-js/sdk-linux-x64@0.18.0"
+  - "@lix-js/sdk-win32-x64@0.18.0"
+  - "@lix-js/sdk@0.18.0"
 
 allowBuilds:
   "@parcel/watcher": set this to true or false

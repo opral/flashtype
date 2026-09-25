@@ -82,7 +82,13 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 				params: normalizeParams(statement.params),
 			})),
 		);
-		return results.map(serializeQueryResult);
+		return {
+			...results,
+			results: results.results.map((result) => ({
+				...serializeQueryResult(result),
+				statementIndex: result.statementIndex,
+			})),
+		};
 	});
 	ipcMain.handle("lix:executeTransaction", async (event, payload) => {
 		const lix = await ensureLixOpenForEvent(event);
@@ -224,8 +230,11 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		}
 		const started = performance.now();
 		try {
-			const event = await observeEvents.next();
-			if (!event) {
+			const iteration = await observeEvents.next();
+			if (iteration.done) {
+				observeHandles.delete(observeId, ownerId);
+				observeTraceMeta.delete(observeId, ownerId);
+				await observeEvents.return?.();
 				logSlowOperation("observe:next", started, {
 					observeId,
 					...observeTraceMeta.getOptional(observeId, ownerId),
@@ -233,6 +242,7 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 				});
 				return undefined;
 			}
+			const event = iteration.value;
 			const serializedResult = serializeExecuteResult(
 				event.result,
 				"lix.observe",
@@ -269,7 +279,7 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 			return;
 		}
 		observeTraceMeta.delete(observeId, ownerId);
-		observeEvents.close();
+		await observeEvents.return?.();
 	});
 
 	ipcMain.handle("lix:activeBranchId", async (event) => {
@@ -370,7 +380,7 @@ async function closeAllHandles(ownerId) {
 			? observeHandles.values().map((value) => ({ value }))
 			: observeHandles.valuesForOwner(ownerId);
 	for (const { value: observeEvents } of observeEntries) {
-		observeEvents.close();
+		await observeEvents.return?.();
 	}
 	if (ownerId === undefined) {
 		observeHandles.clear();

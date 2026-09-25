@@ -1,3 +1,7 @@
+import {
+	createMemorySessionStateStore,
+	type AtelierSessionUiState,
+} from "@opral/atelier/state-adapters";
 import { ShareButton } from "./shell/share-button";
 import {
 	Suspense,
@@ -10,11 +14,9 @@ import {
 import { createRoot } from "react-dom/client";
 import {
 	Atelier,
-	createMemorySessionStateStore,
 	type AtelierLocation,
 	type AtelierProps,
 	type AtelierExtensionRegistration,
-	type AtelierSessionUiState,
 } from "@opral/atelier";
 import "@opral/atelier/style.css";
 import "./index.css";
@@ -106,7 +108,14 @@ export const AppRoot = () => {
 			? DOCUMENT_OPEN_ATELIER_PANELS
 			: DEFAULT_OPEN_ATELIER_PANELS;
 	const atelierSession = useMemo(
-		() => ({ lix, store: createMemorySessionStateStore() }),
+		() => ({ lix, store: createMemorySessionStateStore({
+			focusedArea: "main",
+			areas: {
+				left: { views: [{ instance: "files-default", kind: "atelier_files" }], activeInstance: "files-default" },
+				main: { views: [], activeInstance: null },
+				right: { views: [{ instance: "agents-default", kind: "flashtype_agents" }], activeInstance: "agents-default" },
+			},
+		}) }),
 		[lix],
 	);
 	const atelierSessionStateStore = atelierSession.store;
@@ -377,10 +386,7 @@ export const AppRoot = () => {
 						) : null,
 						navbarEnd: (
 							<div className="flex items-center gap-2">
-								<ShareButton
-									store={atelierSessionStateStore}
-									workspace={workspace}
-								/>
+								<ShareButton />
 								{isUpdateReady ? (
 									<button
 										type="button"

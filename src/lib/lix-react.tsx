@@ -82,13 +82,17 @@ export function useQuery<TRow>(
 	useEffect(() => {
 		if (!subscribe) return;
 		let closed = false;
-		const events = lix.observe(observeQuery.sql, observeQuery.params);
+		const eventsController = new AbortController();
+		const events = lix.observe(
+			observeQuery.sql,
+			observeQuery.params,
+			{ signal: eventsController.signal },
+		);
 
 		void (async () => {
 			try {
-				while (!closed) {
-					const event = await events.next();
-					if (closed || event === undefined) break;
+				for await (const event of events) {
+					if (closed) break;
 					const nextRows = queryResultToRows<TRow>(event.result);
 					cacheQueryRows(cacheKey, nextRows);
 					if (rowsEqual(rowsRef.current, nextRows)) {
@@ -108,7 +112,7 @@ export function useQuery<TRow>(
 
 		return () => {
 			closed = true;
-			events.close();
+			eventsController.abort();
 		};
 	}, [cacheKey, subscribe, lix, observeQuery]);
 

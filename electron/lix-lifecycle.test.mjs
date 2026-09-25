@@ -26,7 +26,6 @@ vi.mock("@lix-js/storage-filesystem", () => ({
 }));
 
 vi.mock("@lix-js/sdk", () => ({
-	bundledPluginArchives: async () => [],
 	openLix: mocks.openLix,
 }));
 
@@ -47,9 +46,6 @@ vi.mock("./workspace-recovery.mjs", () => ({
 vi.mock("./workspace-open-preflight.mjs", () => ({
 	assertWorkspaceCanOpen: vi.fn(async () => {}),
 }));
-vi.mock("./share-runtime.mjs", () => ({
-	getShareServer: vi.fn(async () => undefined),
-}));
 vi.mock("./telemetry.mjs", () => ({
 	captureTelemetryException: vi.fn(),
 }));
@@ -69,6 +65,54 @@ describe("Lix workspace lifecycle", () => {
 		mocks.getWorkspace.mockReset();
 		mocks.nativeLixHandles.length = 0;
 		mocks.openLix.mockReset();
+	});
+
+	test("adapts SDK iterator events and aborts a pending subscription on close", async () => {
+		mocks.getWorkspace.mockReturnValue({
+			ephemeral: false,
+			name: "workspace",
+			path: "/workspace",
+		});
+		const event = {
+			sequence: 1,
+			mutationSequence: 1,
+			result: { rows: [{ value: 1 }] },
+		};
+		let signal;
+		let calls = 0;
+		mocks.openLix.mockResolvedValue({
+			close: vi.fn(async () => {}),
+			execute: vi.fn(async () => ({
+				rows: [],
+				columns: [],
+				rowsAffected: 0,
+				notices: [],
+			})),
+			observe: vi.fn((_sql, _params, options) => {
+				signal = options.signal;
+				return {
+					next: () =>
+						++calls === 1
+							? Promise.resolve({ done: false, value: event })
+							: new Promise((resolve) =>
+									signal.addEventListener(
+										"abort",
+										() => resolve({ done: true, value: undefined }),
+										{ once: true },
+									),
+								),
+				};
+			}),
+		});
+		const lix = await ensureLixOpen(createTestWindow());
+		const events = lix.observe("SELECT 1");
+		expect(await events.next()).toEqual({ done: false, value: event });
+		const pending = events.next();
+		await Promise.resolve();
+		await events.return();
+		expect(signal.aborted).toBe(true);
+		expect(await pending).toEqual({ done: true, value: undefined });
+		expect(await events.next()).toEqual({ done: true, value: undefined });
 	});
 
 	test("does not reopen Lix until an atomic workspace transition completes", async () => {

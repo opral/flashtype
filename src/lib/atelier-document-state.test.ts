@@ -6,7 +6,7 @@ import {
 } from "./atelier-document-state";
 
 describe("readCurrentAtelierDocumentPath", () => {
-	test("returns the current Lix path for Atelier's active central document", async () => {
+	test("returns the current Lix path for Atelier's active main document", async () => {
 		const lix = createTestLix({
 			state: uiState(
 				[
@@ -23,7 +23,7 @@ describe("readCurrentAtelierDocumentPath", () => {
 		);
 	});
 
-	test("uses the first central view when no active instance is persisted", async () => {
+	test("uses the first main view when no active instance is persisted", async () => {
 		const lix = createTestLix({
 			state: uiState([documentView("file_one", "/one.md")], null),
 			files: { file_one: "/one.md" },
@@ -34,7 +34,7 @@ describe("readCurrentAtelierDocumentPath", () => {
 		);
 	});
 
-	test("returns validated active and open central document paths for sessions", async () => {
+	test("returns validated active and open main document paths for sessions", async () => {
 		const lix = createTestLix({
 			state: uiState(
 				[
@@ -140,8 +140,8 @@ function documentView(fileId: string, filePath: string) {
 
 function uiState(views: readonly unknown[], activeInstance: string | null) {
 	return {
-		panels: {
-			central: { views, activeInstance },
+		areas: {
+			main: { views, activeInstance },
 		},
 	};
 }

@@ -32,6 +32,10 @@ test("oversized folders remain editable and initialization is blocked through IP
 				name: /Open checkpoint history|Review working changes/,
 			}),
 		).toBeVisible({ timeout: 30_000 });
+		await page
+			.locator('[data-area-side="right"] [data-attr="panel-section-picker"]')
+			.click();
+		await page.getByRole("menuitem", { name: "History", exact: true }).click();
 
 		const history = page
 			.getByTestId(/atelier-view:.*history/)

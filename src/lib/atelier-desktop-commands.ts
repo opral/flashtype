@@ -14,7 +14,7 @@ export function createDesktopDocumentCommands({
 	return {
 		async open(path: string) {
 			const state = store.getSnapshot();
-			const panel = state?.panels.central;
+			const panel = state?.areas.main;
 			const existing = panel?.views.find((view) => {
 				const viewState = view.state as { filePath?: string } | undefined;
 				return viewState?.filePath === path;
@@ -25,10 +25,10 @@ export function createDesktopDocumentCommands({
 			if (state && panel && existing) {
 				store.setSnapshot({
 					...state,
-					focusedPanel: "central",
-					panels: {
-						...state.panels,
-						central: { ...panel, activeInstance: existing.instance },
+					focusedArea: "main",
+					areas: {
+						...state.areas,
+						main: { ...panel, activeInstance: existing.instance },
 					},
 				});
 			}
@@ -50,7 +50,7 @@ export function createDesktopDocumentCommands({
 		async closeActive() {
 			const state = store.getSnapshot();
 			if (!state) return;
-			const panel = state.panels.central;
+			const panel = state.areas.main;
 			const active = panel.views.find(
 				(view) => view.instance === panel.activeInstance,
 			);
@@ -61,9 +61,9 @@ export function createDesktopDocumentCommands({
 			navigate(undefined);
 			store.setSnapshot({
 				...state,
-				panels: {
-					...state.panels,
-					central: {
+				areas: {
+					...state.areas,
+					main: {
 						...panel,
 						views,
 						activeInstance: views.at(-1)?.instance ?? null,

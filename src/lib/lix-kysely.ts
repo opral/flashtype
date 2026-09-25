@@ -9,7 +9,7 @@ import {
 	type QueryCompiler,
 	type QueryResult,
 } from "kysely";
-import type { ExecuteResult } from "@lix-js/sdk";
+import type { StatementResult as ExecuteResult } from "@lix-js/sdk";
 export { sql } from "kysely";
 
 export type LixDatabaseSchema = Record<string, Record<string, any>>;

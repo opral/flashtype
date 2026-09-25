@@ -32,7 +32,7 @@ test("left files panel survives a seeded random file click tour", async ({
 		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(
 			page.locator(
-				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]',
+				'[data-area-side="main"][data-active="true"][data-view-key="atelier_file"]',
 			),
 		).toBeVisible();
 
@@ -86,7 +86,7 @@ async function expectActiveFileView(
 	const viewKey = treePath.endsWith(".csv") ? "atelier_csv" : "atelier_file";
 	await expect(
 		page.locator(
-			`[data-panel-side="central"][data-active="true"][data-view-key="${viewKey}"]`,
+			`[data-area-side="main"][data-active="true"][data-view-key="${viewKey}"]`,
 		),
 	).toBeVisible();
 	await expect(
@@ -164,7 +164,7 @@ test("deleting the active file closes the central file view", async ({
 		await expect(
 			page.locator('[data-active="true"][data-view-key="atelier_file"]'),
 		).toHaveCount(0);
-		await expect(page.getByTestId("files-view-wide")).toBeVisible();
+		await expect(page.getByTestId("main-panel-empty-state")).toBeVisible();
 	} finally {
 		await closeElectronApp(electronApp);
 	}

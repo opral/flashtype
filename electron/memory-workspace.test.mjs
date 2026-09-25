@@ -1,7 +1,15 @@
 // @vitest-environment node
 import { test, expect } from "vitest";
 import { createRequire } from "node:module";
-import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
+import {
+	mkdtemp,
+	mkdir,
+	writeFile,
+	readFile,
+	readdir,
+	rm,
+	stat,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createMemoryWorkspace } from "./memory-workspace.mjs";
@@ -43,6 +51,56 @@ test("memory workspace saves files, imports external edits, rejects conflicts, a
 			"Invalid workspace path",
 		);
 		expect(await readdir(root)).toEqual(["note.md"]);
+	} finally {
+		await lix.close();
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("memory workspace persists new directories and only removes directories it created", async () => {
+	const root = await mkdtemp(
+		path.join(tmpdir(), "flashtype-memory-directories-test-"),
+	);
+	const lix = await openLix();
+	try {
+		await mkdir(path.join(root, "existing"), { recursive: true });
+		await writeFile(path.join(root, "existing", "keep.md"), "Keep me");
+		const bridge = createMemoryWorkspace(lix, root);
+
+		await lix.execute("INSERT INTO lix_directory (path) VALUES ($1)", [
+			"/existing",
+		]);
+		await lix.execute("INSERT INTO lix_directory (path) VALUES ($1)", [
+			"/created",
+		]);
+		await lix.execute("INSERT INTO lix_directory (path) VALUES ($1)", [
+			"/created/nested",
+		]);
+		await bridge.flush();
+
+		expect((await stat(path.join(root, "created"))).isDirectory()).toBe(true);
+		expect(
+			(await stat(path.join(root, "created", "nested"))).isDirectory(),
+		).toBe(true);
+
+		await lix.execute("DELETE FROM lix_directory WHERE path = $1", [
+			"/created/nested",
+		]);
+		await lix.execute("DELETE FROM lix_directory WHERE path = $1", [
+			"/created",
+		]);
+		await lix.execute("DELETE FROM lix_directory WHERE path = $1", [
+			"/existing",
+		]);
+		await bridge.flush();
+
+		await expect(stat(path.join(root, "created"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		expect(await readFile(path.join(root, "existing", "keep.md"), "utf8")).toBe(
+			"Keep me",
+		);
+		expect(await readdir(path.join(root, "existing"))).toEqual(["keep.md"]);
 	} finally {
 		await lix.close();
 		await rm(root, { recursive: true, force: true });

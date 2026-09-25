@@ -13,7 +13,7 @@ export function createHistoryExtension(
 	return {
 		id: ATELIER_BUILTIN_EXTENSION_IDS.history,
 		name: "History",
-		placement: ["left", "right", "central"],
+		placement: ["left", "right", "main"],
 		icon: History,
 		HeaderAccessory: ({ atelier, view }) => {
 			if (!atelier.diff) return null;

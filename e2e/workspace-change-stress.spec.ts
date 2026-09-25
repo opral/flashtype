@@ -50,7 +50,7 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 			await mkdir(fakeBinDir, { recursive: true });
 			await writeFile(
 				path.join(fakeBinDir, "codex"),
-				"#!/bin/sh\nexec /bin/sh\n",
+				"#!/bin/sh\ncase \" $* \" in\n\t*\" --version \"*) printf '%s\\n' 'codex-cli 0.134.0'; exit 0 ;;\nesac\nexec /bin/sh\n",
 				{ mode: 0o755 },
 			);
 			await writeFile(stressDiskPath, expectedMarkdown, "utf8");
@@ -103,12 +103,13 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 			// Mount the agent extension, as a real terminal turn does, so its
 			// Atelier review integration is available to the fake hook events.
 			await page
-				.getByRole("button", { name: "History panel view menu" })
+				.locator('[data-area-side="right"] [data-attr="panel-section-picker"]')
 				.click();
 			await page.getByRole("menuitem", { name: "Codex", exact: true }).click();
 			await expect(
 				page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
 			).toBeVisible();
+			await expect(page.getByRole("alert")).toHaveCount(0);
 		});
 		await timeProfile(profile, "setup:initial-settle", null, async () => {
 			await expectMarkdownSettled({
@@ -186,6 +187,9 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 						await expect(reviewUndoButton(page)).toBeHidden({
 							timeout: 30_000,
 						});
+						await expect(
+							page.locator('[data-review-mode="true"]'),
+						).toHaveCount(0);
 					},
 				);
 
@@ -621,7 +625,6 @@ async function waitForReviewControls(page: Page): Promise<void> {
 }
 
 async function resolveReview(page: Page, keep: boolean): Promise<void> {
-	// This fixture changes one file per turn; Atelier resolves the selected file.
 	await (keep ? reviewKeepButton(page) : reviewUndoButton(page)).click();
 }
 
@@ -654,6 +657,9 @@ async function buildAgentReviewTimeoutMessage(args: {
 	const state = await readMarkdownState(args.page, args.diskPath).catch(
 		(error: unknown) => ({ stateReadError: String(error) }),
 	);
+	const uiSnapshot = await args.page.locator("body").ariaSnapshot().catch(
+		(error: unknown) => `Could not capture UI snapshot: ${String(error)}`,
+	);
 	const syncDiagnostic = await args.page
 		.evaluate(() =>
 			Promise.race([
@@ -673,6 +679,7 @@ async function buildAgentReviewTimeoutMessage(args: {
 		`beforeAgentMarkdown=${JSON.stringify(args.beforeAgentMarkdown)}`,
 		`proposedMarkdown=${JSON.stringify(args.proposedMarkdown)}`,
 		`state=${JSON.stringify(state)}`,
+		`uiSnapshot=\n${uiSnapshot}`,
 		`syncDiagnostic=${syncDiagnostic}`,
 		`cause=${
 			args.error instanceof Error ? args.error.message : String(args.error)
@@ -686,15 +693,43 @@ async function expectMarkdownSettled(args: {
 	page: Page;
 	timeout?: number;
 }): Promise<void> {
-	await expect
-		.poll(async () => await readMarkdownState(args.page, args.diskPath), {
-			timeout: args.timeout ?? 30_000,
-		})
-		.toEqual({
-			diskMarkdown: args.expectedMarkdown,
-			editorMarkdown: args.expectedMarkdown,
-			lixMarkdown: args.expectedMarkdown,
-		});
+	try {
+		await expect
+			.poll(async () => await readMarkdownState(args.page, args.diskPath), {
+				timeout: args.timeout ?? 30_000,
+			})
+			.toEqual({
+				diskMarkdown: args.expectedMarkdown,
+				editorMarkdown: args.expectedMarkdown,
+				lixMarkdown: args.expectedMarkdown,
+			});
+	} catch (error) {
+		const editorState = await args.page
+			.locator('[data-testid="tiptap-editor"] .ProseMirror')
+			.evaluate((editor) => ({
+				activeElement: document.activeElement?.outerHTML.slice(0, 500),
+				contentEditable: (editor as HTMLElement).contentEditable,
+				dataReviewMode: editor.closest('[data-review-mode]')?.getAttribute('data-review-mode'),
+				isContentEditable: (editor as HTMLElement).isContentEditable,
+				parentReviewMode:
+					editor.parentElement?.closest('[data-review-mode]')?.getAttribute('data-review-mode'),
+				readOnly: (editor as HTMLElement).getAttribute('data-readonly'),
+			} ))
+			.catch((stateError: unknown) => ({ error: String(stateError) }));
+		const uiSnapshot = await args.page
+			.locator('body')
+			.ariaSnapshot()
+			.catch((stateError: unknown) => `Could not capture UI snapshot: ${String(stateError)}`);
+		throw new Error(
+			[
+				`Markdown did not settle to ${JSON.stringify(args.expectedMarkdown)}.`,
+				`editorState=${JSON.stringify(editorState)}`,
+				`uiSnapshot=\n${uiSnapshot}`,
+				`cause=${error instanceof Error ? error.message : String(error)}`,
+			].join('\n'),
+			{ cause: error },
+		);
+	}
 }
 
 async function readMarkdownState(
