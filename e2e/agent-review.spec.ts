@@ -122,12 +122,8 @@ test("Atelier reveals a review after Codex edits restored markdown", async ({
 			"added",
 		);
 		const reviewActions = page.getByRole("group", { name: "Diff review actions" });
-		for (let attempt = 0; attempt < 8 && (await reviewActions.isVisible()); attempt++) {
-			await reviewActions
-				.getByRole("button", { name: "Keep", exact: true })
-				.click({ force: true });
-			await expect(reviewActions).toBeVisible().catch(() => undefined);
-		}
+		await reviewActions.getByRole("button", { name: "More keep options" }).click();
+		await reviewActions.getByRole("menuitem", { name: /Keep all/ }).click();
 		await expect(reviewActions).toHaveCount(0);
 		await expect(page.getByText("This file changed while it was being reviewed.", { exact: false })).toHaveCount(0);
 		await expect.poll(() => readFile(welcomeFilePath, "utf8")).toContain("Codex e2e edit");
