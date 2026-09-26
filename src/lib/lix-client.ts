@@ -6,7 +6,6 @@ import type {
 } from "@lix-js/sdk";
 import type {
 	Lix,
-	LixRow,
 	LixRuntimeQueryResult,
 	LixExecuteOptions,
 	ObserveEvent,
@@ -26,6 +25,7 @@ export async function openDesktopLix(): Promise<Lix> {
 	const openSqlTransactions = new Set<{
 		forceRollback: () => Promise<void>;
 	}>();
+	const observations = new Set<ObserveEvents>();
 
 	const ensureOpen = (methodName: string): void => {
 		if (closed) {
@@ -176,11 +176,14 @@ export async function openDesktopLix(): Promise<Lix> {
 	const observe = (
 		sql: string,
 		params: ReadonlyArray<unknown> = [],
+		options?: Parameters<Lix["observe"]>[2],
 	): ObserveEvents => {
 		ensureOpen("observe");
 
 		let localClosed = false;
 		let observeIdPromise: Promise<string> | null = null;
+		let closePromise: Promise<void> | undefined;
+		const signal = options?.signal;
 
 		const ensureObserveId = async (): Promise<string> => {
 			if (!observeIdPromise) {
@@ -189,36 +192,62 @@ export async function openDesktopLix(): Promise<Lix> {
 			return await observeIdPromise;
 		};
 
-		return {
-			async next(): Promise<ObserveEvent | undefined> {
-				if (closed || localClosed) {
-					return undefined;
+		const close = async (): Promise<void> => {
+			if (localClosed) return closePromise;
+			localClosed = true;
+			observations.delete(events);
+			signal?.removeEventListener("abort", abortObservation);
+			if (!observeIdPromise) return;
+			closePromise = (async () => {
+				const observeId = await ensureObserveId();
+				await desktop.lix.observeClose({ observeId });
+			})();
+			await closePromise;
+		};
+		const events: ObserveEvents = {
+			async next() {
+				if (closed || localClosed || signal?.aborted) {
+					return { done: true, value: undefined };
 				}
 				const observeId = await ensureObserveId();
-				const event = await desktop.lix.observeNext({ observeId });
-				if (!event) {
-					return undefined;
+				if (closed || localClosed || signal?.aborted) {
+					return { done: true, value: undefined };
+				}
+				let event: Awaited<ReturnType<typeof desktop.lix.observeNext>>;
+				try {
+					event = await desktop.lix.observeNext({ observeId });
+				} catch (error) {
+					if (closed || localClosed || signal?.aborted) {
+						return { done: true, value: undefined };
+					}
+					throw error;
+				}
+				if (closed || localClosed || signal?.aborted || !event) {
+					if (!localClosed) await close();
+					return { done: true, value: undefined };
 				}
 				return {
-					sequence: event.sequence,
-					mutationSequence: event.mutationSequence,
-					result: toRuntimeQueryResult(event.result),
-				} as ObserveEvent;
+					done: false,
+					value: {
+						sequence: event.sequence,
+						mutationSequence: event.mutationSequence,
+						result: toRuntimeQueryResult(event.result),
+					} as ObserveEvent,
+				};
 			},
-			close(): void {
-				if (localClosed) {
-					return;
-				}
-				localClosed = true;
-				if (!observeIdPromise) {
-					return;
-				}
-				void (async () => {
-					const observeId = await ensureObserveId();
-					await desktop.lix.observeClose({ observeId });
-				})();
+			async return() {
+				await close();
+				return { done: true, value: undefined };
+			},
+			[Symbol.asyncIterator]() {
+				return this;
 			},
 		};
+		const abortObservation = () => void close();
+		observations.add(events);
+		if (signal?.aborted) abortObservation();
+		else signal?.addEventListener("abort", abortObservation, { once: true });
+		return events;
 	};
 
 	const activeBranchId = async (): Promise<string> => {
@@ -233,11 +262,14 @@ export async function openDesktopLix(): Promise<Lix> {
 		return await runQueued(() => desktop.lix.createBranch({ options }));
 	};
 
+	const branchListeners = new Set<() => void>();
 	const switchBranch = async (
 		options: SwitchBranchOptions,
 	): Promise<SwitchBranchReceipt> => {
 		ensureOpen("switchBranch");
-		return await runQueued(() => desktop.lix.switchBranch(options));
+		const receipt = await runQueued(() => desktop.lix.switchBranch(options));
+		for (const listener of branchListeners) listener();
+		return receipt;
 	};
 
 	const importFilesystemPaths = async (
@@ -260,6 +292,15 @@ export async function openDesktopLix(): Promise<Lix> {
 			return;
 		}
 		closed = true;
+		branchListeners.clear();
+		for (const observation of [...observations]) {
+			try {
+				await observation.return?.();
+			} catch {
+				// ignore observation cleanup failures while shutting down
+			}
+		}
+		observations.clear();
 		for (const tx of [...openSqlTransactions]) {
 			try {
 				await tx.forceRollback();
@@ -272,12 +313,31 @@ export async function openDesktopLix(): Promise<Lix> {
 	};
 
 	const lix = {
+		async executeBatch(statements: ReadonlyArray<TransactionStatement>) {
+			ensureOpen("executeBatch");
+			const batch = await runQueued(() =>
+				desktop.lix.executeBatch({ statements }),
+			);
+			return {
+				...batch,
+				results: batch.results.map((result) => ({
+					...toRuntimeQueryResult(result),
+					statementIndex: result.statementIndex,
+				})),
+			};
+		},
 		execute,
 		beginTransaction,
 		transaction,
 		executeTransaction,
 		observe,
 		activeBranchId,
+		subscribeActiveBranch(listener: () => void) {
+			branchListeners.add(listener);
+			return () => {
+				branchListeners.delete(listener);
+			};
+		},
 		createBranch,
 		switchBranch,
 		importFilesystemPaths,
@@ -338,84 +398,13 @@ function toRuntimeQueryResult(result: {
 	}>;
 }): LixRuntimeQueryResult {
 	return {
-		rows: result.rows.map((row) => new DesktopRow(result.columns, row)),
-		columns: result.columns,
+		rows: result.rows.map((row) =>
+			Object.fromEntries(
+				result.columns.map((column, index) => [column, row[index]]),
+			),
+		),
+		columns: result.columns.map((name) => ({ name, type: "null" as const })),
 		rowsAffected: result.rowsAffected ?? 0,
 		notices: result.notices ?? [],
 	};
-}
-
-type LixValueLike = ReturnType<LixRow["value"]>;
-type LixValueKind = LixValueLike["kind"];
-
-class DesktopRow implements LixRow {
-	constructor(
-		private readonly columns: string[],
-		private readonly values: unknown[],
-	) {}
-
-	get(column: string): unknown {
-		return this.value(column).toJS();
-	}
-
-	value(column: string): LixValueLike {
-		const index = this.columns.indexOf(column);
-		if (index === -1) {
-			throw new Error(
-				`Unknown column "${column}". Available columns: ${this.columns.join(", ")}`,
-			);
-		}
-		return new DesktopValue(this.values[index]);
-	}
-
-	toObject(): Record<string, unknown> {
-		return Object.fromEntries(
-			this.columns.map((column, index) => [
-				column,
-				new DesktopValue(this.values[index]).toJS(),
-			]),
-		);
-	}
-
-	toValueMap(): Record<string, LixValueLike> {
-		return Object.fromEntries(
-			this.columns.map((column, index) => [
-				column,
-				new DesktopValue(this.values[index]),
-			]),
-		);
-	}
-}
-
-class DesktopValue implements LixValueLike {
-	readonly kind: LixValueKind;
-
-	constructor(private readonly raw: unknown) {
-		this.kind = valueKind(raw);
-	}
-
-	toJS(): unknown {
-		if (this.raw instanceof Uint8Array) {
-			return new Uint8Array(this.raw);
-		}
-		return this.raw;
-	}
-
-	asBytes(): Uint8Array | undefined {
-		if (!(this.raw instanceof Uint8Array)) {
-			return undefined;
-		}
-		return new Uint8Array(this.raw);
-	}
-}
-
-function valueKind(value: unknown): LixValueKind {
-	if (value === null) return "null";
-	if (typeof value === "boolean") return "boolean";
-	if (typeof value === "string") return "text";
-	if (typeof value === "number") {
-		return Number.isSafeInteger(value) ? "integer" : "real";
-	}
-	if (value instanceof Uint8Array) return "blob";
-	return "json";
 }

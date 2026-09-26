@@ -39,7 +39,7 @@ describe("createAtelierTelemetryHandler", () => {
 		handle({
 			type: "extension_opened",
 			extensionId: "flashtype_codex",
-			panel: "right",
+			area: "right",
 		});
 
 		await vi.waitFor(() => {

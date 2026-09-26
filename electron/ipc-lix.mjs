@@ -2,6 +2,7 @@ import { ipcMain } from "electron";
 import { Value } from "@lix-js/sdk";
 import {
 	closeAllLixSessions,
+	closeLix,
 	ensureLixOpen,
 	exportCurrentLixImage,
 	resetLixRepository,
@@ -73,6 +74,22 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		}
 	});
 
+	ipcMain.handle("lix:executeBatch", async (event, payload) => {
+		const lix = await ensureLixOpenForEvent(event);
+		const results = await lix.executeBatch(
+			payload.statements.map((statement) => ({
+				sql: String(statement.sql),
+				params: normalizeParams(statement.params),
+			})),
+		);
+		return {
+			...results,
+			results: results.results.map((result) => ({
+				...serializeQueryResult(result),
+				statementIndex: result.statementIndex,
+			})),
+		};
+	});
 	ipcMain.handle("lix:executeTransaction", async (event, payload) => {
 		const lix = await ensureLixOpenForEvent(event);
 		const statements = Array.isArray(payload?.statements)
@@ -213,8 +230,11 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 		}
 		const started = performance.now();
 		try {
-			const event = await observeEvents.next();
-			if (!event) {
+			const iteration = await observeEvents.next();
+			if (iteration.done) {
+				observeHandles.delete(observeId, ownerId);
+				observeTraceMeta.delete(observeId, ownerId);
+				await observeEvents.return?.();
 				logSlowOperation("observe:next", started, {
 					observeId,
 					...observeTraceMeta.getOptional(observeId, ownerId),
@@ -222,6 +242,7 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 				});
 				return undefined;
 			}
+			const event = iteration.value;
 			const serializedResult = serializeExecuteResult(
 				event.result,
 				"lix.observe",
@@ -258,7 +279,7 @@ export function registerLixIpc(resolveWindowForEvent, options = {}) {
 			return;
 		}
 		observeTraceMeta.delete(observeId, ownerId);
-		observeEvents.close();
+		await observeEvents.return?.();
 	});
 
 	ipcMain.handle("lix:activeBranchId", async (event) => {
@@ -337,7 +358,10 @@ export async function closeLixSession(window, options = {}) {
 	if (!window) {
 		return;
 	}
-	await runWithLixSessionClosed(window, async () => {}, options);
+	await closeLix(window, {
+		...options,
+		beforeClose: () => closeAllHandles(window.id),
+	});
 }
 
 export async function runWithLixSessionClosed(window, operation, options = {}) {
@@ -356,7 +380,7 @@ async function closeAllHandles(ownerId) {
 			? observeHandles.values().map((value) => ({ value }))
 			: observeHandles.valuesForOwner(ownerId);
 	for (const { value: observeEvents } of observeEntries) {
-		observeEvents.close();
+		await observeEvents.return?.();
 	}
 	if (ownerId === undefined) {
 		observeHandles.clear();
@@ -691,6 +715,12 @@ function base64ToBytes(base64) {
 }
 
 function serializeQueryResult(result) {
+	result = {
+		...result,
+		columns: result.columns?.map((column) =>
+			typeof column === "string" ? column : column.name,
+		),
+	};
 	const rows = Array.isArray(result?.rows)
 		? result.rows.map((row) => serializeSqlRow(row, result.columns))
 		: [];

@@ -85,7 +85,7 @@ test("packaged app includes arm64 native modules", async () => {
 	}
 });
 
-test("packaged app declares folder document support", async () => {
+test("packaged app declares folder, Markdown, and CSV document support", async () => {
 	await expectFile(packagedInfoPlistPath);
 
 	const { stdout } = await execFileAsync("/usr/libexec/PlistBuddy", [
@@ -96,6 +96,8 @@ test("packaged app declares folder document support", async () => {
 
 	expect(stdout).toContain("public.folder");
 	expect(stdout).toContain("Markdown Document");
+	expect(stdout).toContain("CSV Document");
+	expect(stdout).toContain("public.comma-separated-values-text");
 });
 
 test("packaged app launches, seeds, and opens files without Vite", async ({
@@ -120,7 +122,7 @@ test("packaged app launches, seeds, and opens files without Vite", async ({
 		await ensureFilesViewOpenInLeftPanel(page);
 		await expect(
 			page.locator(
-				'[data-panel-side="central"][data-active="true"][data-view-key="atelier_file"]',
+				'[data-area-side="main"][data-active="true"][data-view-key="atelier_file"]',
 			),
 		).toBeVisible();
 

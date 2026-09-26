@@ -34,6 +34,7 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 	const rng = seedrandom(stressSeed);
 	const userDataDir = testInfo.outputPath("user-data");
 	const workspaceDir = testInfo.outputPath("workspace");
+	const fakeBinDir = testInfo.outputPath("fake-bin");
 	const helperScriptPath = testInfo.outputPath("fake-agent-turn.mjs");
 	const payloadDir = testInfo.outputPath("agent-payloads");
 	const stressDiskPath = path.join(workspaceDir, stressFileName);
@@ -46,6 +47,12 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 		await timeProfile(profile, "setup:files", null, async () => {
 			await mkdir(workspaceDir, { recursive: true });
 			await mkdir(payloadDir, { recursive: true });
+			await mkdir(fakeBinDir, { recursive: true });
+			await writeFile(
+				path.join(fakeBinDir, "codex"),
+				"#!/bin/sh\ncase \" $* \" in\n\t*\" --version \"*) printf '%s\\n' 'codex-cli 0.134.0'; exit 0 ;;\nesac\nexec /bin/sh\n",
+				{ mode: 0o755 },
+			);
 			await writeFile(stressDiskPath, expectedMarkdown, "utf8");
 			await writeFakeAgentTurnHelper(helperScriptPath);
 		});
@@ -57,6 +64,8 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 			async () =>
 				await launchDevElectronApp(workspaceDir, {
 					env: {
+						PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
+						SHELL: "/bin/sh",
 						FLASHTYPE_TRACE_LIX_IPC: "1",
 						FLASHTYPE_TRACE_LIX_SLOW_MS: "0",
 					},
@@ -73,8 +82,34 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 		registerRendererConsoleLogging(page);
 
 		await timeProfile(profile, "setup:open-file", null, async () => {
+			// This test measures durable history size after repeated changes.
+			// New folders start with in-memory history until initialized.
+			await expect(
+				page.getByRole("button", {
+					name: /Open checkpoint history|Review working changes/,
+				}),
+			).toBeVisible({ timeout: 30_000 });
+			await Promise.all([
+				page.waitForEvent("load"),
+				page.evaluate(() =>
+					window.flashtypeDesktop!.workspace.initializeRepository(),
+				),
+			]);
+			expect(
+				await page.evaluate(() => window.flashtypeDesktop!.lix.storageDir()),
+			).toBeTruthy();
 			await openStressMarkdown(page);
 			await installStressEditorHelpers(page);
+			// Mount the agent extension, as a real terminal turn does, so its
+			// Atelier review integration is available to the fake hook events.
+			await page
+				.locator('[data-area-side="right"] [data-attr="panel-section-picker"]')
+				.click();
+			await page.getByRole("menuitem", { name: "Codex", exact: true }).click();
+			await expect(
+				page.locator('[data-active="true"][data-view-key="flashtype_codex"]'),
+			).toBeVisible();
+			await expect(page.getByRole("alert")).toHaveCount(0);
 		});
 		await timeProfile(profile, "setup:initial-settle", null, async () => {
 			await expectMarkdownSettled({
@@ -152,6 +187,9 @@ test("stress tests workspace changes through manual edits and fake agent turns",
 						await expect(reviewUndoButton(page)).toBeHidden({
 							timeout: 30_000,
 						});
+						await expect(
+							page.locator('[data-review-mode="true"]'),
+						).toHaveCount(0);
 					},
 				);
 
@@ -587,56 +625,25 @@ async function waitForReviewControls(page: Page): Promise<void> {
 }
 
 async function resolveReview(page: Page, keep: boolean): Promise<void> {
-	const remainingCount = await reviewRemainingCount(page);
-	if (keep) {
-		if (remainingCount > 1) {
-			await expect(reviewKeepAllButton(page)).toBeVisible();
-			await reviewKeepAllButton(page).click();
-			return;
-		}
-		await reviewKeepButton(page).click();
-		return;
-	}
-
-	for (
-		let resolvedCount = 0;
-		resolvedCount < remainingCount;
-		resolvedCount += 1
-	) {
-		await reviewUndoButton(page).click();
-		if (resolvedCount + 1 < remainingCount) {
-			await expect
-				.poll(async () => await reviewRemainingCount(page), {
-					timeout: 30_000,
-				})
-				.toBe(remainingCount - resolvedCount - 1);
-		}
-	}
+	await (keep ? reviewKeepButton(page) : reviewUndoButton(page)).click();
 }
 
 function reviewControls(page: Page) {
-	return page.locator('[role="group"][aria-label^="Review change "]');
+	return page.getByRole("group", { name: "Diff review actions" });
 }
 
 function reviewKeepButton(page: Page) {
-	return page.locator('[data-attr="review-change-keep"]');
-}
-
-function reviewKeepAllButton(page: Page) {
-	return page.locator('[data-attr="review-change-keep-all"]');
+	return reviewControls(page).getByRole("button", {
+		name: "Keep",
+		exact: true,
+	});
 }
 
 function reviewUndoButton(page: Page) {
-	return page.locator('[data-attr="review-change-undo"]');
-}
-
-async function reviewRemainingCount(page: Page): Promise<number> {
-	const label = await reviewControls(page).getAttribute("aria-label");
-	const match = /^Review change \d+ of \d+, (\d+) remaining$/.exec(label ?? "");
-	if (!match) {
-		throw new Error(`Could not read remaining review changes from ${label}.`);
-	}
-	return Number(match[1]);
+	return reviewControls(page).getByRole("button", {
+		name: "Undo",
+		exact: true,
+	});
 }
 
 async function buildAgentReviewTimeoutMessage(args: {
@@ -650,12 +657,30 @@ async function buildAgentReviewTimeoutMessage(args: {
 	const state = await readMarkdownState(args.page, args.diskPath).catch(
 		(error: unknown) => ({ stateReadError: String(error) }),
 	);
+	const uiSnapshot = await args.page.locator("body").ariaSnapshot().catch(
+		(error: unknown) => `Could not capture UI snapshot: ${String(error)}`,
+	);
+	const syncDiagnostic = await args.page
+		.evaluate(() =>
+			Promise.race([
+				window.flashtypeDesktop!.lix.syncDiskToLix().then(
+					() => "completed",
+					(error: unknown) => String(error),
+				),
+				new Promise<string>((resolve) =>
+					setTimeout(() => resolve("still pending after 5 seconds"), 5_000),
+				),
+			]),
+		)
+		.catch((error: unknown) => String(error));
 	return [
 		"Timed out waiting for fake agent review controls.",
 		`operationIndex=${args.index}`,
 		`beforeAgentMarkdown=${JSON.stringify(args.beforeAgentMarkdown)}`,
 		`proposedMarkdown=${JSON.stringify(args.proposedMarkdown)}`,
 		`state=${JSON.stringify(state)}`,
+		`uiSnapshot=\n${uiSnapshot}`,
+		`syncDiagnostic=${syncDiagnostic}`,
 		`cause=${
 			args.error instanceof Error ? args.error.message : String(args.error)
 		}`,
@@ -668,15 +693,43 @@ async function expectMarkdownSettled(args: {
 	page: Page;
 	timeout?: number;
 }): Promise<void> {
-	await expect
-		.poll(async () => await readMarkdownState(args.page, args.diskPath), {
-			timeout: args.timeout ?? 30_000,
-		})
-		.toEqual({
-			diskMarkdown: args.expectedMarkdown,
-			editorMarkdown: args.expectedMarkdown,
-			lixMarkdown: args.expectedMarkdown,
-		});
+	try {
+		await expect
+			.poll(async () => await readMarkdownState(args.page, args.diskPath), {
+				timeout: args.timeout ?? 30_000,
+			})
+			.toEqual({
+				diskMarkdown: args.expectedMarkdown,
+				editorMarkdown: args.expectedMarkdown,
+				lixMarkdown: args.expectedMarkdown,
+			});
+	} catch (error) {
+		const editorState = await args.page
+			.locator('[data-testid="tiptap-editor"] .ProseMirror')
+			.evaluate((editor) => ({
+				activeElement: document.activeElement?.outerHTML.slice(0, 500),
+				contentEditable: (editor as HTMLElement).contentEditable,
+				dataReviewMode: editor.closest('[data-review-mode]')?.getAttribute('data-review-mode'),
+				isContentEditable: (editor as HTMLElement).isContentEditable,
+				parentReviewMode:
+					editor.parentElement?.closest('[data-review-mode]')?.getAttribute('data-review-mode'),
+				readOnly: (editor as HTMLElement).getAttribute('data-readonly'),
+			} ))
+			.catch((stateError: unknown) => ({ error: String(stateError) }));
+		const uiSnapshot = await args.page
+			.locator('body')
+			.ariaSnapshot()
+			.catch((stateError: unknown) => `Could not capture UI snapshot: ${String(stateError)}`);
+		throw new Error(
+			[
+				`Markdown did not settle to ${JSON.stringify(args.expectedMarkdown)}.`,
+				`editorState=${JSON.stringify(editorState)}`,
+				`uiSnapshot=\n${uiSnapshot}`,
+				`cause=${error instanceof Error ? error.message : String(error)}`,
+			].join('\n'),
+			{ cause: error },
+		);
+	}
 }
 
 async function readMarkdownState(
@@ -746,7 +799,7 @@ async function readPersistedMarkdown(
 ): Promise<string | null> {
 	return await page.evaluate(async (pathToFind) => {
 		const queryResult = await window.flashtypeDesktop?.lix.execute({
-			sql: "SELECT data FROM lix_file WHERE path = $1",
+			sql: "SELECT content FROM lix_file WHERE path = $1",
 			params: [pathToFind],
 		});
 		return decodeMarkdownValue(queryResult?.rows?.[0]?.[0]);

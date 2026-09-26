@@ -9,7 +9,7 @@ import {
 	type QueryCompiler,
 	type QueryResult,
 } from "kysely";
-import type { ExecuteResult } from "@lix-js/sdk";
+import type { StatementResult as ExecuteResult } from "@lix-js/sdk";
 export { sql } from "kysely";
 
 export type LixDatabaseSchema = Record<string, Record<string, any>>;
@@ -53,9 +53,17 @@ class LixConnection implements DatabaseConnection {
 		);
 		const columnNames =
 			raw.columns.length > 0
-				? raw.columns
+				? raw.columns.map((column) =>
+						typeof column === "string" ? column : column.name,
+					)
 				: columnNamesFromQueryNode(compiledQuery.query);
-		const decodedRows = decodeRows(raw.rows, columnNames ?? raw.columns);
+		const decodedRows = decodeRows(
+			raw.rows,
+			columnNames ??
+				raw.columns.map((column) =>
+					typeof column === "string" ? column : column.name,
+				),
+		);
 		const rows =
 			columnNames &&
 			decodedRows.every((row) => row.length === columnNames.length)
@@ -187,6 +195,9 @@ class LixDriver implements Driver {
 }
 
 class LixQueryCompiler extends SqliteQueryCompiler {
+	protected override getCurrentParameterPlaceholder(): string {
+		return `$${this.numParameters}`;
+	}
 	protected override getLeftIdentifierWrapper(): string {
 		return "";
 	}
@@ -228,7 +239,11 @@ function decodeRows(
 	rows: ExecuteResult["rows"],
 	columns: string[],
 ): unknown[][] {
-	return rows.map((row) => columns.map((column) => row.get(column)));
+	return rows.map((row) =>
+		columns.map((column) =>
+			typeof row.get === "function" ? row.get(column) : row[column],
+		),
+	);
 }
 
 function extractIntegerValue(value: unknown): bigint | undefined {

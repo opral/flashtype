@@ -10,10 +10,14 @@ import { createTerminalOutputNormalizer } from "./ansi-style-normalizer";
 
 function cssColor(name: string, fallback: string): string {
 	if (typeof window === "undefined") return fallback;
-	const value = window
-		.getComputedStyle(document.documentElement)
-		.getPropertyValue(name)
-		.trim();
+	// Resolve light-dark() and CSS variables before handing colors to xterm,
+	// whose color parser cannot evaluate CSS theme expressions.
+	const probe = document.createElement("span");
+	probe.style.color = `var(${name}, ${fallback})`;
+	probe.style.display = "none";
+	document.documentElement.appendChild(probe);
+	const value = window.getComputedStyle(probe).color;
+	probe.remove();
 	return value || fallback;
 }
 
@@ -223,10 +227,10 @@ export function TerminalView({
 
 	return (
 		<div
-			className="ph-mask h-full min-h-0"
+			className="ph-mask h-full min-h-0 p-2"
 			style={{ backgroundColor: cssColor("--color-bg-panel", "#ffffff") }}
 		>
-			<div ref={containerRef} className="h-full w-full p-2" />
+			<div ref={containerRef} className="h-full w-full" />
 		</div>
 	);
 }

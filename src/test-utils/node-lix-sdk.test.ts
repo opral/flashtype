@@ -19,12 +19,16 @@ test("observe returns the current result snapshot until next is called", async (
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		const event = await withTimeout(events.next(), 2_000);
 
-		expect(event?.result.columns).toEqual(["value"]);
-		expect(event?.result.rows.map((row) => [row.get("value")])).toEqual([
+		expect(event.done).toBe(false);
+		if (event.done) return;
+		expect(event.value.result.columns).toEqual([
+			{ name: "value", type: "jsonb" },
+		]);
+		expect(event.value.result.rows.map((row) => [row["value"]])).toEqual([
 			["current"],
 		]);
 	} finally {
-		events.close();
+		await events.return?.();
 		await lix.close();
 	}
 });

@@ -71,7 +71,7 @@ export function createAtelierTelemetryHandler(lix: Lix) {
 					if (!agent) break;
 					captureTelemetry("agent_opened", {
 						agent,
-						panel: event.panel,
+						panel: event.area,
 						source: "renderer",
 						surface: "terminal",
 						...workspace,

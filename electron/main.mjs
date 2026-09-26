@@ -1,4 +1,13 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import {
+	applyScheduledWorkspaceLixDeletion,
+	scheduleWorkspaceLixDeletion,
+	RECOVERY_RESTART_EXIT_CODE,
+} from "./workspace-open-recovery.mjs";
+import {
+	assertRepositorySize,
+	inspectRepositorySize,
+} from "./repository-limits.mjs";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -28,8 +37,8 @@ import {
 } from "./telemetry.mjs";
 import {
 	APP_NAME,
-	registerMarkdownDefaultHandler,
-} from "./markdown-default-handler.mjs";
+	registerDocumentDefaultHandlers,
+} from "./document-default-handlers.mjs";
 import { getApplicationIconPath as resolveApplicationIconPath } from "./app-icon.mjs";
 import {
 	getWorkspacePathArguments,
@@ -510,10 +519,15 @@ function requestCloseFileFromApplicationMenu() {
 	window.webContents.send("workspace:closeFile");
 }
 
-async function toggleTrackChangesFromApplicationMenu(trackChanges) {
-	const window = getWorkspaceWindowForFileAction();
+async function toggleTrackChangesFromApplicationMenu(
+	trackChanges,
+	window = getWorkspaceWindowForFileAction(),
+) {
 	if (!window || window.isDestroyed() || !getWorkspace(window)) {
 		return null;
+	}
+	if (trackChanges && getWorkspace(window)?.ephemeral === true) {
+		await assertRepositorySize(getWorkspace(window).path);
 	}
 	const workspace = await runWithLixSessionClosed(
 		window,
@@ -744,6 +758,8 @@ async function createMainWindow(workspaceRequest) {
 		window.focus();
 	});
 
+	const windowId = window.id;
+	const webContents = window.webContents;
 	let windowCleanupDone = false;
 	const cleanupWorkspaceWindow = () => {
 		if (windowCleanupDone) {
@@ -753,16 +769,20 @@ async function createMainWindow(workspaceRequest) {
 		if (showFallback !== undefined) {
 			clearTimeout(showFallback);
 		}
-		forgetTelemetrySessionContextForWebContents(window.webContents);
+		forgetTelemetrySessionContextForWebContents(webContents);
 		workspaceWindows.delete(window);
 		forgetClosedWorkspaceIfOtherWindowsRemain(window);
-		void closeLixSession(window, { ignoreOpenError: true }).finally(() => {
-			void disposeWorkspaceWindowState(window.id);
-		});
+		if (!isQuitting) {
+			void closeLixSession({ id: windowId }, { ignoreOpenError: true })
+				.finally(() => disposeWorkspaceWindowState(windowId))
+				.catch((error) =>
+					console.warn("Failed to clean up closed workspace", error),
+				);
+		}
 	};
 
 	window.on("closed", cleanupWorkspaceWindow);
-	window.webContents.once("destroyed", cleanupWorkspaceWindow);
+	webContents.once("destroyed", cleanupWorkspaceWindow);
 	window.on("focus", () => {
 		installApplicationMenu();
 		updateDockMenu();
@@ -871,6 +891,7 @@ async function startWorkspaceLifecycle() {
 		return;
 	}
 	const userDataPath = app.getPath("userData");
+	await applyScheduledWorkspaceLixDeletion(userDataPath);
 	const recoveredLixOpenRecoveries =
 		recoverPendingWorkspaceLixOpenRecoveriesSync(userDataPath);
 	for (const recovery of recoveredLixOpenRecoveries) {
@@ -878,6 +899,44 @@ async function startWorkspaceLifecycle() {
 			source: "electron-workspace-recovery",
 		});
 	}
+	ipcMain.handle(
+		"workspace:deleteLixAndRestart",
+		async (event, workspacePath) => {
+			const workspace = getWorkspace(
+				BrowserWindow.fromWebContents(event.sender),
+			);
+			if (
+				!workspace ||
+				workspace.ephemeral ||
+				workspace.path !== workspacePath
+			) {
+				throw new Error("This repository is no longer open.");
+			}
+			await scheduleWorkspaceLixDeletion(userDataPath, workspace.path);
+			flushOpenWorkspacePaths();
+			isQuitting = true;
+			clearWorkspaceBootRecoveryGuard();
+			// Do not wait on the stalled Lix promise. The next process deletes .lix
+			// before opening any repositories, after this process has exited.
+			if (process.env.FLASHTYPE_DEV_SUPERVISED === "1") {
+				app.exit(RECOVERY_RESTART_EXIT_CODE);
+			} else {
+				app.relaunch();
+				app.exit(0);
+			}
+		},
+	);
+	ipcMain.handle("workspace:inspectRepositorySize", (event) => {
+		const workspace = getWorkspace(BrowserWindow.fromWebContents(event.sender));
+		if (!workspace) throw new Error("No workspace is open.");
+		return inspectRepositorySize(workspace.path);
+	});
+	ipcMain.handle("workspace:initializeRepository", (event) =>
+		toggleTrackChangesFromApplicationMenu(
+			true,
+			BrowserWindow.fromWebContents(event.sender),
+		),
+	);
 	registerLixIpc((event) => BrowserWindow.fromWebContents(event.sender), {
 		disableTrackChanges: async (window) => {
 			const workspace = await disableWorkspaceTrackChanges(window);
@@ -909,13 +968,13 @@ async function startWorkspaceLifecycle() {
 			);
 		},
 	});
-	void registerMarkdownDefaultHandler({
+	void registerDocumentDefaultHandlers({
 		execFileAsync,
 		executablePath: process.execPath,
 		isPackaged: app.isPackaged,
 		platform: process.platform,
 	}).catch((error) => {
-		console.warn("Failed to register Flashtype as the Markdown editor", error);
+		console.warn("Failed to register Flashtype file associations", error);
 	});
 	const savedWorkspaceEntries = await readWorkspaceSessionEntries(userDataPath);
 	const recoveryWorkspaceEntries = (await readWorkspaceRecoveries(userDataPath))
@@ -1830,14 +1889,25 @@ function buildFileMenu() {
 			},
 			{
 				id: "track-changes",
-				label: "Track Changes",
+				label:
+					trackingWorkspace?.ephemeral === true
+						? "Initialize repository"
+						: "Track Changes",
 				type: "checkbox",
 				enabled: Boolean(trackingWorkspace),
 				checked: trackingWorkspace
 					? trackingWorkspace.ephemeral !== true
 					: false,
 				click: (menuItem) => {
-					void toggleTrackChangesFromApplicationMenu(menuItem.checked);
+					void toggleTrackChangesFromApplicationMenu(menuItem.checked).catch(
+						(error) => {
+							dialog.showErrorBox(
+								"Could not change repository tracking",
+								error.message,
+							);
+							installApplicationMenu();
+						},
+					);
 				},
 			},
 			{ type: "separator" },
@@ -1881,14 +1951,25 @@ function updateDockMenu() {
 			},
 			{
 				id: "dock-track-changes",
-				label: "Track Changes",
+				label:
+					trackingWorkspace?.ephemeral === true
+						? "Initialize repository"
+						: "Track Changes",
 				type: "checkbox",
 				enabled: Boolean(trackingWorkspace),
 				checked: trackingWorkspace
 					? trackingWorkspace.ephemeral !== true
 					: false,
 				click: (menuItem) => {
-					void toggleTrackChangesFromApplicationMenu(menuItem.checked);
+					void toggleTrackChangesFromApplicationMenu(menuItem.checked).catch(
+						(error) => {
+							dialog.showErrorBox(
+								"Could not change repository tracking",
+								error.message,
+							);
+							installApplicationMenu();
+						},
+					);
 				},
 			},
 		]),

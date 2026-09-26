@@ -1,3 +1,5 @@
+@import "@opral/atelier/theme.css";
+
 /**
  * Based on the semantic color guidance from Subframe:
  * https://www.subframe.com/blog/how-to-setup-semantic-tailwind-colors
@@ -30,32 +32,32 @@
 	--color-neutral-950: rgb(12, 10, 9);
 
 	/* Flashtype semantic aliases. Named by role, prominence, and state. */
-	--color-bg-app: rgb(244, 242, 239);
-	--color-bg-panel: var(--color-neutral-0);
-	--color-bg-panel-muted: var(--color-neutral-50);
-	--color-bg-hover: rgb(245, 242, 237);
-	--color-border-panel: rgb(236, 232, 226);
-	--color-border-subtle: rgb(244, 241, 236);
-	--color-text-primary: var(--color-neutral-900);
-	--color-text-secondary: var(--color-neutral-700);
-	--color-text-tertiary: var(--color-neutral-500);
-	--color-icon-secondary: var(--color-neutral-600);
-	--color-icon-tertiary: var(--color-neutral-500);
-	--color-icon-brand: var(--color-brand-600);
-	--color-bg-brand-soft: var(--color-brand-50);
-	--color-border-brand-soft: var(--color-brand-100);
-	--color-text-link: var(--color-brand-600);
-	--color-text-link-hover: var(--color-brand-700);
+	--color-bg-app: var(--atelier-bg);
+	--color-bg-panel: var(--atelier-panel);
+	--color-bg-panel-muted: var(--atelier-bg-subtle);
+	--color-bg-hover: var(--atelier-bg-hover);
+	--color-border-panel: var(--atelier-border);
+	--color-border-subtle: var(--atelier-border-subtle);
+	--color-text-primary: var(--atelier-fg);
+	--color-text-secondary: var(--atelier-fg-muted);
+	--color-text-tertiary: var(--atelier-fg-subtle);
+	--color-icon-secondary: var(--atelier-fg-muted);
+	--color-icon-tertiary: var(--atelier-fg-subtle);
+	--color-icon-brand: var(--atelier-accent);
+	--color-bg-brand-soft: var(--atelier-accent-subtle);
+	--color-border-brand-soft: var(--atelier-accent-border);
+	--color-text-link: var(--atelier-link);
+	--color-text-link-hover: var(--atelier-link-hover);
 	--color-bg-tooltip: var(--color-neutral-900);
 	--color-text-tooltip: var(--color-neutral-0);
-	--color-bg-selection-current: rgb(251, 239, 228);
-	--color-border-selection-current: rgb(243, 216, 190);
-	--color-icon-selection-current: var(--color-brand-700);
+	--color-bg-selection-current: var(--atelier-bg-selection);
+	--color-border-selection-current: var(--atelier-accent-border);
+	--color-icon-selection-current: var(--atelier-accent);
 	--color-action-selection-current: var(--color-icon-selection-current);
-	--color-ring-focus-visible: var(--color-brand-700);
-	--color-bg-action-primary: var(--color-brand-700);
-	--color-bg-action-primary-hover: var(--color-brand-800);
-	--color-text-on-action-primary: var(--color-neutral-0);
+	--color-ring-focus-visible: var(--atelier-ring);
+	--color-bg-action-primary: var(--atelier-accent);
+	--color-bg-action-primary-hover: var(--atelier-accent-hover);
+	--color-text-on-action-primary: var(--atelier-accent-on);
 	--color-bg-action-secondary: var(--color-neutral-900);
 	--color-bg-action-secondary-hover: var(--color-neutral-800);
 	--color-text-on-action-secondary: var(--color-neutral-0);
@@ -66,8 +68,8 @@
 	--color-bg-notice-warning: var(--color-warning-50);
 	--color-border-notice-warning: var(--color-warning-200);
 	--color-text-notice-warning: var(--color-warning-900);
-	--color-text-status-danger: var(--color-error-600);
-	--color-text-status-success: var(--color-success-600);
+	--color-text-status-danger: var(--atelier-danger);
+	--color-text-status-success: var(--atelier-success);
 	--color-bg-control-selected: var(--color-bg-hover);
 	--color-border-control-selected: var(--color-border-panel);
 	--color-icon-control-selected: var(--color-icon-secondary);
@@ -92,8 +94,8 @@
 	);
 	--color-text-diff-modified: var(--color-warning-800);
 	--color-border-diff-modified: var(--color-warning-700);
-	--color-border-table-grid: var(--color-border-subtle);
-	--color-bg-table-row-hover: rgb(250, 246, 240);
+	--color-border-table-grid: var(--atelier-border-subtle);
+	--color-bg-table-row-hover: var(--atelier-bg-hover);
 
 	--color-error-50: rgb(254, 242, 242);
 	--color-error-100: rgb(254, 226, 226);

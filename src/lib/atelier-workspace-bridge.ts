@@ -1,5 +1,5 @@
 import type {
-	AtelierDocumentsApi,
+	AtelierExtensionRuntime,
 	AtelierSessionStateStore,
 } from "@opral/atelier";
 import type { Lix } from "@/lib/lix-types";
@@ -19,9 +19,12 @@ type DesktopWorkspaceBridge = Pick<
 >;
 
 type ConnectAtelierWorkspaceOptions = {
-	readonly documents: AtelierDocumentsApi;
+	readonly documents: Pick<
+		AtelierExtensionRuntime["documents"],
+		"open" | "startNew" | "closeActive"
+	>;
 	readonly lix: Lix;
-	readonly sessionStateStore?: Pick<
+	readonly sessionStateStore: Pick<
 		AtelierSessionStateStore,
 		"getSnapshot" | "subscribe"
 	>;
@@ -65,20 +68,13 @@ export function connectAtelierWorkspace(
 	const unsubscribeCloseFile = workspace.onCloseFile(() => {
 		void documents.closeActive().catch(reportError);
 	});
-	const uiStateEvents = options.sessionStateStore
-		? null
-		: options.lix.observe(
-				`SELECT value
-			 FROM lix_key_value_by_branch
-			 WHERE key = $1
-			   AND lixcol_branch_id = $2`,
-				["atelier_ui_state", "global"],
-			);
 	const filePathEvents = options.lix.observe(
 		`SELECT id, path
 		 FROM lix_file
 		 WHERE path NOT LIKE '/.lix/%'
 		 ORDER BY id`,
+		[],
+		{ signal: abortController.signal },
 	);
 	let startupReady = false;
 	let sessionPersistenceQueue = Promise.resolve();
@@ -90,7 +86,7 @@ export function connectAtelierWorkspace(
 				if (abortController.signal.aborted) return;
 				const state = await readAtelierDocumentSessionState(
 					options.lix,
-					options.sessionStateStore?.getSnapshot(),
+					options.sessionStateStore.getSnapshot(),
 				);
 				if (abortController.signal.aborted) return;
 				await workspace.setSessionOpenFilePaths({
@@ -102,15 +98,13 @@ export function connectAtelierWorkspace(
 	const watchSessionEvents = async (
 		events: ReturnType<Lix["observe"]>,
 	): Promise<void> => {
-		while (!abortController.signal.aborted) {
-			const event = await events.next();
-			if (!event || abortController.signal.aborted) return;
+		for await (const _event of events) {
+			if (abortController.signal.aborted) return;
 			persistSessionDocuments();
 		}
 	};
-	if (uiStateEvents) void watchSessionEvents(uiStateEvents).catch(reportError);
 	void watchSessionEvents(filePathEvents).catch(reportError);
-	const unsubscribeSessionState = options.sessionStateStore?.subscribe(
+	const unsubscribeSessionState = options.sessionStateStore.subscribe(
 		persistSessionDocuments,
 	);
 
@@ -132,7 +126,7 @@ export function connectAtelierWorkspace(
 		if (
 			await readCurrentAtelierDocumentPath(
 				options.lix,
-				options.sessionStateStore?.getSnapshot(),
+				options.sessionStateStore.getSnapshot(),
 			)
 		)
 			return;
@@ -144,7 +138,7 @@ export function connectAtelierWorkspace(
 		if (
 			await readCurrentAtelierDocumentPath(
 				options.lix,
-				options.sessionStateStore?.getSnapshot(),
+				options.sessionStateStore.getSnapshot(),
 			)
 		)
 			return;
@@ -162,9 +156,8 @@ export function connectAtelierWorkspace(
 		dispose: () => {
 			if (abortController.signal.aborted) return;
 			abortController.abort();
-			uiStateEvents?.close();
-			filePathEvents.close();
-			unsubscribeSessionState?.();
+			void filePathEvents.return?.();
+			unsubscribeSessionState();
 			unsubscribeNewFile();
 			unsubscribeCloseFile();
 		},
@@ -173,7 +166,7 @@ export function connectAtelierWorkspace(
 
 /** Imports a lazy Electron filesystem entry, then opens it through Atelier. */
 export async function openAtelierWorkspacePath(args: {
-	readonly documents: Pick<AtelierDocumentsApi, "open">;
+	readonly documents: Pick<AtelierExtensionRuntime["documents"], "open">;
 	readonly lix: Lix;
 	readonly path: string;
 }): Promise<void> {

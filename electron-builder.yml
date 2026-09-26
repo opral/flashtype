@@ -56,6 +56,13 @@ mac:
           - markdown
           - mdown
           - mkd
+      - CFBundleTypeName: CSV Document
+        CFBundleTypeRole: Editor
+        LSHandlerRank: Alternate
+        LSItemContentTypes:
+          - public.comma-separated-values-text
+        CFBundleTypeExtensions:
+          - csv
       - CFBundleTypeName: Folder
         CFBundleTypeRole: Viewer
         LSHandlerRank: Alternate

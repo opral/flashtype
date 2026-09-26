@@ -77,6 +77,26 @@ export function ErrorFallback(props: {
 	const [actionError, setActionError] = useState<unknown>(null);
 	const busy = busyAction !== null;
 	const recovery = props.recovery ?? null;
+	const [canDelete, setCanDelete] = useState(false);
+	useEffect(() => {
+		let active = true;
+		void window.flashtypeDesktop?.workspace
+			?.get()
+			.then((workspace) => {
+				if (active)
+					setCanDelete(
+						Boolean(
+							workspace &&
+							!workspace.ephemeral &&
+							(!recovery || recovery.workspacePath === workspace.path),
+						),
+					);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, [recovery]);
 
 	useEffect(() => {
 		if (!recovery) {
@@ -101,15 +121,14 @@ export function ErrorFallback(props: {
 		setBusyAction("disable");
 		setActionError(null);
 		try {
-			const disableTrackChanges =
-				window.flashtypeDesktop?.workspace?.disableTrackChanges;
-			if (typeof disableTrackChanges !== "function") {
+			const api = window.flashtypeDesktop?.workspace;
+			const workspacePath = recovery?.workspacePath ?? (await api?.get())?.path;
+			if (!api?.deleteLixAndRestart || !workspacePath) {
 				throw new Error(
-					"Disabling Track Changes is only available in the desktop app.",
+					"Restart Flashtype to load the repository recovery action.",
 				);
 			}
-			await disableTrackChanges();
-			window.location.reload();
+			await api.deleteLixAndRestart(workspacePath);
 		} catch (error) {
 			setActionError(error);
 			setBusyAction(null);
@@ -164,6 +183,42 @@ export function ErrorFallback(props: {
 	}
 
 	const details = recovery ?? props.error;
+	const upgradeRequired =
+		/LIX_ERROR_REPOSITORY_MIGRATION_REQUIRED|detached migration tool/.test(
+			formatError(details),
+		);
+	if (upgradeRequired)
+		return (
+			<div className="flex min-h-dvh items-center justify-center bg-[var(--atelier-bg)] p-6 text-[var(--atelier-fg)]">
+				<section className="max-w-lg rounded-lg border border-[var(--atelier-border)] bg-[var(--atelier-panel)] p-6">
+					<h1 className="text-xl font-semibold">Repository upgrade required</h1>
+					<p className="mt-3 text-sm">
+						This repository was created with an older Lix version. The installed
+						SDK requires a separate migration tool that is not yet available for
+						Flashtype.
+					</p>
+					<p className="mt-3 text-sm">
+						Your files and saved history have not been deleted. Keep the .lix
+						folder to preserve them.
+					</p>
+					<a
+						className="mt-4 inline-block underline"
+						href="https://github.com/opral/lix/issues/1839"
+						target="_blank"
+						rel="noreferrer"
+					>
+						Follow the migration fix
+					</a>
+					<button
+						className="ml-4 rounded border px-3 py-2 text-sm"
+						onClick={handleTryAgain}
+						disabled={busy}
+					>
+						Try again
+					</button>
+				</section>
+			</div>
+		);
 
 	return (
 		<div className="min-h-dvh w-full overflow-auto p-6">
@@ -177,26 +232,30 @@ export function ErrorFallback(props: {
 						{recovery?.workspaceName
 							? ` ${recovery.workspaceName}`
 							: " this workspace"}
-						. You can disable Track Changes to remove the workspace .lix data
-						and open the folder normally. Your project files will not be
+						. Try again to reopen it. Your files and saved history have not been
 						deleted.
 					</p>
-					<div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 mb-4">
-						<p className="text-sm font-medium text-destructive">
-							Disabling Track Changes removes change history stored in .lix.
-						</p>
-					</div>
+					{canDelete && (
+						<div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 mb-4">
+							<p className="text-sm font-medium text-destructive">
+								Deleting .lix permanently removes this folder’s saved change
+								history.
+							</p>
+						</div>
+					)}
 					<div className="flex flex-wrap items-center gap-3">
-						<button
-							onClick={handleDisableTrackChanges}
-							disabled={busy}
-							className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-[var(--color-text-on-action-primary)] text-sm disabled:opacity-60"
-						>
-							<Trash2 className="h-4 w-4" />
-							{busyAction === "disable"
-								? "Disabling..."
-								: "Disable Track Changes"}
-						</button>
+						{canDelete && (
+							<button
+								onClick={handleDisableTrackChanges}
+								disabled={busy}
+								className="inline-flex items-center gap-2 rounded-md bg-destructive px-3 py-2 text-[var(--color-text-on-action-primary)] text-sm disabled:opacity-60"
+							>
+								<Trash2 className="h-4 w-4" />
+								{busyAction === "disable"
+									? "Restarting..."
+									: "Delete .lix and restart"}
+							</button>
+						)}
 						<button
 							onClick={
 								recovery ? handleTryAgain : () => window.location.reload()

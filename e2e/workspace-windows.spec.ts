@@ -1,11 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ElectronApplication } from "playwright";
-import { LocalFilesystem, openLix } from "@lix-js/sdk";
+import { openLix } from "@lix-js/sdk";
+import { FilesystemStorage } from "@lix-js/storage-filesystem";
 import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+	clickAndWaitForAppClose,
 	closeElectronApp,
-	expectInstalledPluginArchives,
+	expectInstalledMarkdownPlugin,
 	fileTreeDirectory,
 	fileTreeFile,
 	launchDevElectronAppWithArgs,
@@ -365,7 +367,7 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 
 		await page.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "UPDATE lix_file SET data = $1 WHERE path = $2",
+				sql: "UPDATE lix_file SET content = $1 WHERE path = $2",
 				params: [
 					new TextEncoder().encode("# Updated while off\n"),
 					"/marker.md",
@@ -382,7 +384,7 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 		await expectTrackChangesSettled(electronApp, workspaceDir, true);
 		await expectLixFilePath(page, "/marker.md");
 		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
-		await expectInstalledPluginArchives(workspaceDir);
+		await expectInstalledMarkdownPlugin(workspaceDir);
 
 		await clickTrackChangesMenuItemAndWaitForReload(electronApp, page);
 		await expect(page).toHaveTitle(path.basename(workspaceDir));
@@ -394,7 +396,7 @@ test("Track Changes menu toggles workspace .lix storage", async ({
 	}
 });
 
-test("Track Changes recovery screen can disable tracking", async ({
+test("Track Changes recovery screen deletes damaged tracking and restarts", async ({
 	browserName: _browserName,
 }, testInfo) => {
 	const workspaceDir = testInfo.outputPath("track-changes-recovery-workspace");
@@ -431,8 +433,9 @@ test("Track Changes recovery screen can disable tracking", async ({
 
 		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
 			userDataDir,
+			env: { FLASHTYPE_DEV_SUPERVISED: "1" },
 		});
-		const page = await pageWithTitle(electronApp, path.basename(workspaceDir));
+		let page = await pageWithTitle(electronApp, path.basename(workspaceDir));
 		registerRendererConsoleLogging(page);
 
 		await expectTrackChangesMenuChecked(electronApp, true);
@@ -444,13 +447,17 @@ test("Track Changes recovery screen can disable tracking", async ({
 			}),
 		).toBeVisible();
 		await expect(
-			page.getByText("Your project files will not be deleted."),
+			page.getByText("Your files and saved history have not been deleted."),
 		).toBeVisible();
 
-		await Promise.all([
-			page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-			page.getByRole("button", { name: "Disable Track Changes" }).click(),
-		]);
+		await clickAndWaitForAppClose(
+			electronApp,
+			page.getByRole("button", { name: "Delete .lix and restart" }),
+		);
+		electronApp = await launchDevElectronAppWithArgs([workspaceDir], {
+			userDataDir,
+		});
+		page = await pageWithTitle(electronApp, path.basename(workspaceDir));
 
 		await expect(fileTreeFile(page, "/marker.md")).toBeVisible();
 		await expectTrackChangesMenuChecked(electronApp, false);
@@ -566,7 +573,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 
 		await filePage.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "UPDATE lix_file SET data = $1 WHERE path = $2",
+				sql: "UPDATE lix_file SET content = $1 WHERE path = $2",
 				params: [new TextEncoder().encode("# Updated\n"), "/solo.md"],
 			});
 		});
@@ -577,7 +584,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 		expect(await readFile(siblingPath, "utf8")).toBe("# Sibling\n");
 		await filePage.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "INSERT INTO lix_file (path, data) VALUES ($1, $2)",
+				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
 				params: ["/generated.md", new TextEncoder().encode("# Generated\n")],
 			});
 		});
@@ -591,7 +598,7 @@ test("macOS open-file events open standalone files as transient workspaces", asy
 		await expectPathMissing(path.join(directory, ".lix_system"));
 		await filePage.evaluate(async () => {
 			await window.flashtypeDesktop?.lix.execute({
-				sql: "INSERT INTO lix_file (path, data) VALUES ($1, $2)",
+				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
 				params: [
 					"/.lix/app_data/transient-test.bin",
 					new TextEncoder().encode("internal"),
@@ -755,7 +762,12 @@ test("mixed folder and standalone markdown args create folder and grouped file w
 		await expect(
 			fileTreeFile(groupedFilePage, "/folder-marker.md"),
 		).toHaveCount(0);
-		await fileTreeDirectory(groupedFilePage, "/standalone-mixed-two/").click();
+		const secondDirectory = fileTreeDirectory(
+			groupedFilePage,
+			"/standalone-mixed-two/",
+		);
+		await secondDirectory.click();
+		await secondDirectory.press("ArrowRight");
 		const secondItem = fileTreeFile(
 			groupedFilePage,
 			"/standalone-mixed-two/two.md",
@@ -790,8 +802,21 @@ test("relaunch restores grouped transient file workspace", async ({
 		electronApp = await launchDevElectronAppWithArgs([firstPath, secondPath], {
 			userDataDir,
 		});
-		await pageWithTitle(electronApp, path.basename(groupedWorkspaceDir));
+		const initialPage = await pageWithTitle(
+			electronApp,
+			path.basename(groupedWorkspaceDir),
+		);
 		await expectWindowCount(electronApp, 1);
+		// The native title appears before document startup and session persistence.
+		// Relaunch should restore the selected document after that startup completes.
+		await expect(
+			initialPage.getByRole("heading", { name: "First" }),
+		).toBeVisible();
+		await expectWorkspaceSessionOpenFilePaths(
+			userDataDir,
+			groupedWorkspaceDir,
+			["restore-markdown-first/first.md"],
+		);
 
 		await closeElectronApp(electronApp);
 		electronApp = undefined;
@@ -833,7 +858,7 @@ async function writeMarkerFile(
 
 async function initializeLixWorkspace(workspaceDir: string): Promise<void> {
 	const lix = await openLix({
-		storage: new LocalFilesystem({ path: workspaceDir, syncAllFiles: true }),
+		storage: new FilesystemStorage({ path: workspaceDir }),
 	});
 	await lix.close();
 }

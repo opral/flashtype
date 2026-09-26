@@ -115,6 +115,9 @@ export function FirstRunScreen({
 					<AgentInvite />
 				</Island>
 			</div>
+			<footer className="flex h-6 shrink-0 items-center px-3 text-[11.5px] text-[var(--color-icon-tertiary)]">
+				No folder open
+			</footer>
 		</div>
 	);
 }

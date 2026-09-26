@@ -12,6 +12,29 @@ const rendererUrl = `http://127.0.0.1:${rendererPort}`;
 const electronCloseTimeoutMs = 5_000;
 export const devElectronHeadless = process.env.FLASHTYPE_HEADLESS ?? "1";
 
+export async function clickAndWaitForAppClose(
+	app: ElectronApplication,
+	button: Locator,
+): Promise<void> {
+	// On Linux, intentional app exit can close the page before Playwright
+	// acknowledges the click. Still require app closure and all recovery checks.
+	const closed = app.waitForEvent("close");
+	await Promise.all([
+		closed,
+		button.click().catch((error: unknown) => {
+			if (
+				!button.page().isClosed() ||
+				!(error instanceof Error) ||
+				!error.message.includes(
+					"Target page, context or browser has been closed",
+				)
+			) {
+				throw error;
+			}
+		}),
+	]);
+}
+
 export async function launchDevElectronApp(
 	workspaceDir: string,
 	options: LaunchDevElectronAppOptions = {},
@@ -91,7 +114,7 @@ export async function ensureFilesViewOpenInLeftPanel(
 	await expect(leftPanelToggle).toHaveAttribute("aria-pressed", "true");
 	await expect(filesTab).toBeVisible();
 	await filesTab.click();
-	await expect(filesTab).toHaveAttribute("data-focused", "true");
+	await expect(filesTab).toHaveAttribute("data-active", "true");
 }
 
 async function waitForWorkspaceReady(page: Page): Promise<void> {
@@ -100,17 +123,24 @@ async function waitForWorkspaceReady(page: Page): Promise<void> {
 }
 
 export function fileTreeFiles(page: Page): Locator {
-	return page.locator(
-		'[data-type="item"][data-item-type="file"][data-item-path]',
-	);
+	return page
+		.locator("aside")
+		.first()
+		.locator('[data-type="item"][data-item-type="file"][data-item-path]');
 }
 
 export function fileTreeFile(page: Page, appPath: string): Locator {
-	return page.locator(fileTreeItemSelector(appPath, "file"));
+	return page
+		.locator("aside")
+		.first()
+		.locator(fileTreeItemSelector(appPath, "file"));
 }
 
 export function fileTreeDirectory(page: Page, appPath: string): Locator {
-	return page.locator(fileTreeItemSelector(appPath, "folder"));
+	return page
+		.locator("aside")
+		.first()
+		.locator(fileTreeItemSelector(appPath, "folder"));
 }
 
 function fileTreeItemSelector(
@@ -166,20 +196,13 @@ export async function writeStarterFiles(workspaceDir: string): Promise<void> {
 	);
 }
 
-export async function expectInstalledPluginArchives(
+export async function expectInstalledMarkdownPlugin(
 	workspaceDir: string,
 ): Promise<void> {
 	await expect
 		.poll(() =>
 			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_md_v2.lixplugin"),
-			),
-		)
-		.toBeGreaterThan(0);
-	await expect
-		.poll(() =>
-			readBinaryFile(
-				path.join(workspaceDir, ".lix", "plugins", "plugin_csv.lixplugin"),
+				path.join(workspaceDir, ".lix", "plugins", "plugin_markdown.lixplugin"),
 			),
 		)
 		.toBeGreaterThan(0);

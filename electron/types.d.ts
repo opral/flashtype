@@ -46,9 +46,18 @@ export type DesktopObserveEvent = {
 };
 
 export type DesktopLixApi = {
+	onOpenProgress(
+		listener: (progress: import("@lix-js/sdk").LixOpenProgress) => void,
+	): () => void;
+	executeBatch(payload: {
+		statements: ReadonlyArray<{ sql: string; params?: ReadonlyArray<unknown> }>;
+	}): Promise<{
+		results: Array<SerializedQueryResult & { statementIndex: number }>;
+		commit: import("@lix-js/sdk").CommitSpan | null;
+	}>;
 	open(): Promise<{ sessionId: string }>;
 	workspaceDir(): Promise<string>;
-	storageDir(): Promise<string>;
+	storageDir(): Promise<string | null>;
 	execute(payload: {
 		sql: string;
 		params?: ReadonlyArray<unknown>;
@@ -117,14 +126,14 @@ export type DesktopAgentName = "claude" | "codex";
 export type DesktopAgentAuthStatus =
 	| "unknown"
 	| "notSignedIn"
-	| "signedIn"
+	| "hasToken"
 	| "free"
 	| "paid";
 
 export type DesktopAgentPreferenceReason =
 	| "paid"
 	| "free"
-	| "signedIn"
+	| "hasToken"
 	| "supportedVersion"
 	| "installed"
 	| "fallback";
@@ -279,6 +288,7 @@ export type DesktopWatchedFilesystemEntry = {
 export type DesktopWorkspaceApi = {
 	get(): Promise<DesktopWorkspace | null>;
 	getRecovery(): Promise<DesktopWorkspaceRecovery | null>;
+	deleteLixAndRestart(workspacePath: string): Promise<void>;
 	clearRecovery(): Promise<void>;
 	/** Returns workspace-relative file paths queued for editor opening. */
 	consumePendingOpenFiles(): Promise<string[]>;
@@ -317,6 +327,14 @@ export type DesktopWorkspaceApi = {
 	exportLixFile(): Promise<Uint8Array>;
 	resetLixRepository(): Promise<void>;
 	disableTrackChanges(): Promise<DesktopWorkspace>;
+	initializeRepository(): Promise<DesktopWorkspace>;
+	inspectRepositorySize(): Promise<{
+		fileCount: number;
+		totalBytes: number;
+		complete: boolean;
+		allowed: boolean;
+		maxBytes: number;
+	}>;
 	resolveMarkdownImageSrc(payload: {
 		src: string;
 		sourceFilePath: string;

@@ -10,20 +10,28 @@ afterEach(() => {
 
 test("useQuery applies the first observe snapshot over the initial read", async () => {
 	let resolveFirstObserve:
-		| ((event: ObserveEvent | undefined) => void)
+		| ((event: IteratorResult<ObserveEvent>) => void)
 		| undefined;
 	const next = vi
 		.fn()
 		.mockImplementationOnce(
 			() =>
-				new Promise<ObserveEvent | undefined>((resolve) => {
+				new Promise<IteratorResult<ObserveEvent>>((resolve) => {
 					resolveFirstObserve = resolve;
 				}),
 		)
-		.mockImplementation(() => new Promise<ObserveEvent | undefined>(() => {}));
-	const close = vi.fn();
+		.mockImplementation(
+			() => new Promise<IteratorResult<ObserveEvent>>(() => {}),
+		);
+	const returnIterator = vi.fn(async () => ({ done: true, value: undefined }));
 	const lix = {
-		observe: vi.fn(() => ({ next, close })),
+		observe: vi.fn(() => ({
+			next,
+			return: returnIterator,
+			[Symbol.asyncIterator]() {
+				return this;
+			},
+		})),
 	} as unknown as Lix;
 	const execute = vi.fn(async () => [{ value: "stale" }]);
 
@@ -53,17 +61,21 @@ test("useQuery applies the first observe snapshot over the initial read", async 
 	);
 
 	resolveFirstObserve?.({
-		sequence: 1,
-		mutationSequence: 1,
-		result: {
-			columns: ["value"],
-			rows: [
-				{
-					toObject: () => ({ value: "fresh" }),
-				},
-			] as unknown as ObserveEvent["result"]["rows"],
-			rowsAffected: 0,
-			notices: [],
+		done: false,
+		value: {
+			sequence: 1,
+			mutationSequence: 1,
+			result: {
+				columns: [{ name: "value", type: "jsonb" }],
+				rows: [
+					{
+						value: "fresh",
+					},
+				] as unknown as ObserveEvent["result"]["rows"],
+				rowsAffected: 0,
+				notices: [],
+				commit: null,
+			},
 		},
 	});
 

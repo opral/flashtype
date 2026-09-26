@@ -1,6 +1,8 @@
-import type { AtelierFilesViewOptions } from "@opral/atelier";
+import type { AtelierProps } from "@opral/atelier";
 import { qb } from "@/lib/lix-kysely";
 import type { Lix } from "@/lib/lix-types";
+
+type AtelierFilesViewOptions = NonNullable<AtelierProps["filesView"]>;
 
 /**
  * Feeds FlashType's transient-workspace filesystem watchers into atelier's

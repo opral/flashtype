@@ -1,8 +1,5 @@
 import type { Lix, LixRuntimeQueryResult } from "@/lib/lix-types";
 
-const ATELIER_UI_STATE_KEY = "atelier_ui_state";
-const GLOBAL_BRANCH_ID = "global";
-
 type PersistedDocumentView = {
 	readonly instance?: unknown;
 	readonly kind?: unknown;
@@ -17,16 +14,12 @@ export type AtelierDocumentSessionState = {
 	readonly openPaths: readonly string[];
 };
 
-/** Reads the central documents Atelier has persisted in Lix. */
+/** Reads the main documents Atelier's host session state describes. */
 export async function readAtelierDocumentSessionState(
 	lix: Lix,
-	uiState?: unknown,
+	uiState: unknown,
 ): Promise<AtelierDocumentSessionState> {
-	const rawState =
-		uiState === undefined
-			? readResultValue(await readAtelierUiState(lix), "value")
-			: uiState;
-	const candidates = documentCandidates(rawState);
+	const candidates = documentCandidates(uiState);
 	if (candidates.views.length === 0) {
 		return { activePath: null, openPaths: [] };
 	}
@@ -58,23 +51,12 @@ export async function readAtelierDocumentSessionState(
 	return { activePath, openPaths };
 }
 
-/** Reads Atelier's current central document from its persisted Lix UI state. */
+/** Reads Atelier's current main document from host session state. */
 export async function readCurrentAtelierDocumentPath(
 	lix: Lix,
-	uiState?: unknown,
+	uiState: unknown,
 ): Promise<string | null> {
 	return (await readAtelierDocumentSessionState(lix, uiState)).activePath;
-}
-
-function readAtelierUiState(lix: Lix): Promise<LixRuntimeQueryResult> {
-	return lix.execute(
-		`SELECT value
-		 FROM lix_key_value_by_branch
-		 WHERE key = $1
-		   AND lixcol_branch_id = $2
-		 LIMIT 1`,
-		[ATELIER_UI_STATE_KEY, GLOBAL_BRANCH_ID],
-	);
 }
 
 function documentCandidates(rawState: unknown): {
@@ -88,13 +70,13 @@ function documentCandidates(rawState: unknown): {
 	}[];
 } {
 	const state = parseObject(rawState);
-	const panels = parseObject(state?.panels);
-	const central = parseObject(panels?.central);
-	const views = Array.isArray(central?.views)
-		? (central.views as readonly PersistedDocumentView[])
+	const areas = parseObject(state?.areas ?? state?.panels);
+	const main = parseObject(areas?.main ?? areas?.central);
+	const views = Array.isArray(main?.views)
+		? (main.views as readonly PersistedDocumentView[])
 		: [];
 	const activeInstance =
-		typeof central?.activeInstance === "string" ? central.activeInstance : null;
+		typeof main?.activeInstance === "string" ? main.activeInstance : null;
 	const candidates = views.flatMap((view) => {
 		const fileId = view.state?.fileId;
 		const filePath = view.state?.filePath;
@@ -143,7 +125,7 @@ function readResultValue(
 	const row = result.rows[0];
 	if (!row) return undefined;
 	if (Array.isArray(row)) {
-		const index = result.columns.indexOf(column);
+		const index = result.columns.findIndex((entry) => entry.name === column);
 		return index >= 0 ? row[index] : undefined;
 	}
 	if (typeof (row as { get?: unknown }).get === "function") {

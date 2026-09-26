@@ -25,7 +25,13 @@ const telemetry = {
 };
 
 const workspace = {
+	inspectRepositorySize: () =>
+		ipcRenderer.invoke("workspace:inspectRepositorySize"),
+	initializeRepository: () =>
+		ipcRenderer.invoke("workspace:initializeRepository"),
 	get: () => ipcRenderer.invoke("workspace:get"),
+	deleteLixAndRestart: (workspacePath) =>
+		ipcRenderer.invoke("workspace:deleteLixAndRestart", workspacePath),
 	getRecovery: () => ipcRenderer.invoke("workspace:getRecovery"),
 	clearRecovery: () => ipcRenderer.invoke("workspace:clearRecovery"),
 	consumePendingOpenFiles: () =>
@@ -75,6 +81,12 @@ const workspace = {
 };
 
 const lix = {
+	onOpenProgress: (listener) => {
+		const wrapped = (_event, progress) => listener(progress);
+		ipcRenderer.on("lix:openProgress", wrapped);
+		return () => ipcRenderer.off("lix:openProgress", wrapped);
+	},
+	executeBatch: (payload) => ipcRenderer.invoke("lix:executeBatch", payload),
 	open: () => ipcRenderer.invoke("lix:open"),
 	workspaceDir: () => ipcRenderer.invoke("lix:workspaceDir"),
 	storageDir: () => ipcRenderer.invoke("lix:storageDir"),

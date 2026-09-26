@@ -1,7 +1,7 @@
+import { FilesystemStorage } from "@lix-js/storage-filesystem";
 import { createRequire } from "node:module";
 import type {
-	BundledPluginArchive,
-	ExecuteResult,
+	StatementResult as ExecuteResult,
 	Lix as SdkLix,
 	OpenLixOptions as SdkOpenLixOptions,
 	SqlParam,
@@ -18,7 +18,6 @@ import type {
 type ExecuteOptions = LixExecuteOptions;
 
 export type { Lix, SqlTransaction } from "@/lib/lix-types";
-export type { BundledPluginArchive };
 
 type OpenTestLixOptions = SdkOpenLixOptions & {
 	keyValues?: ReadonlyArray<OpenLixKeyValueEntry>;
@@ -34,7 +33,7 @@ export async function openLix(options: OpenTestLixOptions = {}): Promise<Lix> {
 	const sdk = await loadSdk();
 	const sdkLix = await sdk.openLix(sdkOptions);
 	const localFilesystem =
-		sdkOptions.storage instanceof sdk.LocalFilesystem
+		sdkOptions.storage instanceof FilesystemStorage
 			? sdkOptions.storage
 			: undefined;
 	const lix = createTestLixAdapter(sdkLix, localFilesystem);
@@ -42,11 +41,6 @@ export async function openLix(options: OpenTestLixOptions = {}): Promise<Lix> {
 		await seedKeyValues(lix, keyValues);
 	}
 	return lix;
-}
-
-export async function bundledPluginArchives(): Promise<BundledPluginArchive[]> {
-	const sdk = await loadSdk();
-	return await sdk.bundledPluginArchives();
 }
 
 async function loadSdk(): Promise<SdkModule> {
@@ -67,24 +61,6 @@ async function seedKeyValues(
 		if (!entry || typeof entry.key !== "string") {
 			continue;
 		}
-		if (typeof entry.lixcol_branch_id === "string") {
-			if (typeof entry.lixcol_global !== "boolean") {
-				throw new TypeError(
-					"branch-scoped keyValues entries require lixcol_global",
-				);
-			}
-			await lix.execute(
-				"INSERT INTO lix_key_value_by_branch (key, value, lixcol_branch_id, lixcol_global, lixcol_untracked) VALUES ($1, $2, $3, $4, $5)",
-				[
-					entry.key,
-					entry.value,
-					entry.lixcol_branch_id,
-					entry.lixcol_global,
-					entry.lixcol_untracked ?? true,
-				],
-			);
-			continue;
-		}
 		await lix.execute(
 			"INSERT INTO lix_key_value (key, value, lixcol_global, lixcol_untracked) VALUES ($1, $2, true, true)",
 			[entry.key, entry.value],
@@ -94,7 +70,7 @@ async function seedKeyValues(
 
 function createTestLixAdapter(
 	sdkLix: SdkLix,
-	localFilesystem?: InstanceType<SdkModule["LocalFilesystem"]>,
+	localFilesystem?: FilesystemStorage,
 ): Lix {
 	const observations = new Set<ObserveEvents>();
 	let closing = false;
@@ -157,24 +133,40 @@ function createTestLixAdapter(
 				throw error;
 			}
 		},
-		observe(sql: string, params: ReadonlyArray<unknown> = []): ObserveEvents {
-			const sdkEvents = sdkLix.observe(sql, toSqlParams(params));
+		observe(
+			sql: string,
+			params: ReadonlyArray<unknown> = [],
+			options?: Parameters<Lix["observe"]>[2],
+		): ObserveEvents {
+			const controller = new AbortController();
+			const signal = options?.signal;
+			const abort = () => controller.abort();
+			if (signal?.aborted) abort();
+			else signal?.addEventListener("abort", abort, { once: true });
+			const sdkEvents = sdkLix.observe(sql, toSqlParams(params), {
+				signal: controller.signal,
+			});
 			let closed = false;
 			const events: ObserveEvents = {
 				async next() {
-					if (closed || closing) return undefined;
+					if (closed || closing) return { done: true, value: undefined };
 					try {
 						return await sdkEvents.next();
 					} catch (error) {
-						if (closed || closing) return undefined;
+						if (closed || closing) return { done: true, value: undefined };
 						throw error;
 					}
 				},
-				close() {
-					if (closed) return;
+				async return() {
+					if (closed) return { done: true, value: undefined };
 					closed = true;
 					observations.delete(events);
-					sdkEvents.close();
+					controller.abort();
+					await sdkEvents.return?.();
+					return { done: true, value: undefined };
+				},
+				[Symbol.asyncIterator]() {
+					return this;
 				},
 			};
 			observations.add(events);
@@ -212,7 +204,7 @@ function createTestLixAdapter(
 		async close() {
 			closing = true;
 			for (const observation of [...observations]) {
-				observation.close();
+				await observation.return?.();
 			}
 			await sdkLix.close();
 		},

@@ -1,6 +1,6 @@
 import { waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import type { AtelierDocumentsApi } from "@opral/atelier";
+import type { AtelierExtensionRuntime } from "@opral/atelier";
 import type { Lix, LixRuntimeQueryResult } from "@/lib/lix-types";
 import {
 	connectAtelierWorkspace,
@@ -89,7 +89,7 @@ describe("connectAtelierWorkspace", () => {
 		expect(harness.unsubscribeCloseFile).toHaveBeenCalledOnce();
 	});
 
-	test("persists Atelier's validated central documents as session paths", async () => {
+	test("persists Atelier's validated main documents as session paths", async () => {
 		const harness = createHarness({ activeDocumentPath: "/docs/active.md" });
 		const connection = connectAtelierWorkspace(harness.options);
 		await connection.ready;
@@ -100,7 +100,7 @@ describe("connectAtelierWorkspace", () => {
 			});
 		});
 		connection.dispose();
-		expect(harness.observeClose).toHaveBeenCalledTimes(2);
+		expect(harness.observeClose).toHaveBeenCalledTimes(1);
 	});
 
 	test("persists observation-driven document changes after startup", async () => {
@@ -222,63 +222,72 @@ function createHarness(
 		mutationSequence: number;
 		result: LixRuntimeQueryResult;
 	};
-	const createObservedEvents = (columns: readonly string[]) => {
-		const queued: ObservedEvent[] = [
-			{
-				sequence: 1,
-				mutationSequence: 0,
-				result: queryResult([], columns),
-			},
-		];
-		let resolveNext: ((event: ObservedEvent | undefined) => void) | undefined;
+	const createObservedEvents = (
+		columns: readonly string[],
+		readRows: () => readonly (readonly unknown[])[],
+	) => {
+		const queued: ObservedEvent[] = [{
+			sequence: 1,
+			mutationSequence: 0,
+			result: queryRows(readRows(), columns),
+		}];
+		let resolveNext:
+			| ((event: IteratorResult<ObservedEvent>) => void)
+			| undefined;
+		let closed = false;
+		const returnIterator = vi.fn(async () => {
+			if (closed) return { done: true, value: undefined } as const;
+			closed = true;
+			observeClose();
+			resolveNext?.({ done: true, value: undefined });
+			resolveNext = undefined;
+			return { done: true, value: undefined } as const;
+		});
 		return {
+			attachSignal(signal?: AbortSignal) {
+				signal?.addEventListener("abort", () => void returnIterator(), {
+					once: true,
+				});
+			},
 			emit() {
 				const event = {
 					sequence: 2,
 					mutationSequence: 1,
-					result: queryResult([], columns),
+					result: queryRows(readRows(), columns),
 				};
 				if (resolveNext) {
 					const resolve = resolveNext;
 					resolveNext = undefined;
-					resolve(event);
+					resolve({ done: false, value: event });
 				} else {
 					queued.push(event);
 				}
 			},
-			next: vi.fn(async () => {
+			next: vi.fn(async (): Promise<IteratorResult<ObservedEvent>> => {
 				const event = queued.shift();
-				if (event) return event;
-				return await new Promise<ObservedEvent | undefined>((resolve) => {
+				if (event) return { done: false, value: event };
+				return await new Promise<IteratorResult<ObservedEvent>>((resolve) => {
 					resolveNext = resolve;
 				});
 			}),
-			close() {
-				observeClose();
-				resolveNext?.(undefined);
-				resolveNext = undefined;
+			return: returnIterator,
+			[Symbol.asyncIterator]() {
+				return this;
 			},
 		};
 	};
-	const uiStateEvents = createObservedEvents(["value"]);
-	const filePathEvents = createObservedEvents(["id", "path"]);
+	const listeners = new Set<() => void>();
+	const filePathEvents = createObservedEvents(
+		["id", "path"],
+		() => [...filesById.entries()].map(([id, path]) => [id, path]),
+	);
 	const lix = {
 		importFilesystemPaths,
-		observe: vi.fn((sql: string) => {
-			const events = sql.includes("lix_key_value_by_branch")
-				? uiStateEvents
-				: filePathEvents;
-			return {
-				next: events.next,
-				close: events.close,
-			};
+		observe: vi.fn((_sql, _params, options) => {
+			filePathEvents.attachSignal(options?.signal);
+			return filePathEvents;
 		}),
 		execute: vi.fn(async (sql: string, params?: ReadonlyArray<unknown>) => {
-			if (sql.includes("lix_key_value_by_branch")) {
-				return activeDocumentPath
-					? queryResult([uiState("active-file", activeDocumentPath)], ["value"])
-					: queryResult([], ["value"]);
-			}
 			if (sql.includes("WHERE id =")) {
 				const path = filesById.get(String(params?.[0]));
 				return queryResult(path ? [path] : [], ["path"]);
@@ -303,7 +312,9 @@ function createHarness(
 	};
 	setActiveDocument(activeDocumentPath);
 
-	const documents: AtelierDocumentsApi = {
+	const documents: AtelierExtensionRuntime["documents"] = {
+		activeFileId: null,
+		activeFilePath: null,
 		open: vi.fn(async () => {}),
 		startNew: vi.fn(async () => {}),
 		close: vi.fn(async () => {}),
@@ -343,7 +354,9 @@ function createHarness(
 		unsubscribeNewFile,
 		unsubscribeCloseFile,
 		observeClose,
-		emitUiStateChange: uiStateEvents.emit,
+		emitUiStateChange: () => {
+			for (const listener of listeners) listener();
+		},
 		emitFilePathChange: filePathEvents.emit,
 		setActiveDocument,
 		setActiveFilePath,
@@ -354,6 +367,16 @@ function createHarness(
 			await closeFileListener?.();
 		},
 		options: {
+			sessionStateStore: {
+				getSnapshot: () =>
+					sessionUiState("active-file", activeDocumentPath ?? ""),
+				subscribe: (listener: () => void) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+			},
 			documents,
 			lix,
 			workspace: workspace as unknown as NonNullable<
@@ -366,8 +389,8 @@ function createHarness(
 
 function uiState(fileId: string, filePath: string) {
 	return {
-		panels: {
-			central: {
+		areas: {
+			main: {
 				activeInstance: `atelier_file:${fileId}`,
 				views: [
 					{
@@ -383,10 +406,10 @@ function uiState(fileId: string, filePath: string) {
 
 function sessionUiState(fileId: string, filePath: string) {
 	return {
-		focusedPanel: "central" as const,
-		panels: {
+		focusedArea: "main" as const,
+		areas: {
 			left: { views: [], activeInstance: null },
-			central: uiState(fileId, filePath).panels.central,
+			main: uiState(fileId, filePath).areas.main,
 			right: { views: [], activeInstance: null },
 		},
 	};
@@ -396,20 +419,25 @@ function queryResult(
 	row: readonly unknown[],
 	columns: readonly string[],
 ): LixRuntimeQueryResult {
+	return queryRows(row.length > 0 ? [row] : [], columns);
+}
+
+function queryRows(
+	rows: readonly (readonly unknown[])[],
+	columns: readonly string[],
+): LixRuntimeQueryResult {
+	const resultRows = rows.map((row) => {
 	const values = Object.fromEntries(
 		columns.map((column, index) => [column, row[index]]),
 	);
 	return {
-		rows:
-			row.length > 0
-				? [
-						{
-							get: (column: string) => values[column],
-							toObject: () => values,
-						},
-					]
-				: [],
-		columns: [...columns],
+		get: (column: string) => values[column],
+		toObject: () => values,
+	};
+	});
+	return {
+		rows: resultRows,
+		columns: columns.map((name) => ({ name, type: "text" })),
 		rowsAffected: 0,
 		notices: [],
 	} as unknown as LixRuntimeQueryResult;

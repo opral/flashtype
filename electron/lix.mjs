@@ -1,13 +1,17 @@
+import { createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { assertWorkspaceCanOpen } from "./workspace-open-preflight.mjs";
+import { checkpointRepositoryMetadata } from "./initialize-checkpoint.mjs";
+import { createMemoryWorkspace } from "./memory-workspace.mjs";
 import { app } from "electron";
-import { LocalFilesystem, bundledPluginArchives, openLix } from "@lix-js/sdk";
+import { FilesystemStorage as LocalFilesystem } from "@lix-js/storage-filesystem";
+import { openLix } from "@lix-js/sdk";
 import path from "node:path";
 import { readFile, rm } from "node:fs/promises";
+import { getWorkspace, getWorkspaceLixDatabasePath } from "./workspace.mjs";
 import {
-	acquireWorkspaceLocalFilesystemOptions,
-	getWorkspace,
-	getWorkspaceLixDatabasePath,
-} from "./workspace.mjs";
-import {
+	readWorkspaceRecovery,
 	clearWorkspaceLixOpenPendingSync,
 	markWorkspaceLixOpenPendingSync,
 	writeWorkspaceRecoverySync,
@@ -17,6 +21,11 @@ import { captureWorkspaceRecoveryLifecycle } from "./workspace-recovery-telemetr
 
 const LIX_DATABASE_DIR = ".lix";
 const sessions = new Map();
+// Lix stopped bundling plugin archives in the SDK. This is the released
+// Markdown plugin artifact: https://github.com/opral/lix/releases/tag/plugin_markdown/v0.1.0
+const markdownPluginArchive = readFile(
+	new URL("./assets/plugin_markdown.lixplugin", import.meta.url),
+);
 
 export async function ensureLixOpen(window) {
 	const session = getOrCreateSession(window);
@@ -29,6 +38,18 @@ export async function ensureLixOpen(window) {
 					throw new Error(
 						"No workspace is open. Open a folder before using lix.",
 					);
+				}
+				// Keep an existing crash report intact and avoid entering native code
+				// at all until recovery has explicitly been cleared.
+				if (workspace.ephemeral !== true) {
+					const recovery = await readWorkspaceRecovery(
+						app.getPath("userData"),
+						workspace.path,
+					);
+					if (recovery)
+						throw new Error(
+							"This repository needs recovery before it can be opened.",
+						);
 				}
 				let nativeLix;
 				let releaseStorageOptions = async () => {};
@@ -43,15 +64,27 @@ export async function ensureLixOpen(window) {
 							}),
 						);
 					}
-					const acquiredStorage =
-						await acquireWorkspaceLocalFilesystemOptions(window);
-					const storageOptions = acquiredStorage.options;
-					releaseStorageOptions = acquiredStorage.release;
-					const storage = new LocalFilesystem(storageOptions);
-					nativeLix = await openLix({
-						storage,
-					});
-					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
+					let storage;
+					if (tracksPersistentWorkspace) {
+						await assertWorkspaceCanOpen(userDataPath, workspace.path);
+						storage = new LocalFilesystem({ path: workspace.path });
+						nativeLix = await openLix({
+							storage,
+							onProgress(progress) {
+								if (!window.isDestroyed() && !window.webContents.isDestroyed())
+									window.webContents.send("lix:openProgress", progress);
+							},
+						});
+					} else {
+						nativeLix = await openLix();
+						storage = createMemoryWorkspace(nativeLix, workspace.path);
+					}
+					const pluginsUpdated =
+						await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
+					if (pluginsUpdated) await storage.syncDiskToLix();
+					if (nativeLix.openReport?.initialized) {
+						await checkpointRepositoryMetadata(nativeLix);
+					}
 					if (tracksPersistentWorkspace) {
 						clearWorkspaceLixOpenPendingSync(userDataPath, workspace.path);
 					}
@@ -59,8 +92,9 @@ export async function ensureLixOpen(window) {
 						nativeLix,
 						storage,
 						workspace.path,
-						storageOptions.lixDir ??
-							path.join(workspace.path, LIX_DATABASE_DIR),
+						tracksPersistentWorkspace
+							? path.join(workspace.path, LIX_DATABASE_DIR)
+							: null,
 						crypto.randomUUID(),
 						releaseStorageOptions,
 					);
@@ -104,30 +138,25 @@ export async function ensureLixOpen(window) {
 }
 
 async function ensureDefaultPluginsInstalledOnCurrentBranch(lix) {
-	for (const plugin of await bundledPluginArchives()) {
-		const archivePath = pluginArchivePath(plugin);
-		const existing = await readLixFileBytes(lix, archivePath);
-		if (!bytesEqual(existing, plugin.archiveBytes)) {
-			await writeLixFileBytes(lix, archivePath, plugin.archiveBytes);
-		}
-	}
-}
-
-function pluginArchivePath(plugin) {
-	return `/.lix/plugins/${plugin.key}.lixplugin`;
+	const archivePath = "/.lix/plugins/plugin_markdown.lixplugin";
+	const archiveBytes = await markdownPluginArchive;
+	const existing = await readLixFileBytes(lix, archivePath);
+	if (bytesEqual(existing, archiveBytes)) return false;
+	await writeLixFileBytes(lix, archivePath, archiveBytes);
+	return true;
 }
 
 async function readLixFileBytes(lix, path) {
 	const result = await lix.execute(
-		"SELECT data FROM lix_file WHERE path = $1",
+		"SELECT content FROM lix_file WHERE path = $1",
 		[path],
 	);
-	return result.rows[0]?.value("data").asBytes();
+	return result.rows[0]?.content;
 }
 
 async function writeLixFileBytes(lix, path, data) {
 	await lix.execute(
-		"INSERT INTO lix_file (path, data) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET data = excluded.data",
+		"INSERT INTO lix_file (path, content) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET content = excluded.content",
 		[path, data],
 	);
 }
@@ -163,6 +192,7 @@ export async function closeLix(window, options = {}) {
 		return;
 	}
 	await enqueue(session, async () => {
+		await options.beforeClose?.();
 		await closeCurrentLix(session, options);
 	});
 }
@@ -330,7 +360,9 @@ function createDesktopLixHandle(
 	async function runQueued(operation) {
 		const release = await acquireOperationSlot();
 		try {
-			return await operation();
+			const result = await operation();
+			await storage.flush?.();
+			return result;
 		} finally {
 			release();
 		}
@@ -344,7 +376,24 @@ function createDesktopLixHandle(
 		}
 	}
 
+	const syncTimer = storage.flush
+		? setInterval(() => {
+				void runQueued(() => storage.syncDiskToLix()).catch((error) =>
+					console.error("Workspace file sync failed", error),
+				);
+			}, 750)
+		: null;
+	syncTimer?.unref();
+
 	return {
+		async exportShareSnapshot(destination) {
+			await runQueued(() =>
+				pipeline(
+					Readable.fromWeb(nativeLix.exportSnapshot()),
+					createWriteStream(destination, { flags: "wx", mode: 0o600 }),
+				),
+			);
+		},
 		sessionId() {
 			return sessionId;
 		},
@@ -379,6 +428,7 @@ function createDesktopLixHandle(
 					}
 					try {
 						await transaction.commit();
+						await storage.flush?.();
 					} finally {
 						transactionClosed = true;
 						releaseSlot();
@@ -397,6 +447,9 @@ function createDesktopLixHandle(
 				},
 			};
 		},
+		async executeBatch(statements) {
+			return await runQueued(() => nativeLix.executeBatch(statements));
+		},
 		async executeTransaction(statements) {
 			return await runQueued(async () => {
 				const transaction = await nativeLix.beginTransaction();
@@ -408,6 +461,7 @@ function createDesktopLixHandle(
 						]);
 					}
 					await transaction.commit();
+					await storage.flush?.();
 					return result;
 				} catch (error) {
 					await transaction.rollback();
@@ -444,7 +498,9 @@ function createDesktopLixHandle(
 		async switchBranch(options) {
 			return await runQueued(async () => {
 				const receipt = await nativeLix.switchBranch(options);
-				await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
+				const pluginsUpdated =
+					await ensureDefaultPluginsInstalledOnCurrentBranch(nativeLix);
+				if (pluginsUpdated) await storage.syncDiskToLix();
 				return receipt;
 			});
 		},
@@ -455,8 +511,12 @@ function createDesktopLixHandle(
 			return await runQueued(() => storage.syncDiskToLix());
 		},
 		async close() {
+			if (syncTimer) clearInterval(syncTimer);
 			try {
-				await runQueued(() => nativeLix.close());
+				await runQueued(async () => {
+					await storage.flush?.();
+				});
+				await nativeLix.close();
 			} finally {
 				await releaseStorageOptions();
 			}
@@ -476,12 +536,16 @@ function createQueuedObserve(
 ) {
 	let closed = false;
 	let events;
+	let observationController;
 
 	async function ensureEvents() {
 		while (!closed) {
 			try {
 				if (!events) {
-					events = nativeLix.observe(sql, params);
+					observationController = new AbortController();
+					events = nativeLix.observe(sql, params, {
+						signal: observationController.signal,
+					});
 				}
 				return events;
 			} catch (error) {
@@ -499,26 +563,35 @@ function createQueuedObserve(
 			while (!closed) {
 				const currentEvents = await ensureEvents();
 				if (!currentEvents) {
-					return undefined;
+					return { done: true, value: undefined };
 				}
 				try {
-					return await currentEvents.next();
+					const result = await currentEvents.next();
+					if (result.done) {
+						closed = true;
+						return { done: true, value: undefined };
+					}
+					return result;
 				} catch (error) {
 					if (!isActiveTransactionError(error)) {
 						throw error;
 					}
-					currentEvents.close();
+					observationController?.abort();
 					if (events === currentEvents) {
 						events = undefined;
 					}
 					await waitForOperationQueueToDrain();
 				}
 			}
-			return undefined;
+			return { done: true, value: undefined };
 		},
-		close() {
+		async return() {
 			closed = true;
-			events?.close();
+			observationController?.abort();
+			return { done: true, value: undefined };
+		},
+		[Symbol.asyncIterator]() {
+			return this;
 		},
 	};
 }
